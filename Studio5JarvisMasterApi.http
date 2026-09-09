@@ -1,0 +1,6 @@
+@Studio5JarvisMasterApi_HostAddress = http://localhost:5084
+
+GET {{Studio5JarvisMasterApi_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
