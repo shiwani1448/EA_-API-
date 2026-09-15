@@ -14,8 +14,6 @@ public class CreateWorkPauseRequestDtoValidator : AbstractValidator<CreateWorkPa
         RuleFor(x => x.ResponseOwnerId).MaximumLength(100);
         RuleFor(x => x.ResponseOwnerName).MaximumLength(200);
         RuleFor(x => x.ExpectedResponseAt).GreaterThanOrEqualTo(DateTime.MinValue).When(x => x.ExpectedResponseAt.HasValue);
-        RuleFor(x => x.RequestSentAt).NotNull()
-            .WithMessage("RequestSentAt is required when entering Waiting.");
         RuleFor(x => x.RequestSentAt).Must(x => !x.HasValue || x.Value.Kind == DateTimeKind.Utc)
             .WithMessage("RequestSentAt must be UTC.");
         RuleFor(x => x.ExpectedResponseAt).Must(x => !x.HasValue || x.Value.Kind == DateTimeKind.Utc)

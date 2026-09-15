@@ -17,8 +17,9 @@ public class IntakeController : ControllerBase
     }
 
     [HttpPost]
-    public async Task<IActionResult> Create([FromBody] CreateIntakeRequestDto dto, CancellationToken ct)
+    public async Task<IActionResult> Create([FromBody] CreateIntakeRequestDto? dto, CancellationToken ct)
     {
+        dto ??= new CreateIntakeRequestDto();
         var created = await _service.CreateAsync(dto, ct);
         return CreatedAtAction(nameof(GetById), new { id = created.Id }, created);
     }
@@ -38,8 +39,9 @@ public class IntakeController : ControllerBase
     }
 
     [HttpPut("{id:long}")]
-    public async Task<IActionResult> Update(long id, [FromBody] UpdateIntakeRequestDto dto, CancellationToken ct)
+    public async Task<IActionResult> Update(long id, [FromBody] UpdateIntakeRequestDto? dto, CancellationToken ct)
     {
+        dto ??= new UpdateIntakeRequestDto();
         var updated = await _service.UpdateAsync(id, dto, ct);
         return Ok(updated);
     }
@@ -53,8 +55,9 @@ public class IntakeController : ControllerBase
 
     // Classifications
     [HttpPost("{intakeId:long}/classifications")]
-    public async Task<IActionResult> CreateClassification(long intakeId, [FromBody] CreateIntakeClassificationDto dto, CancellationToken ct)
+    public async Task<IActionResult> CreateClassification(long intakeId, [FromBody] CreateIntakeClassificationDto? dto, CancellationToken ct)
     {
+        dto ??= new CreateIntakeClassificationDto();
         var created = await _service.CreateClassificationAsync(intakeId, dto, ct);
         return CreatedAtAction(nameof(GetClassifications), new { intakeId }, created);
     }
@@ -67,8 +70,9 @@ public class IntakeController : ControllerBase
     }
 
     [HttpPut("{intakeId:long}/classifications/{classificationId:long}")]
-    public async Task<IActionResult> UpdateClassification(long intakeId, long classificationId, [FromBody] UpdateIntakeClassificationDto dto, CancellationToken ct)
+    public async Task<IActionResult> UpdateClassification(long intakeId, long classificationId, [FromBody] UpdateIntakeClassificationDto? dto, CancellationToken ct)
     {
+        dto ??= new UpdateIntakeClassificationDto();
         var updated = await _service.UpdateClassificationAsync(intakeId, classificationId, dto, ct);
         return Ok(updated);
     }

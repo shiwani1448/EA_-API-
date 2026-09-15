@@ -52,7 +52,13 @@ public class MappingProfile : Profile
         CreateMap<Jarvis5.Entities.EaFms.EscalationLevel, Jarvis5.Dtos.EaFms.EscalationLevelResponseDto>();
         CreateMap<Jarvis5.Entities.EaFms.Meeting, Jarvis5.Dtos.EaFms.MeetingListItemResponseDto>()
             .ForMember(d => d.MeetingId, opt => opt.MapFrom(s => s.Id))
+            .ForMember(d => d.Type, opt => opt.MapFrom(s => s.MeetingType))
+            .ForMember(d => d.Subtype, opt => opt.MapFrom(s => s.Category))
+            .ForMember(d => d.Doers, opt => opt.MapFrom(s => Jarvis5.Common.EaFms.MeetingDoers.ToDtos(s)))
             .ForMember(d => d.MeetingNumber, opt => opt.MapFrom(s => s.MeetingNumber))
+            .ForMember(d => d.ModuleId, opt => opt.Ignore())
+            .ForMember(d => d.ModuleName, opt => opt.Ignore())
+            .ForMember(d => d.TatMinutes, opt => opt.Ignore())
             .ForMember(d => d.Priority, opt => opt.Ignore())
             .ForMember(d => d.AssignedToId, opt => opt.Ignore())
             .ForMember(d => d.AssignedToName, opt => opt.Ignore())
@@ -61,6 +67,15 @@ public class MappingProfile : Profile
 
         CreateMap<Jarvis5.Entities.EaFms.Meeting, Jarvis5.Dtos.EaFms.MeetingDetailResponseDto>()
             .ForMember(d => d.MeetingId, opt => opt.MapFrom(s => s.Id))
+            .ForMember(d => d.Type, opt => opt.MapFrom(s => s.MeetingType))
+            .ForMember(d => d.Subtype, opt => opt.MapFrom(s => s.Category))
+            .ForMember(d => d.Doers, opt => opt.MapFrom(s => Jarvis5.Common.EaFms.MeetingDoers.ToDtos(s)))
+            .ForMember(d => d.ModuleId, opt => opt.Ignore())
+            .ForMember(d => d.ModuleName, opt => opt.Ignore())
+            .ForMember(d => d.TatMinutes, opt => opt.Ignore())
+            .ForMember(d => d.Task, opt => opt.Ignore())
+            .ForMember(d => d.AllottedTatMinutes, opt => opt.Ignore())
+            .ForMember(d => d.EaTaskId, opt => opt.Ignore())
             .ForMember(d => d.Priority, opt => opt.Ignore())
             .ForMember(d => d.CreatedDate, opt => opt.MapFrom(s => s.CreatedDate))
             .ForMember(d => d.CreatedBy, opt => opt.MapFrom(s => s.CreatedBy))
@@ -86,7 +101,9 @@ public class MappingProfile : Profile
 
         CreateMap<Jarvis5.Entities.EaFms.MeetingDecision, Jarvis5.Dtos.EaFms.MeetingDecisionDto>();
         CreateMap<Jarvis5.Entities.EaFms.MeetingAction, Jarvis5.Dtos.EaFms.MeetingActionDto>();
-        CreateMap<Jarvis5.Entities.EaFms.TatRule, Jarvis5.Dtos.EaFms.TatRuleDto>();
+        CreateMap<Jarvis5.Entities.EaFms.TatRule, Jarvis5.Dtos.EaFms.TatRuleDto>()
+            .ForMember(d => d.ModuleId, opt => opt.MapFrom(s => s.BusinessModuleId))
+            .ForMember(d => d.ModuleName, opt => opt.MapFrom(s => s.BusinessModule.Name));
         CreateMap<Jarvis5.Entities.EaFms.WorkPause, Jarvis5.Dtos.EaFms.WorkPauseResponseDto>();
         CreateMap<Jarvis5.Entities.EaFms.WorkPause, Jarvis5.Dtos.EaFms.WaitingResponseDto>();
     }

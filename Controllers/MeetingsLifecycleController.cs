@@ -19,25 +19,28 @@ public class MeetingsLifecycleController : ControllerBase
     /// <summary>Start Meeting Task</summary>
     [HttpPost("start")]
     [ProducesResponseType(typeof(MeetingLifecycleResponseDto), 200)]
-    public async Task<IActionResult> Start(long meetingId, [FromBody] MeetingStartRequestDto dto, CancellationToken ct)
-        => Ok(await _lifecycle.StartAsync(meetingId, dto, ct));
+    public async Task<IActionResult> Start(long meetingId, CancellationToken ct)
+        => Ok(await _lifecycle.StartAsync(meetingId, new MeetingStartRequestDto(), ct));
 
     /// <summary>Pause Meeting Task</summary>
     [HttpPost("pause")]
     [ProducesResponseType(typeof(MeetingPauseResponseDto), 200)]
-    public async Task<IActionResult> Pause(long meetingId, [FromBody] MeetingPauseRequestDto dto, CancellationToken ct)
-        => Ok(await _lifecycle.PauseAsync(meetingId, dto, ct));
+    public async Task<IActionResult> Pause(long meetingId, CancellationToken ct)
+        => Ok(await _lifecycle.PauseAsync(meetingId, new MeetingPauseRequestDto(), ct));
 
     /// <summary>Resume Meeting Task</summary>
     [HttpPost("resume")]
     [ProducesResponseType(typeof(MeetingPauseResponseDto), 200)]
-    public async Task<IActionResult> Resume(long meetingId, [FromBody] MeetingResumeRequestDto dto, CancellationToken ct)
-        => Ok(await _lifecycle.ResumeAsync(meetingId, dto, ct));
+    public async Task<IActionResult> Resume(long meetingId, CancellationToken ct)
+        => Ok(await _lifecycle.ResumeAsync(meetingId, new MeetingResumeRequestDto(), ct));
 
     /// <summary>Complete Meeting Task</summary>
     [HttpPost("complete")]
+    [Consumes("multipart/form-data")]
+    [RequestSizeLimit(27 * 1024 * 1024)]
+    [RequestFormLimits(MultipartBodyLengthLimit = 27 * 1024 * 1024)]
     [ProducesResponseType(typeof(MeetingLifecycleResponseDto), 200)]
-    public async Task<IActionResult> Complete(long meetingId, [FromBody] MeetingCompleteRequestDto dto, CancellationToken ct)
+    public async Task<IActionResult> Complete(long meetingId, [FromForm] MeetingCompleteRequestDto dto, CancellationToken ct)
         => Ok(await _lifecycle.CompleteAsync(meetingId, dto, ct));
 
 }

@@ -7,7 +7,7 @@ public class MeetingDecisionDtoValidator : AbstractValidator<CreateMeetingDecisi
 {
     public MeetingDecisionDtoValidator()
     {
-        RuleFor(x => x.Decision).NotEmpty().MaximumLength(4000);
+        RuleFor(x => x.Decision).MaximumLength(4000);
         RuleFor(x => x.OwnerName).MaximumLength(200);
     }
 }

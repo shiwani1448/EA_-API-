@@ -1,0 +1,22 @@
+using Jarvis5.Data.EaFms;
+using Jarvis5.Entities.EaFms;
+using Microsoft.EntityFrameworkCore;
+
+namespace Jarvis5.Repositories.EaFms;
+
+public class TatRuleRepository(EaFmsDbContext db) : ITatRuleRepository
+{
+    public IQueryable<TatRule> Query() => db.TatRules.AsNoTracking()
+        .Include(x => x.BusinessModule).Where(x => !x.IsDeleted);
+
+    public Task<TatRule?> GetForUpdateAsync(long id, CancellationToken ct) =>
+        db.TatRules.FirstOrDefaultAsync(x => x.Id == id && !x.IsDeleted, ct);
+
+    // Caller holds a transaction. Prevent configuration edits during snapshot creation.
+    // Materialize up to two rows: ambiguity must never silently select the first rule.
+    public Task<List<TatRule>> GetApplicableAsync(long moduleId, string type, string subtype, CancellationToken ct) =>
+        db.TatRules.FromSqlInterpolated($"SELECT * FROM public.ea_tat_rules WHERE \"BusinessModuleId\" = {moduleId} AND lower(btrim(\"Type\")) = lower(btrim({type})) AND lower(btrim(\"Subtype\")) = lower(btrim({subtype})) AND \"IsActive\" AND NOT \"IsDeleted\" LIMIT 2 FOR SHARE")
+            .AsNoTracking().ToListAsync(ct);
+
+    public async Task AddAsync(TatRule rule, CancellationToken ct) => await db.TatRules.AddAsync(rule, ct);
+}

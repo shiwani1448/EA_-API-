@@ -35,7 +35,11 @@ public class EaCreateRequestSchemaFilter : ISchemaFilter
 
         if (context.Type == typeof(CreateMeetingRequestDto))
         {
-            schema.Example = new JsonObject { ["title"] = "Test Meeting" };
+            schema.Example = new JsonObject
+            {
+                ["title"] = "Client Review", ["type"] = "Client", ["subtype"] = "Review",
+                ["doers"] = new JsonArray(new JsonObject { ["doerId"] = "EMP001", ["doerName"] = "Person One" })
+            };
         }
         else
         {

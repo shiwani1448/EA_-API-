@@ -47,6 +47,12 @@ public class Meeting
 
     public bool IsConfidential { get; set; }
 
+    public string[] DoerIds { get; set; } = Array.Empty<string>();
+    public string[] DoerNames { get; set; } = Array.Empty<string>();
+    public string? CompletionMom { get; set; }
+    public long? CompletionPdfAttachmentId { get; set; }
+    public Attachment? CompletionPdfAttachment { get; set; }
+
     public DateTime? CompletedAt { get; set; }
     public DateTime? ArchivedAt { get; set; }
 

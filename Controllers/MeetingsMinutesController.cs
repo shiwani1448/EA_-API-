@@ -37,8 +37,9 @@ public class MeetingsMinutesController : ControllerBase
     }
 
     [HttpPost]
-    public async Task<IActionResult> Create(long meetingId, [FromBody] CreateMeetingMinutesDto dto, CancellationToken ct)
+    public async Task<IActionResult> Create(long meetingId, [FromBody] CreateMeetingMinutesDto? dto, CancellationToken ct)
     {
+        dto ??= new CreateMeetingMinutesDto();
         var m = await _context.Meetings.FirstOrDefaultAsync(x => x.Id == meetingId && !x.IsDeleted, ct);
         if (m is null) return NotFound();
 
@@ -64,8 +65,9 @@ public class MeetingsMinutesController : ControllerBase
     }
 
     [HttpPut]
-    public async Task<IActionResult> Update(long meetingId, [FromBody] UpdateMeetingMinutesDto dto, CancellationToken ct)
+    public async Task<IActionResult> Update(long meetingId, [FromBody] UpdateMeetingMinutesDto? dto, CancellationToken ct)
     {
+        dto ??= new UpdateMeetingMinutesDto();
         var mm = await _context.MeetingMinutes.Where(x => x.MeetingId == meetingId && !x.IsDeleted).OrderByDescending(x => x.ModifiedDate).FirstOrDefaultAsync(ct);
         if (mm is null) return NotFound();
 

@@ -30,6 +30,7 @@ public class EaFmsDbContext : DbContext
     public DbSet<WorkPause> WorkPauses { get; set; } = null!;
     public DbSet<WorkAssignment> WorkAssignments { get; set; } = null!;
     public DbSet<WorkRevision> WorkRevisions { get; set; } = null!;
+    public DbSet<EaTask> Tasks { get; set; } = null!;
     public DbSet<MeetingAgenda> MeetingAgendas { get; set; } = null!;
     public DbSet<MeetingAttendee> MeetingAttendees { get; set; } = null!;
     public DbSet<MeetingMinutes> MeetingMinutes { get; set; } = null!;
@@ -37,8 +38,16 @@ public class EaFmsDbContext : DbContext
     public DbSet<MeetingAction> MeetingActions { get; set; } = null!;
     public DbSet<TatRule> TatRules { get; set; } = null!;
 
+    // Approval management (EA-specific)
+    public DbSet<Entities.EaFms.ApprovalRequest> ApprovalRequests { get; set; } = null!;
+    public DbSet<Entities.EaFms.ApprovalCycle> ApprovalCycles { get; set; } = null!;
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
+        modelBuilder.HasDbFunction(typeof(Jarvis5.Common.EaFms.TatClassification)
+            .GetMethod(nameof(Jarvis5.Common.EaFms.TatClassification.TrimForMatch))!)
+            .HasName("btrim").IsBuiltIn();
+
         base.OnModelCreating(modelBuilder);
 
         // ============================================================
@@ -100,6 +109,80 @@ public class EaFmsDbContext : DbContext
             entity.HasIndex(e => e.IsActive);
         });
 
+        // Approval management sequence for ReferenceNo generation (EA-specific)
+        modelBuilder.HasSequence<long>("ea_approval_no_seq").StartsAt(1).IncrementsBy(1);
+
+        // EA Approval entities
+        modelBuilder.Entity<Entities.EaFms.ApprovalRequest>(entity =>
+        {
+            entity.ToTable("ea_approval_requests", "public");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).UseIdentityByDefaultColumn();
+
+            entity.Property(e => e.EaTaskId).HasColumnType("bigint");
+            entity.Property(e => e.ReferenceNo).HasColumnType("varchar(40)").IsRequired();
+            entity.Property(e => e.RequestTitle).HasMaxLength(500);
+            entity.Property(e => e.RequestType).HasMaxLength(200);
+            entity.Property(e => e.RequestedBy).HasMaxLength(100);
+            entity.Property(e => e.Department).HasMaxLength(200);
+            entity.Property(e => e.Priority).HasMaxLength(100);
+            entity.Property(e => e.Description).HasMaxLength(4000);
+            entity.Property(e => e.Justification).HasMaxLength(4000);
+            entity.Property(e => e.Currency).HasMaxLength(10);
+            entity.Property(e => e.ApproverId).HasMaxLength(100);
+            entity.Property(e => e.ApproverName).HasMaxLength(200);
+            entity.Property(e => e.WorkflowStatus).HasMaxLength(100);
+
+            entity.Property(e => e.Amount).HasColumnType("numeric(18,2)");
+
+            entity.Property(e => e.CreatedBy).IsRequired().HasMaxLength(100);
+            entity.Property(e => e.CreatedAt).HasColumnType("timestamp with time zone");
+            entity.Property(e => e.UpdatedAt).HasColumnType("timestamp with time zone");
+            entity.Property(e => e.SubmittedAt).HasColumnType("timestamp with time zone");
+            entity.Property(e => e.ApprovedAt).HasColumnType("timestamp with time zone");
+            entity.Property(e => e.RejectedAt).HasColumnType("timestamp with time zone");
+            entity.Property(e => e.ClosedAt).HasColumnType("timestamp with time zone");
+
+            entity.HasIndex(e => e.EaTaskId).IsUnique();
+            entity.HasOne<Entities.EaFms.EaTask>().WithMany().HasForeignKey(e => e.EaTaskId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasIndex(e => e.ReferenceNo).IsUnique();
+            entity.HasIndex(e => e.WorkflowStatus);
+            entity.HasIndex(e => e.ApproverId);
+            entity.HasIndex(e => e.RequestedBy);
+            entity.HasIndex(e => e.RequiredApprovalDate);
+            entity.HasIndex(e => e.CreatedAt);
+        });
+
+        modelBuilder.Entity<Entities.EaFms.ApprovalCycle>(entity =>
+        {
+            entity.ToTable("ea_approval_cycles", "public");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).UseIdentityByDefaultColumn();
+
+            entity.Property(e => e.CycleNo).IsRequired();
+            entity.Property(e => e.SubmittedAt).HasColumnType("timestamp with time zone");
+            entity.Property(e => e.SubmittedBy).HasMaxLength(100);
+            entity.Property(e => e.RequiredApprovalDate).HasColumnType("timestamp with time zone");
+            entity.Property(e => e.ApproverId).HasMaxLength(100);
+            entity.Property(e => e.Status).HasMaxLength(100);
+            entity.Property(e => e.ChangeReason).HasMaxLength(2000);
+            entity.Property(e => e.DecisionComment).HasMaxLength(2000);
+            entity.Property(e => e.CreatedAt).HasColumnType("timestamp with time zone");
+            entity.Property(e => e.UpdatedAt).HasColumnType("timestamp with time zone");
+
+            entity.HasIndex(e => new { e.ApprovalRequestId, e.CycleNo }).IsUnique().HasDatabaseName("UX_ea_approval_cycles_ApprovalRequestId_CycleNo");
+            entity.HasIndex(e => e.ApprovalRequestId);
+        });
+
+        // Approval documents and related approval-specific tables are not created here.
+        // Use shared ea_attachments and ea_audit_logs for documents and history.
+
+        // ApprovalHistory is intentionally not created; re-use ea_audit_logs/ea_workflow_history for history events.
+
+        // ApprovalReminder is not created here; reminders use existing ea_notifications/ea_followups mechanisms.
+
+        // ApprovalEscalation table is not created here. Use ea_escalations for escalation data.
+
         modelBuilder.Entity<Meeting>(entity =>
         {
             entity.ToTable("ea_meetings", "public");
@@ -114,6 +197,12 @@ public class EaFmsDbContext : DbContext
             entity.Property(e => e.Description).HasMaxLength(4000);
             entity.Property(e => e.Purpose).HasMaxLength(2000);
 
+            entity.Property(e => e.DoerIds).HasColumnType("text[]").IsRequired().HasDefaultValueSql("ARRAY[]::text[]");
+            entity.Property(e => e.DoerNames).HasColumnType("text[]").IsRequired().HasDefaultValueSql("ARRAY[]::text[]");
+            entity.ToTable("ea_meetings", "public", t => t.HasCheckConstraint("CK_ea_meetings_DoerPairs",
+                "cardinality(\"DoerIds\") = cardinality(\"DoerNames\") AND array_position(\"DoerIds\", NULL) IS NULL AND array_position(\"DoerNames\", NULL) IS NULL"));
+            entity.Property(e => e.CompletionMom).HasMaxLength(4000);
+            entity.HasOne(e => e.CompletionPdfAttachment).WithMany().HasForeignKey(e => e.CompletionPdfAttachmentId).OnDelete(DeleteBehavior.Restrict);
             entity.Property(e => e.MeetingType).HasMaxLength(200);
             entity.Property(e => e.Category).HasMaxLength(200);
 
@@ -622,21 +711,51 @@ public class EaFmsDbContext : DbContext
 
         modelBuilder.Entity<TatRule>(entity =>
         {
-            entity.ToTable("ea_tat_rules", "public");
+            entity.ToTable("ea_tat_rules", "public", t =>
+                t.HasCheckConstraint("CK_ea_tat_rules_TatMinutes_Positive", "\"TatMinutes\" > 0"));
             entity.HasKey(e => e.Id);
-
-            entity.Property(e => e.BusinessModuleId);
-            entity.Property(e => e.OperationCode).HasMaxLength(200);
-            entity.Property(e => e.PriorityLevelId);
-            entity.Property(e => e.Minutes);
+            entity.Property(e => e.Id).UseIdentityByDefaultColumn();
+            entity.Property(e => e.BusinessModuleId).HasColumnType("bigint").IsRequired();
+            entity.Property(e => e.Type).HasMaxLength(200);
+            entity.Property(e => e.Subtype).HasMaxLength(200);
+            entity.Property(e => e.TatMinutes).HasColumnType("integer").IsRequired();
             entity.Property(e => e.IsActive);
             entity.Property(e => e.CreatedBy).IsRequired().HasMaxLength(100);
+            entity.Property(e => e.CreatedDate).HasColumnType("timestamp with time zone");
             entity.Property(e => e.ModifiedBy).HasMaxLength(100);
+            entity.Property(e => e.ModifiedDate).HasColumnType("timestamp with time zone");
             entity.Property(e => e.IsDeleted);
 
             entity.HasIndex(e => e.BusinessModuleId);
-            entity.HasIndex(e => e.OperationCode);
-            entity.HasIndex(e => e.PriorityLevelId);
+            // Normalized active combination uniqueness is an expression index in the focused migration.
+            // Keep it out of EF's raw-column indexes: lower(btrim(...)) must be identical to lookup.
+            entity.HasOne(e => e.BusinessModule).WithMany().HasForeignKey(e => e.BusinessModuleId)
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<EaTask>(entity =>
+        {
+            entity.ToTable("ea_tasks", "public", t =>
+                t.HasCheckConstraint("CK_ea_tasks_AllottedTatMinutes_Positive", "\"AllottedTatMinutes\" > 0"));
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).UseIdentityByDefaultColumn();
+            entity.Property(e => e.BusinessModuleId).HasColumnType("bigint").IsRequired();
+            entity.Property(e => e.BusinessRecordId).HasMaxLength(200).IsRequired();
+            entity.Property(e => e.Task).HasMaxLength(500).IsRequired();
+            entity.Property(e => e.Description).HasColumnType("text");
+            entity.Property(e => e.AllottedTatMinutes).HasColumnType("integer").IsRequired();
+            entity.Property(e => e.CreatedBy).HasMaxLength(100).IsRequired();
+            entity.Property(e => e.ModifiedBy).HasMaxLength(100);
+            entity.Property(e => e.CreatedDate).HasColumnType("timestamp with time zone");
+            entity.Property(e => e.ModifiedDate).HasColumnType("timestamp with time zone");
+            entity.HasOne(e => e.BusinessModule).WithMany().HasForeignKey(e => e.BusinessModuleId)
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(e => e.WorkflowInstance).WithMany().HasForeignKey(e => e.WorkflowInstanceId)
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasIndex(e => e.BusinessModuleId);
+            entity.HasIndex(e => e.BusinessRecordId);
+            entity.HasIndex(e => e.WorkflowInstanceId);
+            entity.HasIndex(e => new { e.BusinessModuleId, e.BusinessRecordId });
         });
 
         // ==========================================

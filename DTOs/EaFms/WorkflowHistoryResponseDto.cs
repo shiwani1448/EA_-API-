@@ -14,4 +14,6 @@ public class WorkflowHistoryResponseDto
     public DateTime ChangedAt { get; set; }
     public string? CreatedBy { get; set; }
     public DateTime CreatedDate { get; set; }
+    public string? StageOwnerId { get; set; }
+    public string? StageOwnerName { get; set; }
 }

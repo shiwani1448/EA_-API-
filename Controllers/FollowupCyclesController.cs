@@ -12,8 +12,9 @@ public class FollowupCyclesController : ControllerBase
     public FollowupCyclesController(IFollowupCycleService service) => _service = service;
 
     [HttpPost]
-    public async Task<ActionResult<FollowupCycleResponseDto>> Create(long followupId, [FromBody] CreateFollowupCycleRequestDto dto, CancellationToken ct)
+    public async Task<ActionResult<FollowupCycleResponseDto>> Create(long followupId, [FromBody] CreateFollowupCycleRequestDto? dto, CancellationToken ct)
     {
+        dto ??= new CreateFollowupCycleRequestDto();
         var cycle = await _service.CreateAsync(followupId, dto, ct);
         return CreatedAtAction(nameof(Get), new { followupId, cycleId = cycle.Id }, cycle);
     }

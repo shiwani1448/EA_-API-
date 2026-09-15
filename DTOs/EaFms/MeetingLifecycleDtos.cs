@@ -2,36 +2,27 @@ using System.Text.Json.Serialization;
 
 namespace Jarvis5.Dtos.EaFms;
 
-[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
-public class MeetingStartRequestDto
-{
-    public string? Notes { get; set; }
-}
+public class MeetingStartRequestDto { }
+public class MeetingPauseRequestDto { }
+public class MeetingResumeRequestDto { }
 
-[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
-public class MeetingPauseRequestDto
-{
-    public string Remark { get; set; } = string.Empty;
-}
-
-[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
-public class MeetingResumeRequestDto
-{
-    public string? Remark { get; set; }
-}
-
-/// <summary>
-/// Meeting business completion contract. Only fields supported by the current Meeting model.
-/// Minutes/decisions/actions remain on their dedicated Meeting child APIs — not invented here.
-/// </summary>
-[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 public class MeetingCompleteRequestDto
 {
-    public string Notes { get; set; } = string.Empty;
+    [System.ComponentModel.DataAnnotations.Required]
+    [System.ComponentModel.DataAnnotations.StringLength(4000, MinimumLength = 1)]
+    [Microsoft.AspNetCore.Mvc.FromForm(Name = "completionMom")]
+    public string CompletionMom { get; set; } = string.Empty;
+    [System.ComponentModel.DataAnnotations.Required]
+    [Microsoft.AspNetCore.Mvc.FromForm(Name = "completionPdf")]
+    public Microsoft.AspNetCore.Http.IFormFile CompletionPdf { get; set; } = null!;
 }
 
 public class MeetingLifecycleResponseDto
 {
+    public string? Type { get; set; }
+    public string? Subtype { get; set; }
+    public List<MeetingDoerDto> Doers { get; set; } = new();
+    public MeetingAssignmentSummaryDto? AssignmentSummary { get; set; }
     public long MeetingId { get; set; }    public string? StatusName { get; set; }
     public string ExecutionState { get; set; } = "Running";
     public bool IsPaused { get; set; }
@@ -41,10 +32,16 @@ public class MeetingLifecycleResponseDto
     public DateTime? MeetingCompletedAt { get; set; }
     public bool IsActive { get; set; }
     public string? Notes { get; set; }
+    public string? CompletionMom { get; set; }
+    public long? CompletionPdfAttachmentId { get; set; }
 }
 
 public class MeetingPauseResponseDto
 {
+    public string? Type { get; set; }
+    public string? Subtype { get; set; }
+    public List<MeetingDoerDto> Doers { get; set; } = new();
+    public MeetingAssignmentSummaryDto? AssignmentSummary { get; set; }
     public long MeetingId { get; set; }
     public long PauseId { get; set; }
     public string? Remark { get; set; }

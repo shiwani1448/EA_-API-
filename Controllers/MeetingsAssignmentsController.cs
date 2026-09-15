@@ -94,8 +94,9 @@ public class MeetingsAssignmentsController : ControllerBase
     }
 
     [HttpPost("/api/ea/meetings/{meetingId:long}/assign")]
-    public async Task<IActionResult> Assign(long meetingId, [FromBody] CreateAssignmentRequestDto dto, CancellationToken ct)
+    public async Task<IActionResult> Assign(long meetingId, [FromBody] CreateAssignmentRequestDto? dto, CancellationToken ct)
     {
+        dto ??= new CreateAssignmentRequestDto();
         var meeting = await _context.Meetings.FirstOrDefaultAsync(m => m.Id == meetingId && !m.IsDeleted, ct);
         if (meeting is null) return NotFound();
         if (!meeting.WorkflowInstanceId.HasValue) return BadRequest(new { error = "Meeting has no workflow instance" });
@@ -180,5 +181,5 @@ public class MeetingsAssignmentsController : ControllerBase
     }
 
     [HttpPost("/api/ea/meetings/{meetingId:long}/reassign")]
-    public Task<IActionResult> Reassign(long meetingId, [FromBody] CreateAssignmentRequestDto dto, CancellationToken ct) => Assign(meetingId, dto, ct);
+    public Task<IActionResult> Reassign(long meetingId, [FromBody] CreateAssignmentRequestDto? dto, CancellationToken ct) => Assign(meetingId, dto, ct);
 }

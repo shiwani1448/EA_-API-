@@ -43,8 +43,9 @@ public class MeetingsActionsController : ControllerBase
     }
 
     [HttpPost]
-    public async Task<IActionResult> Create(long meetingId, [FromBody] CreateMeetingActionDto dto, CancellationToken ct)
+    public async Task<IActionResult> Create(long meetingId, [FromBody] CreateMeetingActionDto? dto, CancellationToken ct)
     {
+        dto ??= new CreateMeetingActionDto();
         var m = await _context.Meetings.FirstOrDefaultAsync(x => x.Id == meetingId && !x.IsDeleted, ct);
         if (m is null) return NotFound();
 

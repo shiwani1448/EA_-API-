@@ -7,7 +7,7 @@ public class MeetingActionDtoValidator : AbstractValidator<CreateMeetingActionDt
 {
     public MeetingActionDtoValidator()
     {
-        RuleFor(x => x.Title).NotEmpty().MaximumLength(500);
+        RuleFor(x => x.Title).MaximumLength(500);
         RuleFor(x => x.PriorityLevelId).GreaterThan(0);
         RuleFor(x => x.Description).MaximumLength(4000);
         RuleFor(x => x.OwnerName).MaximumLength(200);

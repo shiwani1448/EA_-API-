@@ -7,7 +7,7 @@ public class CreateIntakeClassificationDtoValidator : AbstractValidator<CreateIn
 {
     public CreateIntakeClassificationDtoValidator()
     {
-        RuleFor(x => x.Name).NotEmpty().MaximumLength(200);
+        RuleFor(x => x.Name).MaximumLength(200);
         RuleFor(x => x.Details).MaximumLength(2000);
     }
 }

@@ -7,7 +7,7 @@ public class CreateIntakeRequestDtoValidator : AbstractValidator<CreateIntakeReq
 {
     public CreateIntakeRequestDtoValidator()
     {
-        RuleFor(x => x.Title).NotEmpty().MaximumLength(500);
+        RuleFor(x => x.Title).MaximumLength(500);
         RuleFor(x => x.Description).MaximumLength(4000);
         RuleFor(x => x.RequiredDate).Must(d => d == null || d.Value.Kind == DateTimeKind.Utc).WithMessage("RequiredDate must be UTC or null");
         RuleFor(x => x.BusinessModuleId).GreaterThan(0).When(x => x.BusinessModuleId.HasValue);

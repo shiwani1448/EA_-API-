@@ -154,6 +154,12 @@ builder.Services.AddDbContext<HrmsDbContext>(options =>
 builder.Services.AddDbContext<EaFmsDbContext>(options =>
     options.UseNpgsql(connectionString));
 
+// EA services
+builder.Services.AddScoped<Jarvis5.Services.EaFms.IApprovalDocumentService, Jarvis5.Services.EaFms.ApprovalDocumentService>();
+builder.Services.AddScoped<Jarvis5.Services.EaFms.IApprovalAuthorizationService, Jarvis5.Services.EaFms.ApprovalAuthorizationService>();
+builder.Services.AddScoped<Jarvis5.Services.EaFms.IApprovalLifecycleService, Jarvis5.Services.EaFms.ApprovalLifecycleService>();
+// Ensure DI registrations for approval services exist (no-op change).
+
 // ============================================================
 // JWT AUTHENTICATION
 // ============================================================
@@ -323,6 +329,10 @@ builder.Services.AddScoped<
     AttachmentService>();
 
 // EA FMS Intake services/repositories
+builder.Services.AddScoped<Jarvis5.Repositories.EaFms.ITatRuleRepository, Jarvis5.Repositories.EaFms.TatRuleRepository>();
+builder.Services.AddScoped<Jarvis5.Repositories.EaFms.IEaTaskRepository, Jarvis5.Repositories.EaFms.EaTaskRepository>();
+builder.Services.AddScoped<Jarvis5.Services.EaFms.ITatRuleService, Jarvis5.Services.EaFms.TatRuleService>();
+builder.Services.AddScoped<Jarvis5.Services.EaFms.IEaTaskService, Jarvis5.Services.EaFms.EaTaskService>();
 builder.Services.AddScoped<Jarvis5.Repositories.EaFms.IIntakeRepository, Jarvis5.Repositories.EaFms.IntakeRepository>();
 builder.Services.AddScoped<Jarvis5.Services.EaFms.IIntakeService, Jarvis5.Services.EaFms.IntakeService>();
 builder.Services.AddScoped<Jarvis5.Repositories.EaFms.IWorkflowRepository, Jarvis5.Repositories.EaFms.WorkflowRepository>();
@@ -338,10 +348,15 @@ builder.Services.AddScoped<Jarvis5.Services.EaFms.IEscalationService, Jarvis5.Se
 // EA audit service
 builder.Services.AddScoped<Jarvis5.Repositories.EaFms.IMeetingRepository, Jarvis5.Repositories.EaFms.MeetingRepository>();
 builder.Services.AddScoped<Jarvis5.Services.EaFms.IMeetingService, Jarvis5.Services.EaFms.MeetingService>();
+builder.Services.AddScoped<Jarvis5.Services.EaFms.IMeetingCompletionFileStore, Jarvis5.Services.EaFms.MeetingCompletionFileStore>();
 builder.Services.AddScoped<Jarvis5.Services.EaFms.IMeetingLifecycleService, Jarvis5.Services.EaFms.MeetingLifecycleService>();
 builder.Services.AddScoped<Jarvis5.Services.EaFms.IAuditService, Jarvis5.Services.EaFms.AuditService>();
 // EA notifications
 builder.Services.AddScoped<Jarvis5.Services.EaFms.INotificationService, Jarvis5.Services.EaFms.NotificationService>();
+// Approval services
+builder.Services.AddScoped<Jarvis5.Repositories.EaFms.IApprovalNumberRepository, Jarvis5.Repositories.EaFms.ApprovalRepository>();
+builder.Services.AddScoped<Jarvis5.Services.EaFms.ApprovalService>();
+// Ensure ITatRuleService is available for ApprovalService TAT resolution (already registered above)
 
 // ============================================================
 // ANTHROPIC / CLAUDE
@@ -475,6 +490,9 @@ builder.Services.AddScoped<
 builder.Services.AddScoped<
     hrms_api.Services.IOnboardingEvidenceProcessor,
     hrms_api.Services.OnboardingEvidenceProcessor>();
+
+// Add registration for ApprovalLifecycleService
+builder.Services.AddScoped<Jarvis5.Services.EaFms.IApprovalLifecycleService, Jarvis5.Services.EaFms.ApprovalLifecycleService>();
 
 // ============================================================
 // BUILD APPLICATION

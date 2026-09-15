@@ -10,8 +10,19 @@ public class MeetingDetailResponseDto
     public string? Description { get; set; }
     public string? Purpose { get; set; }
 
-    public string? MeetingType { get; set; }
-    public string? Category { get; set; }
+    // Stored task TAT snapshot (null for historical Meetings without a task)
+    public long ModuleId { get; set; }
+    public string ModuleName { get; set; } = string.Empty;
+    public int? TatMinutes { get; set; }
+
+    // Frontend task/TAT binding (task/description from Meeting; allotted from ea_tasks snapshot when present)
+    public string? Task { get; set; }
+    public int? AllottedTatMinutes { get; set; }
+    public long? EaTaskId { get; set; }
+
+    public string? Type { get; set; }
+    public string? Subtype { get; set; }
+    public List<MeetingDoerDto> Doers { get; set; } = new();
 
     public string? Source { get; set; }
     public string? SourceChannel { get; set; }
@@ -43,6 +54,8 @@ public class MeetingDetailResponseDto
 
     public DateTime? StartedAt { get; set; }
     public DateTime? CompletedAt { get; set; }
+    public string? CompletionMom { get; set; }
+    public long? CompletionPdfAttachmentId { get; set; }
     public DateTime? ArchivedAt { get; set; }
 
     public string CreatedBy { get; set; } = string.Empty;

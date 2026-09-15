@@ -1,0 +1,147 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TestRun id="571bba48-25ef-4db8-a78b-58c5f611d47e" name="Admin@PRATIKSHA 2026-09-15 10:35:37" runUser="PRATIKSHA\Admin" xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010">
+  <Times creation="2026-09-15T10:35:37.3313573+05:30" queuing="2026-09-15T10:35:37.3313581+05:30" start="2026-09-15T10:35:32.7511093+05:30" finish="2026-09-15T10:35:38.6341879+05:30" />
+  <TestSettings name="default" id="50208e41-e4d4-47f1-8c2c-9cbe51a15372">
+    <Deployment runDeploymentRoot="Admin_PRATIKSHA_2026-09-15_10_35_37" />
+  </TestSettings>
+  <Results>
+    <UnitTestResult executionId="c7cb9100-6cc1-49c0-871b-c238c3528058" testId="47c6c862-03f3-66b8-4a2e-52b2777cce20" testName="Jarvis5.Tests.EaFms.ApprovalDocuments.ApprovalDocumentServiceComprehensiveTests.CycleLinking_ExplicitCycleBelongingToAnotherRequest_IsRejected" computerName="PRATIKSHA" duration="00:00:01.9054498" startTime="2026-09-15T10:35:37.6554298+05:30" endTime="2026-09-15T10:35:37.6554302+05:30" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="c7cb9100-6cc1-49c0-871b-c238c3528058" />
+    <UnitTestResult executionId="0013ef75-b33b-432d-a592-d5e3cccc1ed5" testId="d7693bb1-ac03-ed24-04e3-3c0ca91b5dec" testName="Jarvis5.Tests.EaFms.ApprovalDocuments.ApprovalDocumentServiceComprehensiveTests.Upload_SuccessfulUpload_PersistsAttachmentAndWritesFileAndAudit" computerName="PRATIKSHA" duration="00:00:00.0605042" startTime="2026-09-15T10:35:38.1822494+05:30" endTime="2026-09-15T10:35:38.1822500+05:30" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="0013ef75-b33b-432d-a592-d5e3cccc1ed5" />
+    <UnitTestResult executionId="a7d6d358-32c8-4cdc-aa5f-c4f17442814c" testId="500093b8-f8da-94fb-4491-5917398d3c87" testName="Jarvis5.Tests.EaFms.ApprovalDocuments.ApprovalDocumentServiceComprehensiveTests.Upload_InvalidExtension_Throws" computerName="PRATIKSHA" duration="00:00:00.0150009" startTime="2026-09-15T10:35:38.1213762+05:30" endTime="2026-09-15T10:35:38.1213766+05:30" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="a7d6d358-32c8-4cdc-aa5f-c4f17442814c" />
+    <UnitTestResult executionId="4a654753-fb9a-4d41-a62f-35b8b91d0c65" testId="fe8ead08-9d11-c930-f2eb-92b7e91f155e" testName="Jarvis5.Tests.EaFms.ApprovalDocuments.ApprovalDocumentServiceComprehensiveTests.Delete_SoftDeleteAndExclusionAndAudit" computerName="PRATIKSHA" duration="00:00:00.1527452" startTime="2026-09-15T10:35:38.4144438+05:30" endTime="2026-09-15T10:35:38.4144442+05:30" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="4a654753-fb9a-4d41-a62f-35b8b91d0c65" />
+    <UnitTestResult executionId="2e8f79c0-9465-45ed-8ffa-5967518789b2" testId="02afa38e-05c2-e3e9-b00f-a68921ca0540" testName="Jarvis5.Tests.EaFms.ApprovalDocuments.ApprovalDocumentServiceComprehensiveTests.AuditAndFailureCleanup_FileDeletedOnPersistenceFailure" computerName="PRATIKSHA" duration="00:00:00.0269013" startTime="2026-09-15T10:35:38.0796862+05:30" endTime="2026-09-15T10:35:38.0796867+05:30" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="2e8f79c0-9465-45ed-8ffa-5967518789b2" />
+    <UnitTestResult executionId="5b584d88-1c31-4f6c-ac5f-3d780727af44" testId="89c90b6f-d2e2-4a48-88c8-d272b2f51a67" testName="Jarvis5.Tests.EaFms.ApprovalDocuments.ApprovalDocumentServiceComprehensiveTests.CycleLinking_MissingCurrentCycle_IsRejected" computerName="PRATIKSHA" duration="00:00:00.0290056" startTime="2026-09-15T10:35:38.4750964+05:30" endTime="2026-09-15T10:35:38.4750967+05:30" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="5b584d88-1c31-4f6c-ac5f-3d780727af44" />
+    <UnitTestResult executionId="623cfc0e-e4bd-4c99-9403-8fd17ced063e" testId="eaa74c76-cdaf-39db-4aa0-fb43339eeb2f" testName="Jarvis5.Tests.EaFms.ApprovalDocuments.ApprovalDocumentServiceComprehensiveTests.Architecture_NoProhibitedApprovalSpecificEntities" computerName="PRATIKSHA" duration="00:00:00.0012600" startTime="2026-09-15T10:35:37.6568385+05:30" endTime="2026-09-15T10:35:37.6568388+05:30" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="623cfc0e-e4bd-4c99-9403-8fd17ced063e" />
+    <UnitTestResult executionId="47e80f7c-571f-4e24-8a6f-872f62fdb05c" testId="9b4d25ff-df8c-71f3-b365-4bcf7c767e99" testName="Jarvis5.Tests.EaFms.ApprovalDocuments.ApprovalDocumentServiceComprehensiveTests.Authorization_CreatorApproverAndUnauthorizedBehaviors" computerName="PRATIKSHA" duration="00:00:00.0444770" startTime="2026-09-15T10:35:38.2270140+05:30" endTime="2026-09-15T10:35:38.2270142+05:30" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="47e80f7c-571f-4e24-8a6f-872f62fdb05c" />
+    <UnitTestResult executionId="384af92f-236b-4090-be66-eb1f77f5f136" testId="2d528b27-9efe-ca41-d1f4-9f19a4b7800d" testName="Jarvis5.Tests.EaFms.ApprovalDocuments.ApprovalDocumentServiceComprehensiveTests.Lifecycle_UploadAllowedAndDeniedByWorkflowStatus" computerName="PRATIKSHA" duration="00:00:00.3607244" startTime="2026-09-15T10:35:38.0202689+05:30" endTime="2026-09-15T10:35:38.0202692+05:30" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="384af92f-236b-4090-be66-eb1f77f5f136" />
+    <UnitTestResult executionId="429deb30-80d7-43fb-8fc7-9f69441725e5" testId="6ffb0b13-2b95-ecb7-ac2e-fb956ecf8a48" testName="Jarvis5.Tests.EaFms.ApprovalDocuments.ApprovalDocumentServiceComprehensiveTests.Upload_PathTraversalClientFilename_IsSanitizedAndStoredSafely" computerName="PRATIKSHA" duration="00:00:00.0208908" startTime="2026-09-15T10:35:38.2615023+05:30" endTime="2026-09-15T10:35:38.2615026+05:30" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="429deb30-80d7-43fb-8fc7-9f69441725e5" />
+    <UnitTestResult executionId="0fc28e2f-e5de-40e9-8458-7bf2f9c08bc9" testId="1a8bf7fa-341a-bd4b-e11f-60cc4f1b1ee7" testName="Jarvis5.Tests.EaFms.ApprovalDocuments.ApprovalDocumentServiceComprehensiveTests.Upload_EmptyFile_Throws" computerName="PRATIKSHA" duration="00:00:00.0153591" startTime="2026-09-15T10:35:38.1062771+05:30" endTime="2026-09-15T10:35:38.1062774+05:30" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="0fc28e2f-e5de-40e9-8458-7bf2f9c08bc9" />
+    <UnitTestResult executionId="d2e57920-62d4-48fb-bc3a-d5f816251e58" testId="e5d0b6f3-9c78-aa2f-5127-0039dbeb091b" testName="Jarvis5.Tests.EaFms.ApprovalDocuments.ApprovalDocumentServiceTests.Upload_MissingFile_Throws" computerName="PRATIKSHA" duration="00:00:00.2581758" startTime="2026-09-15T10:35:36.0144185+05:30" endTime="2026-09-15T10:35:36.0144881+05:30" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="d2e57920-62d4-48fb-bc3a-d5f816251e58" />
+    <UnitTestResult executionId="b4ff5998-8383-47d4-ab53-33f9b89330a0" testId="51cb915f-288e-2475-38f2-147b2dc3b264" testName="Jarvis5.Tests.EaFms.ApprovalDocuments.ApprovalDocumentServiceComprehensiveTests.CycleLinking_ExplicitNonCurrentCycle_IsRejected" computerName="PRATIKSHA" duration="00:00:00.0109529" startTime="2026-09-15T10:35:38.0907668+05:30" endTime="2026-09-15T10:35:38.0907669+05:30" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="b4ff5998-8383-47d4-ab53-33f9b89330a0" />
+    <UnitTestResult executionId="711cbfa2-37f9-49a4-9870-fb095125bb79" testId="ff41ec65-028d-9f15-77b3-d1514896bae7" testName="Jarvis5.Tests.EaFms.ApprovalDocuments.ApprovalDocumentServiceComprehensiveTests.CycleLinking_OmittedApprovalCycleId_ResolvesCurrentCycleNo" computerName="PRATIKSHA" duration="00:00:00.0310302" startTime="2026-09-15T10:35:38.4468400+05:30" endTime="2026-09-15T10:35:38.4468405+05:30" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="711cbfa2-37f9-49a4-9870-fb095125bb79" />
+    <UnitTestResult executionId="8f38fd6b-547f-4fb1-84a6-f21b721aac59" testId="5b640411-ba30-7cab-0297-6eefd026bf91" testName="Jarvis5.Tests.EaFms.ApprovalDocuments.ApprovalDocumentServiceComprehensiveTests.CycleLinking_CurrentCycleChangeDuringTransaction_IsRejected" computerName="PRATIKSHA" duration="00:00:00.0010000" startTime="2026-09-15T10:35:38.1240975+05:30" endTime="2026-09-15T10:35:38.1240979+05:30" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="NotExecuted" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="8f38fd6b-547f-4fb1-84a6-f21b721aac59">
+      <Output>
+        <StdOut>Requires simulation of concurrent change of current cycle inside DB transaction; environment does not provide easy hook. Marked as blocker.</StdOut>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="cde77171-91fe-45ac-88e8-ddd6da6e60a7" testId="1ed41273-c4d5-ed76-e91e-03f772074dd8" testName="Jarvis5.Tests.EaFms.ApprovalDocuments.ApprovalDocumentServiceComprehensiveTests.CycleLinking_ExplicitValidCurrentCycle_AllowsUpload" computerName="PRATIKSHA" duration="00:00:00.0307370" startTime="2026-09-15T10:35:38.0525469+05:30" endTime="2026-09-15T10:35:38.0525490+05:30" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="cde77171-91fe-45ac-88e8-ddd6da6e60a7" />
+    <UnitTestResult executionId="f46eb299-f80a-4c6b-9f09-caca4fe99919" testId="79ec618d-bd8f-d64a-7822-32f76eb6320f" testName="Jarvis5.Tests.EaFms.ApprovalDocuments.ApprovalDocumentServiceIntegrationTests.Upload_WithNoCurrentCycle_IsRejected" computerName="PRATIKSHA" duration="00:00:01.8902907" startTime="2026-09-15T10:35:37.6404478+05:30" endTime="2026-09-15T10:35:37.6404482+05:30" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="f46eb299-f80a-4c6b-9f09-caca4fe99919" />
+    <UnitTestResult executionId="3ca72b43-2941-4934-a521-7f917f05d404" testId="87b8445f-8ee5-4895-9eeb-a297d3e165fe" testName="Jarvis5.Tests.EaFms.ApprovalDocuments.ApprovalDocumentServiceComprehensiveTests.Upload_OversizedFile_Throws" computerName="PRATIKSHA" duration="00:00:00.0133540" startTime="2026-09-15T10:35:38.2404766+05:30" endTime="2026-09-15T10:35:38.2404769+05:30" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="3ca72b43-2941-4934-a521-7f917f05d404" />
+  </Results>
+  <TestDefinitions>
+    <UnitTest name="Jarvis5.Tests.EaFms.ApprovalDocuments.ApprovalDocumentServiceComprehensiveTests.Upload_PathTraversalClientFilename_IsSanitizedAndStoredSafely" storage="c:\users\admin\documents\db_jarvis_api\studio5jarvis_master_api-main\tests\bin\debug\net8.0\studio5jarvis.tests.dll" id="6ffb0b13-2b95-ecb7-ac2e-fb956ecf8a48">
+      <Execution id="429deb30-80d7-43fb-8fc7-9f69441725e5" />
+      <TestMethod codeBase="C:\Users\Admin\Documents\DB_JARVIS_API\Studio5Jarvis_Master_API-main\Tests\bin\Debug\net8.0\Studio5Jarvis.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="Jarvis5.Tests.EaFms.ApprovalDocuments.ApprovalDocumentServiceComprehensiveTests" name="Upload_PathTraversalClientFilename_IsSanitizedAndStoredSafely" />
+    </UnitTest>
+    <UnitTest name="Jarvis5.Tests.EaFms.ApprovalDocuments.ApprovalDocumentServiceComprehensiveTests.Upload_InvalidExtension_Throws" storage="c:\users\admin\documents\db_jarvis_api\studio5jarvis_master_api-main\tests\bin\debug\net8.0\studio5jarvis.tests.dll" id="500093b8-f8da-94fb-4491-5917398d3c87">
+      <Execution id="a7d6d358-32c8-4cdc-aa5f-c4f17442814c" />
+      <TestMethod codeBase="C:\Users\Admin\Documents\DB_JARVIS_API\Studio5Jarvis_Master_API-main\Tests\bin\Debug\net8.0\Studio5Jarvis.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="Jarvis5.Tests.EaFms.ApprovalDocuments.ApprovalDocumentServiceComprehensiveTests" name="Upload_InvalidExtension_Throws" />
+    </UnitTest>
+    <UnitTest name="Jarvis5.Tests.EaFms.ApprovalDocuments.ApprovalDocumentServiceComprehensiveTests.Upload_SuccessfulUpload_PersistsAttachmentAndWritesFileAndAudit" storage="c:\users\admin\documents\db_jarvis_api\studio5jarvis_master_api-main\tests\bin\debug\net8.0\studio5jarvis.tests.dll" id="d7693bb1-ac03-ed24-04e3-3c0ca91b5dec">
+      <Execution id="0013ef75-b33b-432d-a592-d5e3cccc1ed5" />
+      <TestMethod codeBase="C:\Users\Admin\Documents\DB_JARVIS_API\Studio5Jarvis_Master_API-main\Tests\bin\Debug\net8.0\Studio5Jarvis.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="Jarvis5.Tests.EaFms.ApprovalDocuments.ApprovalDocumentServiceComprehensiveTests" name="Upload_SuccessfulUpload_PersistsAttachmentAndWritesFileAndAudit" />
+    </UnitTest>
+    <UnitTest name="Jarvis5.Tests.EaFms.ApprovalDocuments.ApprovalDocumentServiceComprehensiveTests.Delete_SoftDeleteAndExclusionAndAudit" storage="c:\users\admin\documents\db_jarvis_api\studio5jarvis_master_api-main\tests\bin\debug\net8.0\studio5jarvis.tests.dll" id="fe8ead08-9d11-c930-f2eb-92b7e91f155e">
+      <Execution id="4a654753-fb9a-4d41-a62f-35b8b91d0c65" />
+      <TestMethod codeBase="C:\Users\Admin\Documents\DB_JARVIS_API\Studio5Jarvis_Master_API-main\Tests\bin\Debug\net8.0\Studio5Jarvis.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="Jarvis5.Tests.EaFms.ApprovalDocuments.ApprovalDocumentServiceComprehensiveTests" name="Delete_SoftDeleteAndExclusionAndAudit" />
+    </UnitTest>
+    <UnitTest name="Jarvis5.Tests.EaFms.ApprovalDocuments.ApprovalDocumentServiceComprehensiveTests.CycleLinking_ExplicitCycleBelongingToAnotherRequest_IsRejected" storage="c:\users\admin\documents\db_jarvis_api\studio5jarvis_master_api-main\tests\bin\debug\net8.0\studio5jarvis.tests.dll" id="47c6c862-03f3-66b8-4a2e-52b2777cce20">
+      <Execution id="c7cb9100-6cc1-49c0-871b-c238c3528058" />
+      <TestMethod codeBase="C:\Users\Admin\Documents\DB_JARVIS_API\Studio5Jarvis_Master_API-main\Tests\bin\Debug\net8.0\Studio5Jarvis.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="Jarvis5.Tests.EaFms.ApprovalDocuments.ApprovalDocumentServiceComprehensiveTests" name="CycleLinking_ExplicitCycleBelongingToAnotherRequest_IsRejected" />
+    </UnitTest>
+    <UnitTest name="Jarvis5.Tests.EaFms.ApprovalDocuments.ApprovalDocumentServiceComprehensiveTests.AuditAndFailureCleanup_FileDeletedOnPersistenceFailure" storage="c:\users\admin\documents\db_jarvis_api\studio5jarvis_master_api-main\tests\bin\debug\net8.0\studio5jarvis.tests.dll" id="02afa38e-05c2-e3e9-b00f-a68921ca0540">
+      <Execution id="2e8f79c0-9465-45ed-8ffa-5967518789b2" />
+      <TestMethod codeBase="C:\Users\Admin\Documents\DB_JARVIS_API\Studio5Jarvis_Master_API-main\Tests\bin\Debug\net8.0\Studio5Jarvis.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="Jarvis5.Tests.EaFms.ApprovalDocuments.ApprovalDocumentServiceComprehensiveTests" name="AuditAndFailureCleanup_FileDeletedOnPersistenceFailure" />
+    </UnitTest>
+    <UnitTest name="Jarvis5.Tests.EaFms.ApprovalDocuments.ApprovalDocumentServiceComprehensiveTests.Lifecycle_UploadAllowedAndDeniedByWorkflowStatus" storage="c:\users\admin\documents\db_jarvis_api\studio5jarvis_master_api-main\tests\bin\debug\net8.0\studio5jarvis.tests.dll" id="2d528b27-9efe-ca41-d1f4-9f19a4b7800d">
+      <Execution id="384af92f-236b-4090-be66-eb1f77f5f136" />
+      <TestMethod codeBase="C:\Users\Admin\Documents\DB_JARVIS_API\Studio5Jarvis_Master_API-main\Tests\bin\Debug\net8.0\Studio5Jarvis.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="Jarvis5.Tests.EaFms.ApprovalDocuments.ApprovalDocumentServiceComprehensiveTests" name="Lifecycle_UploadAllowedAndDeniedByWorkflowStatus" />
+    </UnitTest>
+    <UnitTest name="Jarvis5.Tests.EaFms.ApprovalDocuments.ApprovalDocumentServiceComprehensiveTests.CycleLinking_OmittedApprovalCycleId_ResolvesCurrentCycleNo" storage="c:\users\admin\documents\db_jarvis_api\studio5jarvis_master_api-main\tests\bin\debug\net8.0\studio5jarvis.tests.dll" id="ff41ec65-028d-9f15-77b3-d1514896bae7">
+      <Execution id="711cbfa2-37f9-49a4-9870-fb095125bb79" />
+      <TestMethod codeBase="C:\Users\Admin\Documents\DB_JARVIS_API\Studio5Jarvis_Master_API-main\Tests\bin\Debug\net8.0\Studio5Jarvis.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="Jarvis5.Tests.EaFms.ApprovalDocuments.ApprovalDocumentServiceComprehensiveTests" name="CycleLinking_OmittedApprovalCycleId_ResolvesCurrentCycleNo" />
+    </UnitTest>
+    <UnitTest name="Jarvis5.Tests.EaFms.ApprovalDocuments.ApprovalDocumentServiceComprehensiveTests.Architecture_NoProhibitedApprovalSpecificEntities" storage="c:\users\admin\documents\db_jarvis_api\studio5jarvis_master_api-main\tests\bin\debug\net8.0\studio5jarvis.tests.dll" id="eaa74c76-cdaf-39db-4aa0-fb43339eeb2f">
+      <Execution id="623cfc0e-e4bd-4c99-9403-8fd17ced063e" />
+      <TestMethod codeBase="C:\Users\Admin\Documents\DB_JARVIS_API\Studio5Jarvis_Master_API-main\Tests\bin\Debug\net8.0\Studio5Jarvis.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="Jarvis5.Tests.EaFms.ApprovalDocuments.ApprovalDocumentServiceComprehensiveTests" name="Architecture_NoProhibitedApprovalSpecificEntities" />
+    </UnitTest>
+    <UnitTest name="Jarvis5.Tests.EaFms.ApprovalDocuments.ApprovalDocumentServiceComprehensiveTests.Upload_OversizedFile_Throws" storage="c:\users\admin\documents\db_jarvis_api\studio5jarvis_master_api-main\tests\bin\debug\net8.0\studio5jarvis.tests.dll" id="87b8445f-8ee5-4895-9eeb-a297d3e165fe">
+      <Execution id="3ca72b43-2941-4934-a521-7f917f05d404" />
+      <TestMethod codeBase="C:\Users\Admin\Documents\DB_JARVIS_API\Studio5Jarvis_Master_API-main\Tests\bin\Debug\net8.0\Studio5Jarvis.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="Jarvis5.Tests.EaFms.ApprovalDocuments.ApprovalDocumentServiceComprehensiveTests" name="Upload_OversizedFile_Throws" />
+    </UnitTest>
+    <UnitTest name="Jarvis5.Tests.EaFms.ApprovalDocuments.ApprovalDocumentServiceComprehensiveTests.CycleLinking_CurrentCycleChangeDuringTransaction_IsRejected" storage="c:\users\admin\documents\db_jarvis_api\studio5jarvis_master_api-main\tests\bin\debug\net8.0\studio5jarvis.tests.dll" id="5b640411-ba30-7cab-0297-6eefd026bf91">
+      <Execution id="8f38fd6b-547f-4fb1-84a6-f21b721aac59" />
+      <TestMethod codeBase="C:\Users\Admin\Documents\DB_JARVIS_API\Studio5Jarvis_Master_API-main\Tests\bin\Debug\net8.0\Studio5Jarvis.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="Jarvis5.Tests.EaFms.ApprovalDocuments.ApprovalDocumentServiceComprehensiveTests" name="CycleLinking_CurrentCycleChangeDuringTransaction_IsRejected" />
+    </UnitTest>
+    <UnitTest name="Jarvis5.Tests.EaFms.ApprovalDocuments.ApprovalDocumentServiceComprehensiveTests.CycleLinking_MissingCurrentCycle_IsRejected" storage="c:\users\admin\documents\db_jarvis_api\studio5jarvis_master_api-main\tests\bin\debug\net8.0\studio5jarvis.tests.dll" id="89c90b6f-d2e2-4a48-88c8-d272b2f51a67">
+      <Execution id="5b584d88-1c31-4f6c-ac5f-3d780727af44" />
+      <TestMethod codeBase="C:\Users\Admin\Documents\DB_JARVIS_API\Studio5Jarvis_Master_API-main\Tests\bin\Debug\net8.0\Studio5Jarvis.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="Jarvis5.Tests.EaFms.ApprovalDocuments.ApprovalDocumentServiceComprehensiveTests" name="CycleLinking_MissingCurrentCycle_IsRejected" />
+    </UnitTest>
+    <UnitTest name="Jarvis5.Tests.EaFms.ApprovalDocuments.ApprovalDocumentServiceComprehensiveTests.Authorization_CreatorApproverAndUnauthorizedBehaviors" storage="c:\users\admin\documents\db_jarvis_api\studio5jarvis_master_api-main\tests\bin\debug\net8.0\studio5jarvis.tests.dll" id="9b4d25ff-df8c-71f3-b365-4bcf7c767e99">
+      <Execution id="47e80f7c-571f-4e24-8a6f-872f62fdb05c" />
+      <TestMethod codeBase="C:\Users\Admin\Documents\DB_JARVIS_API\Studio5Jarvis_Master_API-main\Tests\bin\Debug\net8.0\Studio5Jarvis.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="Jarvis5.Tests.EaFms.ApprovalDocuments.ApprovalDocumentServiceComprehensiveTests" name="Authorization_CreatorApproverAndUnauthorizedBehaviors" />
+    </UnitTest>
+    <UnitTest name="Jarvis5.Tests.EaFms.ApprovalDocuments.ApprovalDocumentServiceComprehensiveTests.CycleLinking_ExplicitNonCurrentCycle_IsRejected" storage="c:\users\admin\documents\db_jarvis_api\studio5jarvis_master_api-main\tests\bin\debug\net8.0\studio5jarvis.tests.dll" id="51cb915f-288e-2475-38f2-147b2dc3b264">
+      <Execution id="b4ff5998-8383-47d4-ab53-33f9b89330a0" />
+      <TestMethod codeBase="C:\Users\Admin\Documents\DB_JARVIS_API\Studio5Jarvis_Master_API-main\Tests\bin\Debug\net8.0\Studio5Jarvis.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="Jarvis5.Tests.EaFms.ApprovalDocuments.ApprovalDocumentServiceComprehensiveTests" name="CycleLinking_ExplicitNonCurrentCycle_IsRejected" />
+    </UnitTest>
+    <UnitTest name="Jarvis5.Tests.EaFms.ApprovalDocuments.ApprovalDocumentServiceComprehensiveTests.CycleLinking_ExplicitValidCurrentCycle_AllowsUpload" storage="c:\users\admin\documents\db_jarvis_api\studio5jarvis_master_api-main\tests\bin\debug\net8.0\studio5jarvis.tests.dll" id="1ed41273-c4d5-ed76-e91e-03f772074dd8">
+      <Execution id="cde77171-91fe-45ac-88e8-ddd6da6e60a7" />
+      <TestMethod codeBase="C:\Users\Admin\Documents\DB_JARVIS_API\Studio5Jarvis_Master_API-main\Tests\bin\Debug\net8.0\Studio5Jarvis.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="Jarvis5.Tests.EaFms.ApprovalDocuments.ApprovalDocumentServiceComprehensiveTests" name="CycleLinking_ExplicitValidCurrentCycle_AllowsUpload" />
+    </UnitTest>
+    <UnitTest name="Jarvis5.Tests.EaFms.ApprovalDocuments.ApprovalDocumentServiceComprehensiveTests.Upload_EmptyFile_Throws" storage="c:\users\admin\documents\db_jarvis_api\studio5jarvis_master_api-main\tests\bin\debug\net8.0\studio5jarvis.tests.dll" id="1a8bf7fa-341a-bd4b-e11f-60cc4f1b1ee7">
+      <Execution id="0fc28e2f-e5de-40e9-8458-7bf2f9c08bc9" />
+      <TestMethod codeBase="C:\Users\Admin\Documents\DB_JARVIS_API\Studio5Jarvis_Master_API-main\Tests\bin\Debug\net8.0\Studio5Jarvis.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="Jarvis5.Tests.EaFms.ApprovalDocuments.ApprovalDocumentServiceComprehensiveTests" name="Upload_EmptyFile_Throws" />
+    </UnitTest>
+    <UnitTest name="Jarvis5.Tests.EaFms.ApprovalDocuments.ApprovalDocumentServiceIntegrationTests.Upload_WithNoCurrentCycle_IsRejected" storage="c:\users\admin\documents\db_jarvis_api\studio5jarvis_master_api-main\tests\bin\debug\net8.0\studio5jarvis.tests.dll" id="79ec618d-bd8f-d64a-7822-32f76eb6320f">
+      <Execution id="f46eb299-f80a-4c6b-9f09-caca4fe99919" />
+      <TestMethod codeBase="C:\Users\Admin\Documents\DB_JARVIS_API\Studio5Jarvis_Master_API-main\Tests\bin\Debug\net8.0\Studio5Jarvis.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="Jarvis5.Tests.EaFms.ApprovalDocuments.ApprovalDocumentServiceIntegrationTests" name="Upload_WithNoCurrentCycle_IsRejected" />
+    </UnitTest>
+    <UnitTest name="Jarvis5.Tests.EaFms.ApprovalDocuments.ApprovalDocumentServiceTests.Upload_MissingFile_Throws" storage="c:\users\admin\documents\db_jarvis_api\studio5jarvis_master_api-main\tests\bin\debug\net8.0\studio5jarvis.tests.dll" id="e5d0b6f3-9c78-aa2f-5127-0039dbeb091b">
+      <Execution id="d2e57920-62d4-48fb-bc3a-d5f816251e58" />
+      <TestMethod codeBase="C:\Users\Admin\Documents\DB_JARVIS_API\Studio5Jarvis_Master_API-main\Tests\bin\Debug\net8.0\Studio5Jarvis.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="Jarvis5.Tests.EaFms.ApprovalDocuments.ApprovalDocumentServiceTests" name="Upload_MissingFile_Throws" />
+    </UnitTest>
+  </TestDefinitions>
+  <TestEntries>
+    <TestEntry testId="47c6c862-03f3-66b8-4a2e-52b2777cce20" executionId="c7cb9100-6cc1-49c0-871b-c238c3528058" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="d7693bb1-ac03-ed24-04e3-3c0ca91b5dec" executionId="0013ef75-b33b-432d-a592-d5e3cccc1ed5" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="500093b8-f8da-94fb-4491-5917398d3c87" executionId="a7d6d358-32c8-4cdc-aa5f-c4f17442814c" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="fe8ead08-9d11-c930-f2eb-92b7e91f155e" executionId="4a654753-fb9a-4d41-a62f-35b8b91d0c65" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="02afa38e-05c2-e3e9-b00f-a68921ca0540" executionId="2e8f79c0-9465-45ed-8ffa-5967518789b2" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="89c90b6f-d2e2-4a48-88c8-d272b2f51a67" executionId="5b584d88-1c31-4f6c-ac5f-3d780727af44" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="eaa74c76-cdaf-39db-4aa0-fb43339eeb2f" executionId="623cfc0e-e4bd-4c99-9403-8fd17ced063e" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="9b4d25ff-df8c-71f3-b365-4bcf7c767e99" executionId="47e80f7c-571f-4e24-8a6f-872f62fdb05c" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="2d528b27-9efe-ca41-d1f4-9f19a4b7800d" executionId="384af92f-236b-4090-be66-eb1f77f5f136" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="6ffb0b13-2b95-ecb7-ac2e-fb956ecf8a48" executionId="429deb30-80d7-43fb-8fc7-9f69441725e5" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="1a8bf7fa-341a-bd4b-e11f-60cc4f1b1ee7" executionId="0fc28e2f-e5de-40e9-8458-7bf2f9c08bc9" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="e5d0b6f3-9c78-aa2f-5127-0039dbeb091b" executionId="d2e57920-62d4-48fb-bc3a-d5f816251e58" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="51cb915f-288e-2475-38f2-147b2dc3b264" executionId="b4ff5998-8383-47d4-ab53-33f9b89330a0" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="ff41ec65-028d-9f15-77b3-d1514896bae7" executionId="711cbfa2-37f9-49a4-9870-fb095125bb79" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="5b640411-ba30-7cab-0297-6eefd026bf91" executionId="8f38fd6b-547f-4fb1-84a6-f21b721aac59" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="1ed41273-c4d5-ed76-e91e-03f772074dd8" executionId="cde77171-91fe-45ac-88e8-ddd6da6e60a7" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="79ec618d-bd8f-d64a-7822-32f76eb6320f" executionId="f46eb299-f80a-4c6b-9f09-caca4fe99919" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="87b8445f-8ee5-4895-9eeb-a297d3e165fe" executionId="3ca72b43-2941-4934-a521-7f917f05d404" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+  </TestEntries>
+  <TestLists>
+    <TestList name="Results Not in a List" id="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestList name="All Loaded Results" id="19431567-8539-422a-85d7-44ee4e166bda" />
+  </TestLists>
+  <ResultSummary outcome="Completed">
+    <Counters total="18" executed="17" passed="17" failed="0" error="0" timeout="0" aborted="0" inconclusive="0" passedButRunAborted="0" notRunnable="0" notExecuted="0" disconnected="0" warning="0" completed="0" inProgress="0" pending="0" />
+    <Output>
+      <StdOut>[xUnit.net 00:00:00.00] xUnit.net VSTest Adapter v2.4.3+1b45f5407b (64-bit .NET 8.0.31)&#xD;
+[xUnit.net 00:00:01.97]   Discovering: Studio5Jarvis.Tests&#xD;
+[xUnit.net 00:00:02.02]   Discovered:  Studio5Jarvis.Tests&#xD;
+[xUnit.net 00:00:02.03]   Starting:    Studio5Jarvis.Tests&#xD;
+[xUnit.net 00:00:04.46]       Requires simulation of concurrent change of current cycle inside DB transaction; environment does not provide easy hook. Marked as blocker.&#xD;
+[xUnit.net 00:00:04.83]   Finished:    Studio5Jarvis.Tests&#xD;
+Test 'Jarvis5.Tests.EaFms.ApprovalDocuments.ApprovalDocumentServiceComprehensiveTests.CycleLinking_CurrentCycleChangeDuringTransaction_IsRejected' was skipped in the test run.&#xD;
+</StdOut>
+    </Output>
+    <RunInfos>
+      <RunInfo computerName="PRATIKSHA" outcome="Warning" timestamp="2026-09-15T10:35:38.1333746+05:30">
+        <Text>[xUnit.net 00:00:04.46]     Jarvis5.Tests.EaFms.ApprovalDocuments.ApprovalDocumentServiceComprehensiveTests.CycleLinking_CurrentCycleChangeDuringTransaction_IsRejected [SKIP]</Text>
+      </RunInfo>
+    </RunInfos>
+  </ResultSummary>
+</TestRun>

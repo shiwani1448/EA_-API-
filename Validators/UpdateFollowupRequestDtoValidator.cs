@@ -7,7 +7,6 @@ public class UpdateFollowupRequestDtoValidator : AbstractValidator<UpdateFollowu
 {
     public UpdateFollowupRequestDtoValidator()
     {
-        RuleFor(x => x.DueAt).NotEmpty();
         RuleFor(x => x.Note).MaximumLength(2000);
         RuleFor(x => x.Subject).MaximumLength(200);
         RuleFor(x => x.Type).MaximumLength(100);

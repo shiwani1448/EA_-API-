@@ -22,15 +22,17 @@ public class FollowupsController : ControllerBase
         => Ok(await _followupService.GetPagedAsync(query, ct));
 
     [HttpPost]
-    public async Task<IActionResult> Create([FromBody] CreateFollowupRequestDto dto, CancellationToken ct)
+    public async Task<IActionResult> Create([FromBody] CreateFollowupRequestDto? dto, CancellationToken ct)
     {
+        dto ??= new CreateFollowupRequestDto();
         var created = await _followupService.CreateAsync(dto, ct);
         return CreatedAtAction(nameof(GetById), new { id = created.Id }, created);
     }
 
     [HttpPost("{id:long}/record-followup")]
-    public async Task<IActionResult> RecordFollowup(long id, [FromBody] RecordFollowupRequestDto dto, CancellationToken ct)
+    public async Task<IActionResult> RecordFollowup(long id, [FromBody] RecordFollowupRequestDto? dto, CancellationToken ct)
     {
+        dto ??= new RecordFollowupRequestDto();
         await _followupService.RecordFollowupAsync(id, dto, ct);
         return NoContent();
     }
@@ -50,29 +52,33 @@ public class FollowupsController : ControllerBase
     }
 
     [HttpPut("{id:long}")]
-    public async Task<IActionResult> Update(long id, [FromBody] UpdateFollowupRequestDto dto, CancellationToken ct)
+    public async Task<IActionResult> Update(long id, [FromBody] UpdateFollowupRequestDto? dto, CancellationToken ct)
     {
+        dto ??= new UpdateFollowupRequestDto();
         var updated = await _followupService.UpdateAsync(id, dto, ct);
         return Ok(updated);
     }
 
     [HttpPost("{id:long}/complete")]
-    public async Task<IActionResult> Complete(long id, [FromBody] CompleteFollowupRequestDto dto, CancellationToken ct)
+    public async Task<IActionResult> Complete(long id, [FromBody] CompleteFollowupRequestDto? dto, CancellationToken ct)
     {
+        dto ??= new CompleteFollowupRequestDto();
         return Ok(await _followupService.CompleteAsync(id, dto, ct));
     }
 
     // Escalations
     [HttpPost("/api/ea/escalations")]
-    public async Task<IActionResult> CreateEscalation([FromBody] CreateEscalationRequestDto dto, CancellationToken ct)
+    public async Task<IActionResult> CreateEscalation([FromBody] CreateEscalationRequestDto? dto, CancellationToken ct)
     {
+        dto ??= new CreateEscalationRequestDto();
         var created = await _escalationService.CreateAsync(dto, ct);
         return CreatedAtAction("GetById", "Escalations", new { id = created.Id }, created);
     }
     // Followup-scoped escalation creation: POST /api/ea/followups/{id}/escalations
     [HttpPost("{id:long}/escalations")]
-    public async Task<IActionResult> CreateEscalationForFollowup(long id, [FromBody] CreateEscalationRequestDto dto, CancellationToken ct)
+    public async Task<IActionResult> CreateEscalationForFollowup(long id, [FromBody] CreateEscalationRequestDto? dto, CancellationToken ct)
     {
+        dto ??= new CreateEscalationRequestDto();
         // Reconcile route id and dto.FollowupId: prefer route id; if dto provides FollowupId it must match
         if (dto.FollowupId != 0 && dto.FollowupId != id)
         {

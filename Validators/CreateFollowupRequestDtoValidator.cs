@@ -9,13 +9,12 @@ public class CreateFollowupRequestDtoValidator : AbstractValidator<CreateFollowu
     {
         RuleFor(x => x.IntakeRequestId).GreaterThan(0).When(x => x.IntakeRequestId.HasValue);
         RuleFor(x => x.BusinessModuleId).GreaterThan(0).When(x => x.BusinessModuleId.HasValue);
-        RuleFor(x => x.BusinessRecordId).NotEmpty().MaximumLength(200).When(x => x.BusinessRecordId != null);
+        RuleFor(x => x.BusinessRecordId).MaximumLength(200).When(x => x.BusinessRecordId != null);
         RuleFor(x => x).Must(x => x.BusinessModuleId.HasValue == (x.BusinessRecordId != null))
             .WithMessage("BusinessModuleId and BusinessRecordId must be provided together.");
         RuleFor(x => x.WorkflowInstanceId).GreaterThan(0).When(x => x.WorkflowInstanceId.HasValue);
-        RuleFor(x => x.DueAt).NotEmpty();
         RuleFor(x => x.Note).MaximumLength(2000);
-        RuleFor(x => x.Subject).NotEmpty().MaximumLength(500);
+        RuleFor(x => x.Subject).MaximumLength(500);
         RuleFor(x => x.Type).MaximumLength(100);
         RuleFor(x => x.AssignedToId).MaximumLength(100);
         RuleFor(x => x.AssignedToName).MaximumLength(200);

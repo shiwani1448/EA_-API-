@@ -21,7 +21,10 @@ public class MeetingRepository : IMeetingRepository
 
     public Task UpdateAsync(Meeting meeting)
     {
-        _context.Meetings.Update(meeting);
+        // Tracked Meetings must update only changed fields. Marking every field modified
+        // could overwrite completion evidence committed by a concurrent lifecycle request.
+        if (_context.Entry(meeting).State == EntityState.Detached)
+            _context.Meetings.Update(meeting);
         return Task.CompletedTask;
     }
 

@@ -224,6 +224,73 @@ namespace Studio5JarvisMasterApi.Migrations
                     b.ToTable("ea_business_modules", "public");
                 });
 
+            modelBuilder.Entity("Jarvis5.Entities.EaFms.EaTask", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<int>("AllottedTatMinutes")
+                        .HasColumnType("integer");
+
+                    b.Property<long>("BusinessModuleId")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("BusinessRecordId")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<DateTime>("CreatedDate")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Description")
+                        .HasColumnType("text");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("ModifiedBy")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<DateTime?>("ModifiedDate")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Task")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<long?>("WorkflowInstanceId")
+                        .HasColumnType("bigint");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("BusinessModuleId");
+
+                    b.HasIndex("BusinessRecordId");
+
+                    b.HasIndex("WorkflowInstanceId");
+
+                    b.HasIndex("BusinessModuleId", "BusinessRecordId");
+
+                    b.ToTable("ea_tasks", "public", t =>
+                        {
+                            t.HasCheckConstraint("CK_ea_tasks_AllottedTatMinutes_Positive", "\"AllottedTatMinutes\" > 0");
+                        });
+                });
+
             modelBuilder.Entity("Jarvis5.Entities.EaFms.Escalation", b =>
                 {
                     b.Property<long>("Id")
@@ -708,6 +775,13 @@ namespace Studio5JarvisMasterApi.Migrations
                     b.Property<DateTime?>("CompletedAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<string>("CompletionMom")
+                        .HasMaxLength(4000)
+                        .HasColumnType("character varying(4000)");
+
+                    b.Property<long?>("CompletionPdfAttachmentId")
+                        .HasColumnType("bigint");
+
                     b.Property<string>("CreatedBy")
                         .IsRequired()
                         .HasMaxLength(100)
@@ -719,6 +793,18 @@ namespace Studio5JarvisMasterApi.Migrations
                     b.Property<string>("Description")
                         .HasMaxLength(4000)
                         .HasColumnType("character varying(4000)");
+
+                    b.Property<string[]>("DoerIds")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("text[]")
+                        .HasDefaultValueSql("ARRAY[]::text[]");
+
+                    b.Property<string[]>("DoerNames")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("text[]")
+                        .HasDefaultValueSql("ARRAY[]::text[]");
 
                     b.Property<DateTime?>("EndDateTime")
                         .HasColumnType("timestamp with time zone");
@@ -811,6 +897,8 @@ namespace Studio5JarvisMasterApi.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("CompletionPdfAttachmentId");
+
                     b.HasIndex("IntakeRequestId");
 
                     b.HasIndex("MeetingDate");
@@ -825,7 +913,10 @@ namespace Studio5JarvisMasterApi.Migrations
 
                     b.HasIndex("WorkflowInstanceId");
 
-                    b.ToTable("ea_meetings", "public");
+                    b.ToTable("ea_meetings", "public", t =>
+                        {
+                            t.HasCheckConstraint("CK_ea_meetings_DoerPairs", "cardinality(\"DoerIds\") = cardinality(\"DoerNames\") AND array_position(\"DoerIds\", NULL) IS NULL AND array_position(\"DoerNames\", NULL) IS NULL");
+                        });
                 });
 
             modelBuilder.Entity("Jarvis5.Entities.EaFms.MeetingAction", b =>
@@ -1373,8 +1464,8 @@ namespace Studio5JarvisMasterApi.Migrations
 
                     NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
 
-                    b.Property<int>("BusinessModuleId")
-                        .HasColumnType("integer");
+                    b.Property<long>("BusinessModuleId")
+                        .HasColumnType("bigint");
 
                     b.Property<string>("CreatedBy")
                         .IsRequired()
@@ -1390,9 +1481,6 @@ namespace Studio5JarvisMasterApi.Migrations
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("boolean");
 
-                    b.Property<int>("Minutes")
-                        .HasColumnType("integer");
-
                     b.Property<string>("ModifiedBy")
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)");
@@ -1400,22 +1488,25 @@ namespace Studio5JarvisMasterApi.Migrations
                     b.Property<DateTime?>("ModifiedDate")
                         .HasColumnType("timestamp with time zone");
 
-                    b.Property<string>("OperationCode")
+                    b.Property<string>("Subtype")
                         .HasMaxLength(200)
                         .HasColumnType("character varying(200)");
 
-                    b.Property<int?>("PriorityLevelId")
+                    b.Property<int>("TatMinutes")
                         .HasColumnType("integer");
+
+                    b.Property<string>("Type")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
 
                     b.HasKey("Id");
 
                     b.HasIndex("BusinessModuleId");
 
-                    b.HasIndex("OperationCode");
-
-                    b.HasIndex("PriorityLevelId");
-
-                    b.ToTable("ea_tat_rules", "public");
+                    b.ToTable("ea_tat_rules", "public", t =>
+                        {
+                            t.HasCheckConstraint("CK_ea_tat_rules_TatMinutes_Positive", "\"TatMinutes\" > 0");
+                        });
                 });
 
             modelBuilder.Entity("Jarvis5.Entities.EaFms.WorkAssignment", b =>
@@ -1848,6 +1939,24 @@ namespace Studio5JarvisMasterApi.Migrations
                     b.ToTable("ea_workflow_instances", "public");
                 });
 
+            modelBuilder.Entity("Jarvis5.Entities.EaFms.EaTask", b =>
+                {
+                    b.HasOne("Jarvis5.Entities.EaFms.BusinessModule", "BusinessModule")
+                        .WithMany()
+                        .HasForeignKey("BusinessModuleId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Jarvis5.Entities.EaFms.WorkflowInstance", "WorkflowInstance")
+                        .WithMany()
+                        .HasForeignKey("WorkflowInstanceId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.Navigation("BusinessModule");
+
+                    b.Navigation("WorkflowInstance");
+                });
+
             modelBuilder.Entity("Jarvis5.Entities.EaFms.Escalation", b =>
                 {
                     b.HasOne("Jarvis5.Entities.EaFms.EscalationLevel", "EscalationLevel")
@@ -1934,6 +2043,11 @@ namespace Studio5JarvisMasterApi.Migrations
 
             modelBuilder.Entity("Jarvis5.Entities.EaFms.Meeting", b =>
                 {
+                    b.HasOne("Jarvis5.Entities.EaFms.Attachment", "CompletionPdfAttachment")
+                        .WithMany()
+                        .HasForeignKey("CompletionPdfAttachmentId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.HasOne("Jarvis5.Entities.EaFms.IntakeRequest", "IntakeRequest")
                         .WithMany()
                         .HasForeignKey("IntakeRequestId");
@@ -1941,6 +2055,8 @@ namespace Studio5JarvisMasterApi.Migrations
                     b.HasOne("Jarvis5.Entities.EaFms.WorkflowInstance", "WorkflowInstance")
                         .WithMany()
                         .HasForeignKey("WorkflowInstanceId");
+
+                    b.Navigation("CompletionPdfAttachment");
 
                     b.Navigation("IntakeRequest");
 
@@ -2000,6 +2116,17 @@ namespace Studio5JarvisMasterApi.Migrations
                         .IsRequired();
 
                     b.Navigation("Meeting");
+                });
+
+            modelBuilder.Entity("Jarvis5.Entities.EaFms.TatRule", b =>
+                {
+                    b.HasOne("Jarvis5.Entities.EaFms.BusinessModule", "BusinessModule")
+                        .WithMany()
+                        .HasForeignKey("BusinessModuleId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("BusinessModule");
                 });
 
             modelBuilder.Entity("Jarvis5.Entities.EaFms.WorkAssignment", b =>

@@ -10,8 +10,14 @@ public class MeetingListItemResponseDto
     public string? Description { get; set; }
     public string? Purpose { get; set; }
 
-    public string? MeetingType { get; set; }
-    public string? Category { get; set; }
+    // Stored task TAT snapshot (null for historical Meetings without a task)
+    public long ModuleId { get; set; }
+    public string ModuleName { get; set; } = string.Empty;
+    public int? TatMinutes { get; set; }
+
+    public string? Type { get; set; }
+    public string? Subtype { get; set; }
+    public List<MeetingDoerDto> Doers { get; set; } = new();
 
     public DateTime? MeetingDate { get; set; }
     public DateTime? StartDateTime { get; set; }

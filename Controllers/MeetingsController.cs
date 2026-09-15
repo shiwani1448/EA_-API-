@@ -16,13 +16,16 @@ public class MeetingsController : ControllerBase
     }
 
     [HttpPost]
-    public async Task<IActionResult> Create([FromBody] CreateMeetingRequestDto dto, CancellationToken ct)
+    [ProducesResponseType(typeof(MeetingDetailResponseDto), 201)]
+    public async Task<IActionResult> Create([FromBody] CreateMeetingRequestDto? dto, CancellationToken ct)
     {
+        dto ??= new CreateMeetingRequestDto();
         var m = await _service.CreateAsync(dto, ct);
         return CreatedAtAction(nameof(GetById), new { id = m.MeetingId }, m);
     }
 
     [HttpGet]
+    [ProducesResponseType(typeof(List<MeetingListItemResponseDto>), 200)]
     public async Task<IActionResult> Query([FromQuery] string? search, [FromQuery] int page = 1, [FromQuery] int pageSize = 50, CancellationToken ct = default)
     {
         var list = await _service.QueryAsync(search, page, pageSize, ct);
@@ -30,6 +33,7 @@ public class MeetingsController : ControllerBase
     }
 
     [HttpGet("{id:long}")]
+    [ProducesResponseType(typeof(MeetingDetailResponseDto), 200)]
     public async Task<IActionResult> GetById(long id, CancellationToken ct)
     {
         var m = await _service.GetByIdAsync(id, ct);
@@ -37,8 +41,9 @@ public class MeetingsController : ControllerBase
     }
 
     [HttpPut("{id:long}")]
-    public async Task<IActionResult> Update(long id, [FromBody] UpdateMeetingRequestDto dto, CancellationToken ct)
+    public async Task<IActionResult> Update(long id, [FromBody] UpdateMeetingRequestDto? dto, CancellationToken ct)
     {
+        dto ??= new UpdateMeetingRequestDto();
         await _service.UpdateAsync(id, dto, ct);
         return NoContent();
     }

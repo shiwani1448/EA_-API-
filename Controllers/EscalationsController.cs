@@ -23,15 +23,17 @@ public class EscalationsController : ControllerBase
     }
 
     [HttpPost("{id:long}/resolve")]
-    public async Task<IActionResult> Resolve(long id, [FromBody] ResolveEscalationRequestDto dto, CancellationToken ct)
+    public async Task<IActionResult> Resolve(long id, [FromBody] ResolveEscalationRequestDto? dto, CancellationToken ct)
     {
+        dto ??= new ResolveEscalationRequestDto();
         await _service.ResolveAsync(id, dto, ct);
         return NoContent();
     }
 
     [HttpPost("{id:long}/acknowledge")]
-    public async Task<IActionResult> Acknowledge(long id, [FromBody] AcknowledgeEscalationRequestDto dto, CancellationToken ct)
+    public async Task<IActionResult> Acknowledge(long id, [FromBody] AcknowledgeEscalationRequestDto? dto, CancellationToken ct)
     {
+        dto ??= new AcknowledgeEscalationRequestDto();
         await _service.AcknowledgeAsync(id, dto?.AcknowledgementNote, ct);
         return NoContent();
     }

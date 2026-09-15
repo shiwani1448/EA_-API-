@@ -37,8 +37,9 @@ public class MeetingsAgendaController : ControllerBase
     }
 
     [HttpPost]
-    public async Task<IActionResult> Create(long meetingId, [FromBody] CreateMeetingAgendaDto dto, CancellationToken ct)
+    public async Task<IActionResult> Create(long meetingId, [FromBody] CreateMeetingAgendaDto? dto, CancellationToken ct)
     {
+        dto ??= new CreateMeetingAgendaDto();
         var m = await _context.Meetings.FirstOrDefaultAsync(x => x.Id == meetingId && !x.IsDeleted, ct);
         if (m is null) return NotFound();
 
@@ -64,8 +65,9 @@ public class MeetingsAgendaController : ControllerBase
     }
 
     [HttpPut("{agendaId:long}")]
-    public async Task<IActionResult> Update(long meetingId, long agendaId, [FromBody] UpdateMeetingAgendaDto dto, CancellationToken ct)
+    public async Task<IActionResult> Update(long meetingId, long agendaId, [FromBody] UpdateMeetingAgendaDto? dto, CancellationToken ct)
     {
+        dto ??= new UpdateMeetingAgendaDto();
         var agenda = await _context.MeetingAgendas.FirstOrDefaultAsync(a => a.Id == agendaId && a.MeetingId == meetingId && !a.IsDeleted, ct);
         if (agenda is null) return NotFound();
 
