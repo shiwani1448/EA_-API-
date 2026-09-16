@@ -26,7 +26,12 @@ public class ApprovalService
         _eaTaskService = eaTaskService;
     }
 
-    public async Task<ApprovalRequest> CreateDraftAsync(ApprovalRequest request, CancellationToken ct = default)
+    /// <summary>
+    /// Creates an approval request and its first normal approval cycle in one operation.
+    /// The request is left in PendingApproval (not Draft); no separate submit call is required.
+    /// Continues to use CreateWithoutTatAsync so TAT allocation remains unchanged.
+    /// </summary>
+    public async Task<ApprovalRequest> CreateAsync(ApprovalRequest request, CancellationToken ct = default)
     {
         // Validate business module exists
         var approvalModule = await _context.BusinessModules.FirstOrDefaultAsync(b => b.Name == "EA Approval" && b.IsActive && !b.IsDeleted, ct);
@@ -37,10 +42,13 @@ public class ApprovalService
 
         // generate reference
         var reference = await _repo.GenerateNextReferenceNoAsync(ct);
+        var now = Clock.UtcNowTz;
 
         request.ReferenceNo = reference;
-        request.WorkflowStatus = "Draft";
-        request.CreatedAt = DateTime.UtcNow;
+        request.WorkflowStatus = "PendingApproval";
+        request.CurrentCycleNo = 1;
+        request.CreatedAt = now;
+        request.SubmittedAt = now;
         request.CreatedBy = request.CreatedBy ?? "system";
 
         // Create the required central task before inserting ApprovalRequest. EaTaskId is a
@@ -53,7 +61,7 @@ public class ApprovalService
             BusinessRecordId = request.ReferenceNo,
             Task = request.RequestTitle ?? reference,
             Description = string.IsNullOrWhiteSpace(request.Description) ? null : request.Description?.Trim(),
-            // Preserve classification; Approval draft creation does not consume a TAT rule.
+            // Preserve classification; Approval create does not consume a TAT rule.
             Type = request.RequestType?.Trim(),
             Subtype = request.Department?.Trim(),
             WorkflowInstanceId = null
@@ -66,8 +74,21 @@ public class ApprovalService
         await _context.ApprovalRequests.AddAsync(request, ct);
         await _context.SaveChangesAsync(ct);
 
-        // Audit
-        _audit.AddAudit("Created", "EA.Approval", "ApprovalRequest", request.Id.ToString(), null, request, "Approval request created (Draft)");
+        // First normal approval cycle (same shape as lifecycle SubmitAsync cycle 1).
+        // Documents associate against this cycle via the existing documents endpoint.
+        var cycle = new ApprovalCycle
+        {
+            ApprovalRequestId = request.Id,
+            CycleNo = 1,
+            SubmittedAt = now,
+            SubmittedBy = request.CreatedBy,
+            Status = "PendingApproval",
+            CreatedAt = now
+        };
+        await _context.ApprovalCycles.AddAsync(cycle, ct);
+
+        _audit.AddAudit("Created", "EA.Approval", "ApprovalRequest", request.Id.ToString(), null, request, "Approval request created");
+        _audit.AddAudit("APPROVAL_SUBMIT", "Approval", nameof(ApprovalRequest), request.Id.ToString(), null, new { request.ReferenceNo, request.Id }, "Approval submitted");
         await _context.SaveChangesAsync(ct);
 
         await tx.CommitAsync(ct);

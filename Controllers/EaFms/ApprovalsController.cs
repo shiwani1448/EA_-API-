@@ -38,7 +38,7 @@ public class ApprovalsController : ControllerBase
             CreatedBy = dto.CreatedBy
         };
 
-        var created = await _service.CreateDraftAsync(entity, cancellationToken);
+        var created = await _service.CreateAsync(entity, cancellationToken);
 
         return CreatedAtAction(nameof(Get), new { id = created.Id }, new
         {

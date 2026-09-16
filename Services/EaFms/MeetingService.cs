@@ -130,6 +130,10 @@ public class MeetingService : IMeetingService
         Dictionary<long, WorkAssignment> currentAssignmentsByWorkflow = new();
         Dictionary<long, WorkflowInstance> workflowsById = new();
         Dictionary<int, string> statusNamesById = new();
+        // Batch-load WorkPauses for all workflows on this page in a single query.
+        // Grouped in memory by WorkflowInstanceId so each meeting gets its own pauses
+        // without an N+1 pattern.
+        Dictionary<long, List<WorkPause>> pausesByWorkflow = new();
 
         if (workflowIds.Count > 0)
         {
@@ -159,7 +163,21 @@ public class MeetingService : IMeetingService
                     .Where(s => statusIds.Contains(s.Id))
                     .ToDictionaryAsync(s => s.Id, s => s.Name, ct);
             }
+
+            // Single batch query: all WorkPauses for every workflow on the current page.
+            var allPauses = await _context.WorkPauses.AsNoTracking()
+                .Where(p => p.WorkflowInstanceId.HasValue
+                    && workflowIds.Contains(p.WorkflowInstanceId!.Value)
+                    && !p.IsDeleted)
+                .OrderBy(p => p.StartAt)
+                .ToListAsync(ct);
+
+            pausesByWorkflow = allPauses
+                .GroupBy(p => p.WorkflowInstanceId!.Value)
+                .ToDictionary(g => g.Key, g => g.ToList());
         }
+
+        var now = Clock.UtcNowTz;
 
         foreach (var item in items)
         {
@@ -176,6 +194,29 @@ public class MeetingService : IMeetingService
                 item.StartedAt = workflow.TatStartedAt;
                 item.CompletedAt = workflow.CompletedAt;
                 item.ExecutionState = string.Equals(item.StatusName, "Completed", StringComparison.OrdinalIgnoreCase) ? "Completed" : "Captured";
+
+                // Populate TAT used/paused using the same formula as GetByIdAsync:
+                //   end  = CompletedAt when completed, otherwise current UTC time.
+                //   used = (end - TatStartedAt) - paused, clamped to zero.
+                //   paused = GetPausedDuration with IsSimplePause filter (same helper as detail).
+                // Only calculated when the task has an AllottedTatMinutes value (TAT exists).
+                if (task is not null && task.AllottedTatMinutes.HasValue && workflow.TatStartedAt.HasValue)
+                {
+                    var pauses = pausesByWorkflow.TryGetValue(workflowId, out var wfPauses)
+                        ? wfPauses
+                        : new List<WorkPause>();
+
+                    var end = workflow.CompletedAt ?? now;
+                    var paused = GetPausedDuration(workflow.TatStartedAt.Value, end, pauses);
+                    var used = end - workflow.TatStartedAt.Value - paused;
+                    if (used < TimeSpan.Zero) used = TimeSpan.Zero;
+
+                    item.TatUsedMinutes = (int)used.TotalMinutes;
+                    item.TatPausedMinutes = (int)paused.TotalMinutes;
+                }
+                // When no TAT data exists (no task or no TatStartedAt), leave
+                // TatUsedMinutes/TatPausedMinutes as null — preserving existing
+                // "unavailable" behaviour and not converting nulls to 0.
             }
         }
 
@@ -430,34 +471,8 @@ public class MeetingService : IMeetingService
         dto.TatMinutes = task.AllottedTatMinutes;
     }
 
-    private static TimeSpan GetPausedDuration(DateTime tatStart, DateTime end, IEnumerable<WorkPause> pauses)
-    {
-        var intervals = pauses
-            .Where(WorkPauseClassifier.IsSimplePause)
-            .Select(p => (Start: p.StartAt > tatStart ? p.StartAt : tatStart, End: (p.EndAt ?? end) < end ? p.EndAt ?? end : end))
-            .Where(x => x.End > x.Start)
-            .OrderBy(x => x.Start)
-            .ToList();
-
-        var total = TimeSpan.Zero;
-        DateTime? currentStart = null;
-        DateTime? currentEnd = null;
-        foreach (var interval in intervals)
-        {
-            if (currentEnd is null || interval.Start > currentEnd.Value)
-            {
-                if (currentStart.HasValue) total += currentEnd!.Value - currentStart.Value;
-                currentStart = interval.Start;
-                currentEnd = interval.End;
-            }
-            else if (interval.End > currentEnd.Value)
-            {
-                currentEnd = interval.End;
-            }
-        }
-        if (currentStart.HasValue) total += currentEnd!.Value - currentStart.Value;
-        return total;
-    }
+    internal static TimeSpan GetPausedDuration(DateTime tatStart, DateTime end, IEnumerable<WorkPause> pauses)
+        => WorkPauseClassifier.GetPausedDuration(tatStart, end, pauses);
 
 
 }

@@ -24,13 +24,9 @@ public class ApprovalNoTatQueryTests
         var approval = new ApprovalRequest { EaTask = task, ReferenceNo = "APR-TEST", CreatedBy = "tester", CreatedAt = task.CreatedDate, WorkflowStatus = "Draft" };
         db.ApprovalRequests.Add(approval);
         await db.SaveChangesAsync();
-        var user = new Mock<ICurrentUserService>();
-        user.SetupGet(x => x.UserName).Returns("tester");
-        var auth = new Mock<IApprovalAuthorizationService>();
-        auth.Setup(x => x.CanPerformAsync(approval.Id, "Read", It.IsAny<CancellationToken>())).ReturnsAsync(true);
         var documents = new Mock<IApprovalDocumentService>();
         documents.Setup(x => x.ListAsync(approval.Id, It.IsAny<CancellationToken>())).ReturnsAsync(new List<ApprovalDocumentResponseDto>());
-        var service = new ApprovalQueryService(db, auth.Object, documents.Object, user.Object);
+        var service = new ApprovalQueryService(db, documents.Object);
 
         var list = await service.ListAsync(null, null, null, null, null, null, null, null, null, null, null, 1, 50, default);
         Assert.Equal(dueState, Assert.Single(list.Items).DueState);

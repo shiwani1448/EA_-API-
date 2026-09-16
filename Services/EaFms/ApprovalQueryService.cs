@@ -8,7 +8,7 @@ namespace Jarvis5.Services.EaFms;
 
 public sealed class ApprovalQueryService(EaFmsDbContext db, IApprovalDocumentService documents)
 {
-    // Canonical catalog name already used by ApprovalService.CreateDraftAsync.
+    // Canonical catalog name already used by ApprovalService.CreateAsync.
     private const string ApprovalModuleName = "EA Approval";
 
     public async Task<ApprovalListResponseDto> ListAsync(string? search, string? status, string? priority, string? approver, string? requestedBy, string? department, DateTime? createdFrom, DateTime? createdTo, DateTime? requiredFrom, DateTime? requiredTo, string? dueState, int page, int pageSize, CancellationToken ct)

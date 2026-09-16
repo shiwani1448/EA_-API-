@@ -361,6 +361,9 @@ builder.Services.AddScoped<Jarvis5.Services.EaFms.ApprovalService>();
 builder.Services.AddScoped<Jarvis5.Services.EaFms.ApprovalQueryService>();
 // Ensure ITatRuleService is available for ApprovalService TAT resolution (already registered above)
 
+// Travel services
+builder.Services.AddScoped<Jarvis5.Services.EaFms.ITravelRequestService, Jarvis5.Services.EaFms.TravelRequestService>();
+
 // ============================================================
 // ANTHROPIC / CLAUDE
 // ============================================================

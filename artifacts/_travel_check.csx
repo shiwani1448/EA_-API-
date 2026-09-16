@@ -1,0 +1,13 @@
+﻿using Jarvis5.Data.EaFms;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
+var cfg = new ConfigurationBuilder().AddJsonFile("appsettings.json").Build();
+var cs = cfg.GetConnectionString("DefaultConnection");
+var opts = new DbContextOptionsBuilder<EaFmsDbContext>().UseNpgsql(cs).Options;
+await using var db = new EaFmsDbContext(opts);
+var applied = await db.Database.SqlQueryRaw<string>("SELECT \"MigrationId\" AS \"Value\" FROM public.\"__EFMigrationsHistory\" WHERE \"MigrationId\" LIKE {0}", "%Travel%").ToListAsync();
+Console.WriteLine("AppliedTravelMigrations=" + (applied.Count==0 ? "NONE" : string.Join(",", applied)));
+var tables = await db.Database.SqlQueryRaw<int>("SELECT COUNT(*)::int AS \"Value\" FROM information_schema.tables WHERE table_schema='public' AND table_name IN ('ea_travel_requests','ea_travel_request_cycles')").ToListAsync();
+Console.WriteLine("TravelTables=" + tables[0]);
+var mods = await db.BusinessModules.AsNoTracking().Where(m => m.Name.ToLower().Contains("travel") || m.Name.ToLower().Contains("hospitality")).Select(m => new { m.Id, m.Name, m.IsActive, m.IsDeleted }).ToListAsync();
+Console.WriteLine(mods.Count==0 ? "NO_TRAVEL_MODULE" : string.Join(" | ", mods.Select(m => $"Id={m.Id};Name={m.Name};Active={m.IsActive};Deleted={m.IsDeleted}")));
