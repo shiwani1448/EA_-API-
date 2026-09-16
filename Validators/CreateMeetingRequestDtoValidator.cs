@@ -16,5 +16,6 @@ public class CreateMeetingRequestDtoValidator : AbstractValidator<CreateMeetingR
         RuleFor(x => x.OrganizerId).MaximumLength(100);
         RuleFor(x => x.OrganizerName).MaximumLength(200);
         RuleFor(x => x.MeetingLink).MaximumLength(1000);
+        RuleForEach(x => x.Doers).SetValidator(new MeetingDoerDtoValidator()).When(x => x.Doers is not null);
     }
 }

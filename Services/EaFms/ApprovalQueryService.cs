@@ -6,7 +6,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Jarvis5.Services.EaFms;
 
-public sealed class ApprovalQueryService(EaFmsDbContext db, IApprovalAuthorizationService authorization, IApprovalDocumentService documents, ICurrentUserService user)
+public sealed class ApprovalQueryService(EaFmsDbContext db, IApprovalDocumentService documents)
 {
     // Canonical catalog name already used by ApprovalService.CreateDraftAsync.
     private const string ApprovalModuleName = "EA Approval";
@@ -15,7 +15,7 @@ public sealed class ApprovalQueryService(EaFmsDbContext db, IApprovalAuthorizati
     {
         var approvalModuleId = await ResolveApprovalModuleIdAsync(ct);
         page = Math.Max(1, page); pageSize = Math.Clamp(pageSize, 1, 200);
-        var query = AuthorizedRequests(approvalModuleId);
+        var query = Requests(approvalModuleId);
         if (!string.IsNullOrWhiteSpace(search)) { var term = search.Trim(); query = query.Where(x => EF.Functions.ILike(x.ReferenceNo, $"%{term}%") || (x.RequestTitle != null && EF.Functions.ILike(x.RequestTitle, $"%{term}%"))); }
         if (!string.IsNullOrWhiteSpace(status)) query = query.Where(x => x.WorkflowStatus == status);
         if (!string.IsNullOrWhiteSpace(priority)) query = query.Where(x => x.Priority == priority);
@@ -37,7 +37,6 @@ public sealed class ApprovalQueryService(EaFmsDbContext db, IApprovalAuthorizati
     public async Task<ApprovalDetailDto?> DetailAsync(long id, CancellationToken ct)
     {
         var approvalModuleId = await ResolveApprovalModuleIdAsync(ct);
-        if (!await authorization.CanPerformAsync(id, "Read", ct)) return null;
         var request = await Requests(approvalModuleId).SingleOrDefaultAsync(x => x.Id == id, ct);
         if (request is null) return null;
         var cycles = (await db.ApprovalCycles.AsNoTracking().Where(x => x.ApprovalRequestId == id).OrderBy(x => x.CycleNo).ThenBy(x => x.Id).ToListAsync(ct)).Select(Cycle).ToList();
@@ -48,21 +47,20 @@ public sealed class ApprovalQueryService(EaFmsDbContext db, IApprovalAuthorizati
     public async Task<IReadOnlyList<ApprovalCycleDto>?> CyclesAsync(long id, CancellationToken ct)
     {
         var moduleId = await ResolveApprovalModuleIdAsync(ct);
-        if (!await ExistsAndAuthorizedAsync(id, moduleId, ct)) return null;
+        if (!await Requests(moduleId).AnyAsync(x => x.Id == id, ct)) return null;
         return (await db.ApprovalCycles.AsNoTracking().Where(x => x.ApprovalRequestId == id).OrderBy(x => x.CycleNo).ThenBy(x => x.Id).ToListAsync(ct)).Select(Cycle).ToList();
     }
 
     public async Task<IReadOnlyList<ApprovalHistoryItemDto>?> HistoryForAsync(long id, CancellationToken ct)
     {
         var moduleId = await ResolveApprovalModuleIdAsync(ct);
-        if (!await authorization.CanPerformAsync(id, "Read", ct)) return null;
         var request = await Requests(moduleId).SingleOrDefaultAsync(x => x.Id == id, ct);
         return request is null ? null : await HistoryAsync(request, ct);
     }
 
     public async Task<ApprovalDashboardDto> DashboardAsync(CancellationToken ct)
     {
-        var query = AuthorizedRequests(await ResolveApprovalModuleIdAsync(ct)); var now = Clock.UtcNowTz;
+        var query = Requests(await ResolveApprovalModuleIdAsync(ct)); var now = Clock.UtcNowTz;
         return new() { TotalRequests = await query.CountAsync(ct), PendingApproval = await query.CountAsync(x => x.WorkflowStatus == "PendingApproval", ct), Approved = await query.CountAsync(x => x.WorkflowStatus == "Approved", ct), Rejected = await query.CountAsync(x => x.WorkflowStatus == "Rejected", ct), Overdue = await query.CountAsync(x => x.EaTask.AllottedTatMinutes.HasValue && x.EaTask.CreatedDate.AddMinutes(x.EaTask.AllottedTatMinutes.Value) < now, ct) };
     }
 
@@ -74,15 +72,6 @@ public sealed class ApprovalQueryService(EaFmsDbContext db, IApprovalAuthorizati
 
     private IQueryable<ApprovalRequest> Requests(long approvalModuleId) => db.ApprovalRequests.AsNoTracking().Include(x => x.EaTask).ThenInclude(x => x.WorkflowInstance).ThenInclude(x => x!.Status).Where(x => !x.IsDeleted && x.EaTask.BusinessModuleId == approvalModuleId && x.EaTask.IsActive && !x.EaTask.IsDeleted);
 
-    private IQueryable<ApprovalRequest> AuthorizedRequests(long approvalModuleId)
-    {
-        var name = user.UserName;
-        if (user.UserId <= 0 && string.IsNullOrWhiteSpace(name)) return Requests(approvalModuleId).Where(_ => false);
-        var id = user.UserId.ToString();
-        return Requests(approvalModuleId).Where(x => x.CreatedBy == name || x.ApproverId == name || x.ApproverId == id);
-    }
-
-    private async Task<bool> ExistsAndAuthorizedAsync(long id, long approvalModuleId, CancellationToken ct) => await authorization.CanPerformAsync(id, "Read", ct) && await Requests(approvalModuleId).AnyAsync(x => x.Id == id, ct);
     private async Task<List<ApprovalHistoryItemDto>> HistoryAsync(ApprovalRequest request, CancellationToken ct)
     {
         var result = await db.AuditLogs.AsNoTracking().Where(x => (x.Module == "Approval" || x.Module == "EA.Approval") && x.EntityName == nameof(ApprovalRequest) && x.EntityId == request.Id.ToString()).Select(x => new ApprovalHistoryItemDto { Id = x.Id, EventType = x.ActionType, OccurredAt = x.OccurredAt == default ? x.CreatedDate : x.OccurredAt, ActorId = x.ActorId, ActorName = x.ActorName, Description = x.Description }).ToListAsync(ct);

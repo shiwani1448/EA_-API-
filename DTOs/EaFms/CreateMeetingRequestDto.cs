@@ -35,5 +35,7 @@ public class CreateMeetingRequestDto
 
     public bool IsConfidential { get; set; }
 
+    public List<MeetingDoerDto>? Doers { get; set; }
+
     public long? IntakeRequestId { get; set; }
 }

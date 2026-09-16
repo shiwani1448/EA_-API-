@@ -40,6 +40,7 @@ public class MeetingService : IMeetingService
 
         var now = Clock.UtcNowTz;
         var by = _currentUser.UserName ?? _currentUser.UserId.ToString();
+        var doers = dto.Doers is null ? (Array.Empty<string>(), Array.Empty<string>()) : MeetingDoers.ToArrays(dto.Doers);
 
         var m = new Meeting
         {
@@ -65,6 +66,8 @@ public class MeetingService : IMeetingService
             AgendaDueAt = dto.AgendaDueAt,
             MinutesDueAt = dto.MinutesDueAt,
             IsConfidential = dto.IsConfidential,
+            DoerIds = doers.Item1,
+            DoerNames = doers.Item2,
             IntakeRequestId = dto.IntakeRequestId,
             CreatedBy = by,
             CreatedDate = now,
@@ -339,6 +342,12 @@ public class MeetingService : IMeetingService
         m.AgendaDueAt = dto.AgendaDueAt;
         m.MinutesDueAt = dto.MinutesDueAt;
         m.IsConfidential = dto.IsConfidential;
+        if (dto.Doers is not null)
+        {
+            var doers = MeetingDoers.ToArrays(dto.Doers);
+            m.DoerIds = doers.Ids;
+            m.DoerNames = doers.Names;
+        }
         m.IntakeRequestId = dto.IntakeRequestId;
         m.ModifiedBy = _currentUser.UserName ?? _currentUser.UserId.ToString();
         m.ModifiedDate = Clock.UtcNowTz;

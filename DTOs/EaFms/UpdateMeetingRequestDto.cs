@@ -35,5 +35,8 @@ public class UpdateMeetingRequestDto
 
     public bool IsConfidential { get; set; }
 
+    // Null preserves the existing selection; an empty list explicitly clears it.
+    public List<MeetingDoerDto>? Doers { get; set; }
+
     public long? IntakeRequestId { get; set; }
 }

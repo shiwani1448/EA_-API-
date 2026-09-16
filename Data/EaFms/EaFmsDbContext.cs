@@ -41,6 +41,8 @@ public class EaFmsDbContext : DbContext
     // Approval management (EA-specific)
     public DbSet<Entities.EaFms.ApprovalRequest> ApprovalRequests { get; set; } = null!;
     public DbSet<Entities.EaFms.ApprovalCycle> ApprovalCycles { get; set; } = null!;
+    public DbSet<TravelRequest> TravelRequests { get; set; } = null!;
+    public DbSet<TravelRequestCycle> TravelRequestCycles { get; set; } = null!;
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -111,6 +113,100 @@ public class EaFmsDbContext : DbContext
 
         // Approval management sequence for ReferenceNo generation (EA-specific)
         modelBuilder.HasSequence<long>("ea_approval_no_seq").StartsAt(1).IncrementsBy(1);
+        modelBuilder.HasSequence<long>("ea_travel_no_seq").StartsAt(1).IncrementsBy(1);
+
+        modelBuilder.Entity<TravelRequest>(entity =>
+        {
+            entity.ToTable("ea_travel_requests", "public", t =>
+            {
+                t.HasCheckConstraint("CK_ea_travel_requests_CurrentCycleNo_NonNegative", "\"CurrentCycleNo\" >= 0");
+                t.HasCheckConstraint("CK_ea_travel_requests_BusinessState", "\"BusinessState\" IN ('Draft', 'Upcoming', 'Active', 'Completed', 'Cancelled')");
+                t.HasCheckConstraint("CK_ea_travel_requests_ApprovalState", "\"ApprovalState\" IN ('NotRequired', 'Pending', 'ChangesRequested', 'Approved', 'Rejected')");
+                t.HasCheckConstraint("CK_ea_travel_requests_TravelDates", "\"DepartureDate\" IS NULL OR \"ReturnDate\" IS NULL OR \"ReturnDate\" >= \"DepartureDate\"");
+                t.HasCheckConstraint("CK_ea_travel_requests_HotelDates", "\"CheckInDate\" IS NULL OR \"CheckOutDate\" IS NULL OR \"CheckOutDate\" >= \"CheckInDate\"");
+                t.HasCheckConstraint("CK_ea_travel_requests_NumberOfTravellers_Positive", "\"NumberOfTravellers\" IS NULL OR \"NumberOfTravellers\" > 0");
+                t.HasCheckConstraint("CK_ea_travel_requests_NumberOfRooms_Positive", "\"NumberOfRooms\" IS NULL OR \"NumberOfRooms\" > 0");
+                t.HasCheckConstraint("CK_ea_travel_requests_NumberOfGuests_NonNegative", "\"NumberOfGuests\" IS NULL OR \"NumberOfGuests\" >= 0");
+                t.HasCheckConstraint("CK_ea_travel_requests_EstimatedCosts_NonNegative", "(\"EstimatedTravelCost\" IS NULL OR \"EstimatedTravelCost\" >= 0) AND (\"EstimatedHotelCost\" IS NULL OR \"EstimatedHotelCost\" >= 0) AND (\"EstimatedLocalTransportCost\" IS NULL OR \"EstimatedLocalTransportCost\" >= 0) AND (\"EstimatedHospitalityCost\" IS NULL OR \"EstimatedHospitalityCost\" >= 0)");
+            });
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).UseIdentityByDefaultColumn();
+            entity.Property(e => e.ReferenceNo).HasColumnType("varchar(40)").IsRequired();
+            entity.Property(e => e.EaTaskId).HasColumnType("bigint");
+            entity.Property(e => e.CurrentCycleNo).HasDefaultValue(0);
+            entity.Property(e => e.TravellerName).HasMaxLength(200);
+            entity.Property(e => e.EmployeePersonId).HasMaxLength(100);
+            entity.Property(e => e.Department).HasMaxLength(200);
+            entity.Property(e => e.ContactInformation).HasMaxLength(500);
+            entity.Property(e => e.Purpose).HasMaxLength(1000);
+            entity.Property(e => e.TravelType).HasMaxLength(100);
+            entity.Property(e => e.FromLocation).HasMaxLength(500);
+            entity.Property(e => e.ToLocation).HasMaxLength(500);
+            entity.Property(e => e.Priority).HasMaxLength(100);
+            entity.Property(e => e.SpecialRequirements).HasMaxLength(4000);
+            entity.Property(e => e.TransportType).HasMaxLength(100);
+            entity.Property(e => e.ClassPreference).HasMaxLength(200);
+            entity.Property(e => e.BookingRequirements).HasMaxLength(4000);
+            entity.Property(e => e.Hotel).HasMaxLength(500);
+            entity.Property(e => e.RoomPreference).HasMaxLength(500);
+            entity.Property(e => e.LocationPreference).HasMaxLength(500);
+            entity.Property(e => e.PickupLocation).HasMaxLength(500);
+            entity.Property(e => e.DropLocation).HasMaxLength(500);
+            entity.Property(e => e.VehiclePreference).HasMaxLength(500);
+            entity.Property(e => e.ClientGuestDetails).HasMaxLength(4000);
+            entity.Property(e => e.HospitalityRequirement).HasMaxLength(4000);
+            entity.Property(e => e.MeetingEventPurpose).HasMaxLength(1000);
+            entity.Property(e => e.SpecialArrangements).HasMaxLength(4000);
+            entity.Property(e => e.ItineraryNotes).HasMaxLength(4000);
+            entity.Property(e => e.AdditionalInstructions).HasMaxLength(4000);
+            entity.Property(e => e.EstimatedTravelCost).HasColumnType("numeric(18,2)");
+            entity.Property(e => e.EstimatedHotelCost).HasColumnType("numeric(18,2)");
+            entity.Property(e => e.EstimatedLocalTransportCost).HasColumnType("numeric(18,2)");
+            entity.Property(e => e.EstimatedHospitalityCost).HasColumnType("numeric(18,2)");
+            entity.Property(e => e.Currency).HasMaxLength(10);
+            entity.Property(e => e.ApprovalRequired).HasDefaultValue(false);
+            entity.Property(e => e.ApproverId).HasMaxLength(100);
+            entity.Property(e => e.ApproverNameSnapshot).HasMaxLength(200);
+            entity.Property(e => e.BusinessState).HasMaxLength(30).IsRequired().HasDefaultValue("Draft");
+            entity.Property(e => e.ApprovalState).HasMaxLength(30).IsRequired().HasDefaultValue("NotRequired");
+            entity.Property(e => e.CreatedBy).HasMaxLength(100).IsRequired();
+            entity.Property(e => e.ModifiedBy).HasMaxLength(100);
+            entity.HasOne(e => e.EaTask).WithMany().HasForeignKey(e => e.EaTaskId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasIndex(e => e.ReferenceNo).IsUnique();
+            entity.HasIndex(e => e.EaTaskId).IsUnique();
+            entity.HasIndex(e => e.BusinessState);
+            entity.HasIndex(e => e.ApprovalState);
+            entity.HasIndex(e => e.Priority);
+            entity.HasIndex(e => e.ApproverId);
+            entity.HasIndex(e => e.RequiredDate);
+            entity.HasIndex(e => e.CreatedBy);
+            entity.HasIndex(e => e.DepartureDate);
+            entity.HasIndex(e => e.ModifiedDate);
+        });
+
+        modelBuilder.Entity<TravelRequestCycle>(entity =>
+        {
+            entity.ToTable("ea_travel_request_cycles", "public", t =>
+            {
+                t.HasCheckConstraint("CK_ea_travel_request_cycles_CycleNo_Positive", "\"CycleNo\" > 0");
+                t.HasCheckConstraint("CK_ea_travel_request_cycles_DecisionState", "\"DecisionState\" IS NULL OR \"DecisionState\" IN ('Pending', 'ChangesRequested', 'Approved', 'Rejected')");
+            });
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).UseIdentityByDefaultColumn();
+            entity.Property(e => e.SubmittedBy).HasMaxLength(100);
+            entity.Property(e => e.ApproverId).HasMaxLength(100);
+            entity.Property(e => e.ApproverNameSnapshot).HasMaxLength(200);
+            entity.Property(e => e.DecisionState).HasMaxLength(30);
+            entity.Property(e => e.ChangeReason).HasMaxLength(4000);
+            entity.Property(e => e.ChangesMade).HasMaxLength(4000);
+            entity.Property(e => e.DecisionComment).HasMaxLength(4000);
+            entity.Property(e => e.DecisionBy).HasMaxLength(100);
+            entity.Property(e => e.CreatedBy).HasMaxLength(100).IsRequired();
+            entity.Property(e => e.ModifiedBy).HasMaxLength(100);
+            entity.HasOne(e => e.TravelRequest).WithMany(e => e.Cycles).HasForeignKey(e => e.TravelRequestId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasIndex(e => new { e.TravelRequestId, e.CycleNo }).IsUnique().HasDatabaseName("UX_ea_travel_request_cycles_TravelRequestId_CycleNo");
+            entity.HasIndex(e => e.TravelRequestId);
+        });
 
         // EA Approval entities
         modelBuilder.Entity<Entities.EaFms.ApprovalRequest>(entity =>

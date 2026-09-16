@@ -7,7 +7,9 @@ public class MeetingDoerDtoValidator : AbstractValidator<MeetingDoerDto>
 {
     public MeetingDoerDtoValidator()
     {
-        // Frontend supplies doerId/doerName; only enforce safe storage length.
-        RuleFor(x => x.DoerName).MaximumLength(200);
+        RuleFor(x => x.DoerId).Must(value => !string.IsNullOrWhiteSpace(value))
+            .WithMessage("DoerId is required.").MaximumLength(100);
+        RuleFor(x => x.DoerName).Must(value => !string.IsNullOrWhiteSpace(value))
+            .WithMessage("DoerName is required.").MaximumLength(200);
     }
 }
