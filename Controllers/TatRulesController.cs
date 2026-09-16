@@ -33,7 +33,6 @@ public class TatRulesController(ITatRuleService service) : ControllerBase
     public async Task<IActionResult> Update(long id, [FromBody] SaveTatRuleDto? dto, CancellationToken ct)
     {
         dto ??= new SaveTatRuleDto();
-        await service.SaveAsync(id, dto, ct);
-        return NoContent();
+        return Ok(await service.SaveAsync(id, dto, ct));
     }
 }

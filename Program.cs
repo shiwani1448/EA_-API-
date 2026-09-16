@@ -330,8 +330,10 @@ builder.Services.AddScoped<
 
 // EA FMS Intake services/repositories
 builder.Services.AddScoped<Jarvis5.Repositories.EaFms.ITatRuleRepository, Jarvis5.Repositories.EaFms.TatRuleRepository>();
+builder.Services.AddScoped<Jarvis5.Repositories.EaFms.IBusinessModuleRepository, Jarvis5.Repositories.EaFms.BusinessModuleRepository>();
 builder.Services.AddScoped<Jarvis5.Repositories.EaFms.IEaTaskRepository, Jarvis5.Repositories.EaFms.EaTaskRepository>();
 builder.Services.AddScoped<Jarvis5.Services.EaFms.ITatRuleService, Jarvis5.Services.EaFms.TatRuleService>();
+builder.Services.AddScoped<Jarvis5.Services.EaFms.IBusinessModuleService, Jarvis5.Services.EaFms.BusinessModuleService>();
 builder.Services.AddScoped<Jarvis5.Services.EaFms.IEaTaskService, Jarvis5.Services.EaFms.EaTaskService>();
 builder.Services.AddScoped<Jarvis5.Repositories.EaFms.IIntakeRepository, Jarvis5.Repositories.EaFms.IntakeRepository>();
 builder.Services.AddScoped<Jarvis5.Services.EaFms.IIntakeService, Jarvis5.Services.EaFms.IntakeService>();
@@ -356,6 +358,7 @@ builder.Services.AddScoped<Jarvis5.Services.EaFms.INotificationService, Jarvis5.
 // Approval services
 builder.Services.AddScoped<Jarvis5.Repositories.EaFms.IApprovalNumberRepository, Jarvis5.Repositories.EaFms.ApprovalRepository>();
 builder.Services.AddScoped<Jarvis5.Services.EaFms.ApprovalService>();
+builder.Services.AddScoped<Jarvis5.Services.EaFms.ApprovalQueryService>();
 // Ensure ITatRuleService is available for ApprovalService TAT resolution (already registered above)
 
 // ============================================================

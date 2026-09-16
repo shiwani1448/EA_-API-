@@ -14,12 +14,14 @@ public class ApprovalLifecycleService : IApprovalLifecycleService
     private readonly EaFmsDbContext _db;
     private readonly IAuditService _audit;
     private readonly ICurrentUserService _user;
+    private readonly IApprovalAuthorizationService? _authorization;
 
-    public ApprovalLifecycleService(EaFmsDbContext db, IAuditService audit, ICurrentUserService user)
+    public ApprovalLifecycleService(EaFmsDbContext db, IAuditService audit, ICurrentUserService user, IApprovalAuthorizationService? authorization = null)
     {
         _db = db;
         _audit = audit;
         _user = user;
+        _authorization = authorization;
     }
 
     public Task<bool> IsDocumentOperationAllowed(long approvalRequestId, string operation, CancellationToken ct = default)
@@ -37,8 +39,15 @@ public class ApprovalLifecycleService : IApprovalLifecycleService
 
     private string Actor => _user.UserName ?? _user.UserId.ToString();
 
+    private async Task EnsureAuthorizedAsync(long approvalRequestId, string operation, CancellationToken ct)
+    {
+        if (_authorization is null || !await _authorization.CanPerformAsync(approvalRequestId, operation, ct))
+            throw new BusinessRuleException("Current user is not authorized to perform this operation on the Approval request.");
+    }
+
     public async Task<ApprovalRequest> SubmitAsync(long approvalRequestId, CancellationToken ct = default)
     {
+        await EnsureAuthorizedAsync(approvalRequestId, "submit", ct);
         await using var tx = await _db.Database.BeginTransactionAsync(ct);
         var req = await _db.ApprovalRequests.FirstOrDefaultAsync(a => a.Id == approvalRequestId && !a.IsDeleted, ct)
             ?? throw new NotFoundException($"Approval {approvalRequestId} not found.");
@@ -69,6 +78,7 @@ public class ApprovalLifecycleService : IApprovalLifecycleService
 
     public async Task<ApprovalRequest> ApproveAsync(long approvalRequestId, ApprovalDecisionDto dto, CancellationToken ct = default)
     {
+        await EnsureAuthorizedAsync(approvalRequestId, "approve", ct);
         await using var tx = await _db.Database.BeginTransactionAsync(ct);
         var req = await _db.ApprovalRequests.FirstOrDefaultAsync(a => a.Id == approvalRequestId && !a.IsDeleted, ct)
             ?? throw new NotFoundException($"Approval {approvalRequestId} not found.");
@@ -94,6 +104,7 @@ public class ApprovalLifecycleService : IApprovalLifecycleService
 
     public async Task<ApprovalRequest> RejectAsync(long approvalRequestId, ApprovalDecisionDto dto, CancellationToken ct = default)
     {
+        await EnsureAuthorizedAsync(approvalRequestId, "reject", ct);
         if (string.IsNullOrWhiteSpace(dto.Comment)) throw new BusinessRuleException("Reject requires a non-empty reason.");
         await using var tx = await _db.Database.BeginTransactionAsync(ct);
         var req = await _db.ApprovalRequests.FirstOrDefaultAsync(a => a.Id == approvalRequestId && !a.IsDeleted, ct)
@@ -120,6 +131,7 @@ public class ApprovalLifecycleService : IApprovalLifecycleService
 
     public async Task<ApprovalRequest> RequestChangesAsync(long approvalRequestId, ApprovalDecisionDto dto, CancellationToken ct = default)
     {
+        await EnsureAuthorizedAsync(approvalRequestId, "request-changes", ct);
         if (string.IsNullOrWhiteSpace(dto.Comment)) throw new BusinessRuleException("Request changes requires a non-empty reason.");
         await using var tx = await _db.Database.BeginTransactionAsync(ct);
         var req = await _db.ApprovalRequests.FirstOrDefaultAsync(a => a.Id == approvalRequestId && !a.IsDeleted, ct)
@@ -146,6 +158,7 @@ public class ApprovalLifecycleService : IApprovalLifecycleService
 
     public async Task<ApprovalRequest> ResubmitAsync(long approvalRequestId, CancellationToken ct = default)
     {
+        await EnsureAuthorizedAsync(approvalRequestId, "resubmit", ct);
         await using var tx = await _db.Database.BeginTransactionAsync(ct);
         var req = await _db.ApprovalRequests.FirstOrDefaultAsync(a => a.Id == approvalRequestId && !a.IsDeleted, ct)
             ?? throw new NotFoundException($"Approval {approvalRequestId} not found.");

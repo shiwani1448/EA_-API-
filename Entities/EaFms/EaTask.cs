@@ -9,7 +9,7 @@ public class EaTask
     public string Task { get; set; } = null!;
     public string? Description { get; set; }
     // Snapshot at creation; module configuration changes never update this value.
-    public int AllottedTatMinutes { get; set; }
+    public int? AllottedTatMinutes { get; set; }
     public long? WorkflowInstanceId { get; set; }
     public WorkflowInstance? WorkflowInstance { get; set; }
     public bool IsActive { get; set; } = true;

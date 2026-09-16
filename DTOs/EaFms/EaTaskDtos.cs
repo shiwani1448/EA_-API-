@@ -22,7 +22,7 @@ public class EaTaskResponseDto
     public string BusinessRecordId { get; set; } = null!;
     public string Task { get; set; } = null!;
     public string? Description { get; set; }
-    public int AllottedTatMinutes { get; set; }
+    public int? AllottedTatMinutes { get; set; }
     public bool IsActive { get; set; }
     public string CreatedBy { get; set; } = null!;
     public DateTime CreatedDate { get; set; }

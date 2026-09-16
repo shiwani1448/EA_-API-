@@ -15,11 +15,16 @@ public class ApprovalAuthorizationService : IApprovalAuthorizationService
 
     public async Task<bool> CanPerformAsync(long approvalRequestId, string operation, CancellationToken ct = default)
     {
-        var request = await _db.ApprovalRequests.AsNoTracking().FirstOrDefaultAsync(r => r.Id == approvalRequestId && !r.IsDeleted, ct);
+        var request = await _db.ApprovalRequests.AsNoTracking()
+            .FirstOrDefaultAsync(r => r.Id == approvalRequestId && !r.IsDeleted, ct);
         if (request is null) return false;
+
+        if (!await _db.Tasks.AsNoTracking().AnyAsync(t => t.Id == request.EaTaskId && t.IsActive && !t.IsDeleted, ct))
+            return false;
 
         var userId = _user.UserId;
         var userName = _user.UserName;
+        if (userId <= 0 && string.IsNullOrWhiteSpace(userName)) return false;
 
         // Allow if user is the creator (CreatedBy stores username)
         if (!string.IsNullOrWhiteSpace(request.CreatedBy) && string.Equals(request.CreatedBy, userName, StringComparison.OrdinalIgnoreCase))

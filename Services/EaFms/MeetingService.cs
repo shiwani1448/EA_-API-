@@ -17,8 +17,9 @@ public class MeetingService : IMeetingService
     private readonly ICurrentUserService _currentUser;
     private readonly IAuditService _auditService;
     private readonly IWorkflowService _workflowService;
+    private readonly IEaTaskService _eaTaskService;
 
-    public MeetingService(IMeetingRepository repo, EaFmsDbContext context, IMapper mapper, ICurrentUserService currentUser, IAuditService auditService, IWorkflowService workflowService)
+    public MeetingService(IMeetingRepository repo, EaFmsDbContext context, IMapper mapper, ICurrentUserService currentUser, IAuditService auditService, IWorkflowService workflowService, IEaTaskService eaTaskService)
     {
         _repo = repo;
         _context = context;
@@ -26,6 +27,7 @@ public class MeetingService : IMeetingService
         _currentUser = currentUser;
         _auditService = auditService;
         _workflowService = workflowService;
+        _eaTaskService = eaTaskService;
     }
 
     public async Task<MeetingDetailResponseDto> CreateAsync(CreateMeetingRequestDto dto, CancellationToken ct = default)
@@ -44,8 +46,8 @@ public class MeetingService : IMeetingService
             Title = dto.Title?.Trim(),
             Description = dto.Description?.Trim(),
             Purpose = dto.Purpose?.Trim(),
-            MeetingType = dto.MeetingType,
-            Category = dto.Category,
+            MeetingType = dto.Type,
+            Category = dto.Subtype,
             Source = dto.Source,
             SourceChannel = dto.SourceChannel,
             SourceReferenceId = dto.SourceReferenceId,
@@ -81,9 +83,22 @@ public class MeetingService : IMeetingService
             .ToListAsync(ct);
         if (modules.Count != 1)
             throw new InvalidOperationException("Exactly one active Meeting business-module catalog entry is required.");
+        var meetingModule = modules[0];
         var workflow = await _workflowService.GetOrCreateForBusinessRecordAsync(
-            modules[0].Id, m.Id.ToString(System.Globalization.CultureInfo.InvariantCulture), m.IntakeRequestId, ct);
+            meetingModule.Id, m.Id.ToString(System.Globalization.CultureInfo.InvariantCulture), m.IntakeRequestId, ct);
         m.WorkflowInstanceId = workflow.Id;
+
+        // Persist the workflow link before EaTaskService re-reads the Meeting to derive
+        // its exact Type/Subtype classification. EaTaskService joins this transaction.
+        await _context.SaveChangesAsync(ct);
+        await _eaTaskService.CreateAsync(new CreateEaTaskDto
+        {
+            ModuleId = meetingModule.Id,
+            BusinessRecordId = m.Id.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            Task = m.Title ?? string.Empty,
+            Description = m.Description,
+            WorkflowInstanceId = workflow.Id
+        }, ct);
 
         _auditService.AddAudit("MEETING_CREATE", "Meeting", nameof(Meeting), m.Id.ToString(), null, new { m.Title, m.MeetingDate }, "Meeting created");
         await _context.SaveChangesAsync(ct);
@@ -100,6 +115,8 @@ public class MeetingService : IMeetingService
 
         var items = meetings.Select(m => _mapper.Map<MeetingListItemResponseDto>(m)).ToList();
         if (items.Count == 0) return items;
+
+        var taskSnapshots = await GetMeetingTaskSnapshotsAsync(meetings.Select(m => m.Id), ct);
 
         var workflowIds = meetings
             .Where(m => m.WorkflowInstanceId.HasValue)
@@ -145,6 +162,8 @@ public class MeetingService : IMeetingService
         {
             var meeting = meetings.First(m => m.Id == item.MeetingId);
             item.Priority = meeting.Priority;
+            if (taskSnapshots.TryGetValue(meeting.Id, out var task))
+                PopulateTaskSnapshot(item, task);
             if (!meeting.WorkflowInstanceId.HasValue) continue;
             var workflowId = meeting.WorkflowInstanceId.Value;
             if (currentAssignmentsByWorkflow.TryGetValue(workflowId, out var assignment)) { item.AssignedToId = assignment.AssignedToId; item.AssignedToName = assignment.AssignedToName; }
@@ -166,6 +185,9 @@ public class MeetingService : IMeetingService
         var dto = _mapper.Map<MeetingDetailResponseDto>(m);
         dto.MeetingId = m.Id;
         dto.StartedAt = null;
+        var task = await GetMeetingTaskSnapshotAsync(m.Id, ct);
+        if (task is not null)
+            PopulateTaskSnapshot(dto, task);
         // Populate assignment summary
         if (m.WorkflowInstanceId.HasValue)
         {
@@ -230,38 +252,32 @@ public class MeetingService : IMeetingService
                     PauseCount = pauses.Count
                 };
 
-                // total paused minutes overlapping TAT
-                if (wf.TatStartedAt.HasValue)
+                // The task is the immutable allocation snapshot. Historical Meetings
+                // without a task retain the existing unavailable/zero summary.
+                if (task is not null)
                 {
-                    var end = (wf.CompletedAt ?? DateTime.UtcNow);
-                    var tatStart = wf.TatStartedAt.Value;
-                    int totalPaused = 0;
-                    foreach (var p in pauses.Where(WorkPauseClassifier.IsSimplePause))
-                    {
-                        var pauseStart = p.StartAt;
-                        var pauseEnd = p.EndAt ?? DateTime.UtcNow;
-                        var overlapStart = pauseStart > tatStart ? pauseStart : tatStart;
-                        var overlapEnd = pauseEnd < end ? pauseEnd : end;
-                        if (overlapEnd > overlapStart)
-                        {
-                            totalPaused += (int)(overlapEnd - overlapStart).TotalMinutes;
-                        }
-                    }
+                    if (!task.AllottedTatMinutes.HasValue)
+                        throw new BusinessRuleException("Meeting task does not have an allotted TAT.");
+                    var totalTat = TimeSpan.FromMinutes(task.AllottedTatMinutes.Value);
+                    var end = wf.CompletedAt ?? Clock.UtcNowTz;
+                    var paused = wf.TatStartedAt.HasValue
+                        ? GetPausedDuration(wf.TatStartedAt.Value, end, pauses)
+                        : TimeSpan.Zero;
+                    var used = wf.TatStartedAt.HasValue
+                        ? end - wf.TatStartedAt.Value - paused
+                        : TimeSpan.Zero;
+                    if (used < TimeSpan.Zero) used = TimeSpan.Zero;
 
-                    dto.WaitingSummary.TotalPausedMinutes = totalPaused;
-
-                    // TAT summary
-                    // TatUsedMinutes = total minutes from TatStartedAt to now/completion minus paused minutes
-                    var used = (int)((end - tatStart).TotalMinutes) - totalPaused;
+                    dto.WaitingSummary.TotalPausedMinutes = (int)paused.TotalMinutes;
                     dto.TatSummary = new MeetingTatSummaryDto
                     {
-                        Tat = null,
-                        TotalTat = TimeSpan.FromMinutes(used < 0 ? 0 : used),
-                        TatDifference = TimeSpan.Zero,
+                        Tat = used,
+                        TotalTat = totalTat,
+                        TatDifference = totalTat - used,
                         StartTime = wf.TatStartedAt,
                         EndTime = wf.CompletedAt,
-                        LastActiveTime = wf.CompletedAt ?? (pauses.Where(p => p.EndAt.HasValue).OrderByDescending(p => p.EndAt).Select(p => p.EndAt).FirstOrDefault() ?? wf.TatStartedAt),
-                        PauseTime = TimeSpan.FromMinutes(totalPaused),
+                        LastActiveTime = wf.CompletedAt ?? (openSimplePause?.StartAt ?? end),
+                        PauseTime = paused,
                         PauseCount = pauses.Count(WorkPauseClassifier.IsSimplePause)
                     };
                 }
@@ -304,8 +320,8 @@ public class MeetingService : IMeetingService
         m.Title = dto.Title?.Trim();
         m.Description = dto.Description?.Trim();
         m.Purpose = dto.Purpose?.Trim();
-        m.MeetingType = dto.MeetingType;
-        m.Category = dto.Category;
+        m.MeetingType = dto.Type;
+        m.Category = dto.Subtype;
         m.Source = dto.Source;
         m.SourceChannel = dto.SourceChannel;
         m.SourceReferenceId = dto.SourceReferenceId;
@@ -349,6 +365,89 @@ public class MeetingService : IMeetingService
         var normalized = priority.Trim();
         return await _context.PriorityLevels.AsNoTracking().Where(p => p.IsActive && !p.IsDeleted && p.Name.ToLower() == normalized.ToLower()).Select(p => p.Name).SingleOrDefaultAsync(ct)
             ?? throw new BadRequestException($"Priority '{normalized}' is not an active priority level.");
+    }
+
+    private async Task<EaTask?> GetMeetingTaskSnapshotAsync(long meetingId, CancellationToken ct)
+    {
+        var tasks = await _context.Tasks.AsNoTracking()
+            .Include(x => x.BusinessModule)
+            .Where(x => x.BusinessRecordId == meetingId.ToString(System.Globalization.CultureInfo.InvariantCulture)
+                && !x.IsDeleted
+                && !x.BusinessModule.IsDeleted
+                && x.BusinessModule.Name.Trim().ToLower() == "meeting")
+            .Take(2)
+            .ToListAsync(ct);
+        if (tasks.Count > 1)
+            throw new BusinessRuleException("Meeting has ambiguous EA task snapshots.");
+        return tasks.SingleOrDefault();
+    }
+
+    private async Task<Dictionary<long, EaTask>> GetMeetingTaskSnapshotsAsync(IEnumerable<long> meetingIds, CancellationToken ct)
+    {
+        var ids = meetingIds.Distinct().ToList();
+        var recordIds = ids.Select(id => id.ToString(System.Globalization.CultureInfo.InvariantCulture)).ToList();
+        var tasks = await _context.Tasks.AsNoTracking()
+            .Include(x => x.BusinessModule)
+            .Where(x => recordIds.Contains(x.BusinessRecordId)
+                && !x.IsDeleted
+                && !x.BusinessModule.IsDeleted
+                && x.BusinessModule.Name.Trim().ToLower() == "meeting")
+            .ToListAsync(ct);
+        var result = new Dictionary<long, EaTask>();
+        foreach (var group in tasks.GroupBy(x => x.BusinessRecordId))
+        {
+            if (group.Count() > 1)
+                throw new BusinessRuleException("Meeting has ambiguous EA task snapshots.");
+            if (long.TryParse(group.Key, out var meetingId))
+                result[meetingId] = group.Single();
+        }
+        return result;
+    }
+
+    private static void PopulateTaskSnapshot(MeetingDetailResponseDto dto, EaTask task)
+    {
+        dto.ModuleId = task.BusinessModuleId;
+        dto.ModuleName = task.BusinessModule.Name;
+        dto.TatMinutes = task.AllottedTatMinutes;
+        dto.Task = task.Task;
+        dto.AllottedTatMinutes = task.AllottedTatMinutes;
+        dto.EaTaskId = task.Id;
+    }
+
+    private static void PopulateTaskSnapshot(MeetingListItemResponseDto dto, EaTask task)
+    {
+        dto.ModuleId = task.BusinessModuleId;
+        dto.ModuleName = task.BusinessModule.Name;
+        dto.TatMinutes = task.AllottedTatMinutes;
+    }
+
+    private static TimeSpan GetPausedDuration(DateTime tatStart, DateTime end, IEnumerable<WorkPause> pauses)
+    {
+        var intervals = pauses
+            .Where(WorkPauseClassifier.IsSimplePause)
+            .Select(p => (Start: p.StartAt > tatStart ? p.StartAt : tatStart, End: (p.EndAt ?? end) < end ? p.EndAt ?? end : end))
+            .Where(x => x.End > x.Start)
+            .OrderBy(x => x.Start)
+            .ToList();
+
+        var total = TimeSpan.Zero;
+        DateTime? currentStart = null;
+        DateTime? currentEnd = null;
+        foreach (var interval in intervals)
+        {
+            if (currentEnd is null || interval.Start > currentEnd.Value)
+            {
+                if (currentStart.HasValue) total += currentEnd!.Value - currentStart.Value;
+                currentStart = interval.Start;
+                currentEnd = interval.End;
+            }
+            else if (interval.End > currentEnd.Value)
+            {
+                currentEnd = interval.End;
+            }
+        }
+        if (currentStart.HasValue) total += currentEnd!.Value - currentStart.Value;
+        return total;
     }
 
 

@@ -375,8 +375,9 @@ namespace Jarvis5.Tests.EaFms.ApprovalDocuments
             var temp = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString()); Directory.CreateDirectory(temp);
             var env = Mock.Of<IWebHostEnvironment>(e => e.ContentRootPath == temp);
 
-            var req = new ApprovalRequest { Id = 40, CreatedBy = "alice", WorkflowStatus = "Draft", CurrentCycleNo = 1 };
+            var req = new ApprovalRequest { Id = 40, EaTaskId = 400, CreatedBy = "alice", WorkflowStatus = "Draft", CurrentCycleNo = 1 };
             var cycle = new ApprovalCycle { Id = 401, ApprovalRequestId = 40, CycleNo = 1, Status = "PendingApproval" };
+            db.Tasks.Add(new EaTask { Id = 400, BusinessModuleId = 1, BusinessRecordId = "40", Task = "approval", AllottedTatMinutes = 60, CreatedBy = "alice", CreatedDate = DateTime.UtcNow });
             db.ApprovalRequests.Add(req); db.ApprovalCycles.Add(cycle); await db.SaveChangesAsync();
 
             var alice = Mock.Of<Jarvis5.Services.ICurrentUserService>(u => u.UserName == "alice" && u.UserId == 1000);
@@ -389,8 +390,9 @@ namespace Jarvis5.Tests.EaFms.ApprovalDocuments
 
             // Assigned approver by ApproverId
             var db2 = CreateContext("auth_approver");
-            var req2 = new ApprovalRequest { Id = 41, CreatedBy = "bob", WorkflowStatus = "Draft", CurrentCycleNo = 1, ApproverId = "2000", ApproverName = "approver-display" };
+            var req2 = new ApprovalRequest { Id = 41, EaTaskId = 410, CreatedBy = "bob", WorkflowStatus = "Draft", CurrentCycleNo = 1, ApproverId = "2000", ApproverName = "approver-display" };
             var cycle2 = new ApprovalCycle { Id = 411, ApprovalRequestId = 41, CycleNo = 1, Status = "PendingApproval" };
+            db2.Tasks.Add(new EaTask { Id = 410, BusinessModuleId = 1, BusinessRecordId = "41", Task = "approval", AllottedTatMinutes = 60, CreatedBy = "bob", CreatedDate = DateTime.UtcNow });
             db2.ApprovalRequests.Add(req2); db2.ApprovalCycles.Add(cycle2); await db2.SaveChangesAsync();
 
             var approver = Mock.Of<Jarvis5.Services.ICurrentUserService>(u => u.UserName == "someone" && u.UserId == 2000);
@@ -402,8 +404,9 @@ namespace Jarvis5.Tests.EaFms.ApprovalDocuments
 
             // Unauthorized user (only ApproverName matches, not ApproverId nor CreatedBy)
             var db3 = CreateContext("auth_unauth");
-            var req3 = new ApprovalRequest { Id = 42, CreatedBy = "charlie", WorkflowStatus = "Draft", CurrentCycleNo = 1, ApproverId = "3000", ApproverName = "display-name" };
+            var req3 = new ApprovalRequest { Id = 42, EaTaskId = 420, CreatedBy = "charlie", WorkflowStatus = "Draft", CurrentCycleNo = 1, ApproverId = "3000", ApproverName = "display-name" };
             var cycle3 = new ApprovalCycle { Id = 421, ApprovalRequestId = 42, CycleNo = 1, Status = "PendingApproval" };
+            db3.Tasks.Add(new EaTask { Id = 420, BusinessModuleId = 1, BusinessRecordId = "42", Task = "approval", AllottedTatMinutes = 60, CreatedBy = "charlie", CreatedDate = DateTime.UtcNow });
             db3.ApprovalRequests.Add(req3); db3.ApprovalCycles.Add(cycle3); await db3.SaveChangesAsync();
 
             var userMatchingDisplay = Mock.Of<Jarvis5.Services.ICurrentUserService>(u => u.UserName == "display-name" && u.UserId == 9999);

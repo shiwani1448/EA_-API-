@@ -1,0 +1,38 @@
+ M Controllers/EaFms/ApprovalsController.cs
+ M Controllers/EaFms/ApprovalsLifecycleController.cs
+ M Controllers/TatRulesController.cs
+ M DTOs/EaFms/CreateMeetingRequestDto.cs
+ M DTOs/EaFms/TatRuleDto.cs
+ M DTOs/EaFms/UpdateMeetingRequestDto.cs
+ M Data/EaFms/EaFmsDbContext.cs
+ M Entities/EaFms/ApprovalCycle.cs
+ M Entities/EaFms/TatRule.cs
+ M Migrations/EaFmsDbContextModelSnapshot.cs
+ M Program.cs
+ M Repositories/EaFms/ITatRuleRepository.cs
+ M Repositories/EaFms/TatRuleRepository.cs
+ M Services/EaFms/ApprovalAuthorizationService.cs
+ M Services/EaFms/ApprovalLifecycleService.cs
+ M Services/EaFms/ApprovalService.cs
+ M Services/EaFms/EaTaskService.cs
+ M Services/EaFms/MeetingService.cs
+ M Services/EaFms/TatRuleService.cs
+ M Tests/EaFms/ApprovalDocuments/ApprovalDocumentServiceComprehensiveTests.cs
+ M Tests/TestResults/test_results.trx
+?? Controllers/BusinessModulesController.cs
+?? DTOs/EaFms/ApprovalQueryDtos.cs
+?? DTOs/EaFms/BusinessModuleDtos.cs
+?? Directory.Build.props
+?? Migrations/20260915000000_EnsureEaApprovalNumberSequence.cs
+?? Migrations/20260915073655_SyncApprovalModelSnapshot.Designer.cs
+?? Migrations/20260915073655_SyncApprovalModelSnapshot.cs
+?? Migrations/20260915103914_AddModuleNameToEaTatRules.Designer.cs
+?? Migrations/20260915103914_AddModuleNameToEaTatRules.cs
+?? Repositories/EaFms/BusinessModuleRepository.cs
+?? Repositories/EaFms/IBusinessModuleRepository.cs
+?? Services/EaFms/ApprovalQueryService.cs
+?? Services/EaFms/BusinessModuleService.cs
+?? Services/EaFms/IBusinessModuleService.cs
+?? Tests/EaFms/BusinessModules/
+?? Tests/EaFms/TatRules/
+?? artifacts/

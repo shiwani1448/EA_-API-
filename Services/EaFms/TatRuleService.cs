@@ -38,6 +38,9 @@ public class TatRuleService(EaFmsDbContext db, ITatRuleRepository repository,
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
         var module = await db.BusinessModules.FirstOrDefaultAsync(x => x.Id == dto.ModuleId && x.IsActive && !x.IsDeleted, ct)
             ?? throw new BusinessRuleException("Module must exist and be active/non-deleted.");
+        if (dto.ModuleName is not null
+            && !string.Equals(dto.ModuleName.Trim(), module.Name.Trim(), StringComparison.OrdinalIgnoreCase))
+            throw new BusinessRuleException("ModuleName must match the selected ModuleId.");
         if (dto.IsActive == true && await db.TatRules.AnyAsync(x => x.BusinessModuleId == dto.ModuleId
             && x.Type != null && x.Subtype != null && TatClassification.TrimForMatch(x.Type).ToLower() == typeKey && TatClassification.TrimForMatch(x.Subtype).ToLower() == subtypeKey
             && x.IsActive && !x.IsDeleted && (!id.HasValue || x.Id != id.Value), ct))
@@ -50,6 +53,7 @@ public class TatRuleService(EaFmsDbContext db, ITatRuleRepository repository,
             : new TatRule { CreatedBy = actor, CreatedDate = now };
         var previous = id.HasValue ? new { rule.BusinessModuleId, rule.Type, rule.Subtype, rule.TatMinutes, rule.IsActive } : null;
         rule.BusinessModuleId = dto.ModuleId;
+        rule.ModuleName = module.Name;
         rule.Type = type;
         rule.Subtype = subtype;
         rule.TatMinutes = dto.TatMinutes;
@@ -76,7 +80,7 @@ public class TatRuleService(EaFmsDbContext db, ITatRuleRepository repository,
 
     private static TatRuleDto ToDto(TatRule rule) => new()
     {
-        Id = rule.Id, ModuleId = rule.BusinessModuleId, ModuleName = rule.BusinessModule.Name,
+        Id = rule.Id, ModuleId = rule.BusinessModuleId, ModuleName = rule.ModuleName,
         Type = rule.Type, Subtype = rule.Subtype,
         TatMinutes = rule.TatMinutes, IsActive = rule.IsActive,
         CreatedDate = rule.CreatedDate, ModifiedDate = rule.ModifiedDate

@@ -7,6 +7,7 @@ public class TatRule
     public long Id { get; set; }
     public long BusinessModuleId { get; set; }
     public BusinessModule BusinessModule { get; set; } = null!;
+    public string ModuleName { get; set; } = null!;
     public string? Type { get; set; }
     public string? Subtype { get; set; }
     public int TatMinutes { get; set; }

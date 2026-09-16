@@ -33,11 +33,4 @@ public class ApprovalsLifecycleController : ControllerBase
     public async Task<IActionResult> Resubmit(long approvalRequestId, CancellationToken ct)
         => Ok(await _lifecycle.ResubmitAsync(approvalRequestId, ct));
 
-    [HttpGet("/api/ea/approvals/{approvalRequestId:long}/cycles")]
-    public async Task<IActionResult> GetCycles(long approvalRequestId, CancellationToken ct)
-        => Ok(await _lifecycle.GetCyclesAsync(approvalRequestId, ct));
-
-    [HttpGet("/api/ea/approvals/{approvalRequestId:long}/history")]
-    public async Task<IActionResult> GetHistory(long approvalRequestId, CancellationToken ct)
-        => Ok(await _lifecycle.GetHistoryAsync(approvalRequestId, ct));
 }

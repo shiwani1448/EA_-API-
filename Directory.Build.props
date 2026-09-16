@@ -1,0 +1,6 @@
+<Project>
+  <!-- Generated build/publish folders must never be discovered as SDK default items. -->
+  <PropertyGroup>
+    <DefaultItemExcludes>$(DefaultItemExcludes);$(MSBuildThisFileDirectory)artifacts\**;$(MSBuildThisFileDirectory)publish\**;$(MSBuildThisFileDirectory)publish-net8\**;$(MSBuildThisFileDirectory)Tests\bin\**;$(MSBuildThisFileDirectory)Tests\obj\**</DefaultItemExcludes>
+  </PropertyGroup>
+</Project>

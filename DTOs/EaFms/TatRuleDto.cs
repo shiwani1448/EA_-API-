@@ -6,6 +6,7 @@ namespace Jarvis5.Dtos.EaFms;
 public class SaveTatRuleDto
 {
     public long ModuleId { get; set; }
+    public string? ModuleName { get; set; }
     [System.ComponentModel.DataAnnotations.Required]
     public string? Type { get; set; }
     [System.ComponentModel.DataAnnotations.Required]

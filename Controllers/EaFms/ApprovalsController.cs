@@ -10,10 +10,12 @@ namespace Jarvis5.Controllers.EaFms;
 public class ApprovalsController : ControllerBase
 {
     private readonly ApprovalService _service;
+    private readonly ApprovalQueryService _queries;
     // No-op refresh for DI changes.
-    public ApprovalsController(ApprovalService service)
+    public ApprovalsController(ApprovalService service, ApprovalQueryService queries)
     {
         _service = service;
+        _queries = queries;
     }
 
     [HttpPost]
@@ -47,8 +49,24 @@ public class ApprovalsController : ControllerBase
         });
     }
 
-    [HttpGet("{id}")]
-    public IActionResult Get(long id) => Ok();
+    [HttpGet]
+    public async Task<IActionResult> List([FromQuery] string? search, [FromQuery] string? status, [FromQuery] string? priority, [FromQuery] string? approver, [FromQuery] string? requestedBy, [FromQuery] string? department, [FromQuery] DateTime? createdFrom, [FromQuery] DateTime? createdTo, [FromQuery] DateTime? requiredFrom, [FromQuery] DateTime? requiredTo, [FromQuery] string? dueState, [FromQuery] int page = 1, [FromQuery] int pageSize = 50, CancellationToken ct = default)
+    {
+        var result = await _queries.ListAsync(search, status, priority, approver, requestedBy, department, createdFrom, createdTo, requiredFrom, requiredTo, dueState, page, pageSize, ct);
+        return Ok(result.Items);
+    }
+
+    [HttpGet("dashboard")]
+    public async Task<IActionResult> Dashboard(CancellationToken ct) => Ok(await _queries.DashboardAsync(ct));
+
+    [HttpGet("{id:long}")]
+    public async Task<IActionResult> Get(long id, CancellationToken ct) { var result = await _queries.DetailAsync(id, ct); return result is null ? NotFound() : Ok(result); }
+
+    [HttpGet("{id:long}/cycles")]
+    public async Task<IActionResult> Cycles(long id, CancellationToken ct) { var result = await _queries.CyclesAsync(id, ct); return result is null ? NotFound() : Ok(result); }
+
+    [HttpGet("{id:long}/history")]
+    public async Task<IActionResult> History(long id, CancellationToken ct) { var result = await _queries.HistoryForAsync(id, ct); return result is null ? NotFound() : Ok(result); }
 
     [HttpPut("{id}/draft")]
     public async Task<IActionResult> SaveDraft(long id, [FromBody] ApprovalRequestDto dto, CancellationToken cancellationToken)

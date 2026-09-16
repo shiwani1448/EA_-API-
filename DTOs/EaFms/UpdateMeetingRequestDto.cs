@@ -8,8 +8,8 @@ public class UpdateMeetingRequestDto
     public string? Description { get; set; }
     public string? Purpose { get; set; }
 
-    public string? MeetingType { get; set; }
-    public string? Category { get; set; }
+    public string? Type { get; set; }
+    public string? Subtype { get; set; }
 
     public string? Source { get; set; }
     public string? SourceChannel { get; set; }

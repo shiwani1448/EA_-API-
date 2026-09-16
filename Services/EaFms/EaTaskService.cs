@@ -24,7 +24,14 @@ public class EaTaskService(EaFmsDbContext db, IEaTaskRepository repository, ITat
         ToDto(await repository.Query().FirstOrDefaultAsync(x => x.Id == id, ct)
             ?? throw new NotFoundException($"EA task {id} not found."));
 
-    public async Task<EaTaskResponseDto> CreateAsync(CreateEaTaskDto dto, CancellationToken ct)
+    public Task<EaTaskResponseDto> CreateAsync(CreateEaTaskDto dto, CancellationToken ct) =>
+        CreateCoreAsync(dto, requireTat: true, ct);
+
+    // Backend-only Approval path; no public request can select this behavior.
+    public Task<EaTaskResponseDto> CreateWithoutTatAsync(CreateEaTaskDto dto, CancellationToken ct) =>
+        CreateCoreAsync(dto, requireTat: false, ct);
+
+    private async Task<EaTaskResponseDto> CreateCoreAsync(CreateEaTaskDto dto, bool requireTat, CancellationToken ct)
     {
         dto.BusinessRecordId = dto.BusinessRecordId?.Trim()!;
         dto.Task = dto.Task?.Trim()!;
@@ -50,6 +57,9 @@ public class EaTaskService(EaFmsDbContext db, IEaTaskRepository repository, ITat
             throw new BusinessRuleException("An EA task already exists for this business record.");
         var type = dto.Type;
         var subtype = dto.Subtype;
+        var isApproval = string.Equals(module.Name.Trim(), "EA Approval", StringComparison.OrdinalIgnoreCase);
+        if (!requireTat && !isApproval)
+            throw new BusinessRuleException("Task creation without TAT is only supported for EA Approval.");
         if (string.Equals(module.Name.Trim(), "Meeting", StringComparison.OrdinalIgnoreCase))
         {
             if (!long.TryParse(dto.BusinessRecordId, NumberStyles.None, CultureInfo.InvariantCulture, out var meetingId))
@@ -64,12 +74,19 @@ public class EaTaskService(EaFmsDbContext db, IEaTaskRepository repository, ITat
             dto.Description = meeting.Description;
             dto.WorkflowInstanceId = meeting.WorkflowInstanceId;
         }
-        if (string.IsNullOrWhiteSpace(type) || string.IsNullOrWhiteSpace(subtype))
-            throw new BusinessRuleException("Type and subtype are required to resolve an exact TAT rule; no legacy fallback is allowed.");
-        var applicable = await rules.GetApplicableAsync(dto.ModuleId, type.Trim(), subtype.Trim(), ct);
-        if (applicable.Count == 0) throw new BusinessRuleException("No active TAT rule is configured for this module/type/subtype combination.");
-        if (applicable.Count != 1) throw new BusinessRuleException("Multiple active TAT rules are configured for this module/type/subtype combination.");
-        if (applicable[0].TatMinutes <= 0) throw new BusinessRuleException("The module TAT must be greater than zero.");
+        int? allottedTatMinutes = null;
+        if (requireTat)
+        {
+            if (!isApproval && (string.IsNullOrWhiteSpace(type) || string.IsNullOrWhiteSpace(subtype)))
+                throw new BusinessRuleException("Type and subtype are required to resolve an exact TAT rule; no legacy fallback is allowed.");
+            var applicable = isApproval
+                ? await rules.GetApplicableForApprovalAsync(dto.ModuleId, type, subtype, ct)
+                : await rules.GetApplicableAsync(dto.ModuleId, type!.Trim(), subtype!.Trim(), ct);
+            if (applicable.Count == 0) throw new BusinessRuleException("No active TAT rule is configured for this module/type/subtype combination.");
+            if (applicable.Count != 1) throw new BusinessRuleException("Multiple active TAT rules are configured for this module/type/subtype combination.");
+            if (applicable[0].TatMinutes <= 0) throw new BusinessRuleException("The module TAT must be greater than zero.");
+            allottedTatMinutes = applicable[0].TatMinutes;
+        }
 
         if (dto.WorkflowInstanceId.HasValue)
         {
@@ -87,7 +104,7 @@ public class EaTaskService(EaFmsDbContext db, IEaTaskRepository repository, ITat
         {
             BusinessModuleId = dto.ModuleId, BusinessRecordId = dto.BusinessRecordId,
             Task = dto.Task, Description = dto.Description,
-            AllottedTatMinutes = applicable[0].TatMinutes, WorkflowInstanceId = dto.WorkflowInstanceId,
+            AllottedTatMinutes = allottedTatMinutes, WorkflowInstanceId = dto.WorkflowInstanceId,
             IsActive = true, CreatedBy = user.UserId.ToString(CultureInfo.InvariantCulture), CreatedDate = Clock.UtcNowTz
         };
         await repository.AddAsync(task, ct);

@@ -22,6 +22,183 @@ namespace Studio5JarvisMasterApi.Migrations
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
+            modelBuilder.HasSequence("ea_approval_no_seq");
+
+            modelBuilder.Entity("Jarvis5.Entities.EaFms.ApprovalCycle", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<long>("ApprovalRequestId")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("ApproverId")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("ChangeReason")
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("CycleNo")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("DecisionComment")
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
+
+                    b.Property<DateTime?>("RequiredApprovalDate")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Status")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<DateTime?>("SubmittedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("SubmittedBy")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ApprovalRequestId");
+
+                    b.HasIndex("ApprovalRequestId", "CycleNo")
+                        .IsUnique()
+                        .HasDatabaseName("UX_ea_approval_cycles_ApprovalRequestId_CycleNo");
+
+                    b.ToTable("ea_approval_cycles", "public");
+                });
+
+            modelBuilder.Entity("Jarvis5.Entities.EaFms.ApprovalRequest", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<decimal?>("Amount")
+                        .HasColumnType("numeric(18,2)");
+
+                    b.Property<DateTime?>("ApprovedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("ApproverId")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("ApproverName")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<DateTime?>("ClosedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("Currency")
+                        .HasMaxLength(10)
+                        .HasColumnType("character varying(10)");
+
+                    b.Property<int>("CurrentCycleNo")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Department")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(4000)
+                        .HasColumnType("character varying(4000)");
+
+                    b.Property<long>("EaTaskId")
+                        .HasColumnType("bigint");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("Justification")
+                        .HasMaxLength(4000)
+                        .HasColumnType("character varying(4000)");
+
+                    b.Property<string>("Priority")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("ReferenceNo")
+                        .IsRequired()
+                        .HasColumnType("varchar(40)");
+
+                    b.Property<DateTime?>("RejectedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("RequestTitle")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<string>("RequestType")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("RequestedBy")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<DateTime?>("RequiredApprovalDate")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("SubmittedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("UpdatedBy")
+                        .HasColumnType("text");
+
+                    b.Property<string>("WorkflowStatus")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ApproverId");
+
+                    b.HasIndex("CreatedAt");
+
+                    b.HasIndex("EaTaskId")
+                        .IsUnique();
+
+                    b.HasIndex("ReferenceNo")
+                        .IsUnique();
+
+                    b.HasIndex("RequestedBy");
+
+                    b.HasIndex("RequiredApprovalDate");
+
+                    b.HasIndex("WorkflowStatus");
+
+                    b.ToTable("ea_approval_requests", "public");
+                });
+
             modelBuilder.Entity("Jarvis5.Entities.EaFms.Attachment", b =>
                 {
                     b.Property<long>("Id")
@@ -232,7 +409,7 @@ namespace Studio5JarvisMasterApi.Migrations
 
                     NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
 
-                    b.Property<int>("AllottedTatMinutes")
+                    b.Property<int?>("AllottedTatMinutes")
                         .HasColumnType("integer");
 
                     b.Property<long>("BusinessModuleId")
@@ -1488,6 +1665,11 @@ namespace Studio5JarvisMasterApi.Migrations
                     b.Property<DateTime?>("ModifiedDate")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<string>("ModuleName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
                     b.Property<string>("Subtype")
                         .HasMaxLength(200)
                         .HasColumnType("character varying(200)");
@@ -1937,6 +2119,28 @@ namespace Studio5JarvisMasterApi.Migrations
                     b.HasIndex("TatStartedAt");
 
                     b.ToTable("ea_workflow_instances", "public");
+                });
+
+            modelBuilder.Entity("Jarvis5.Entities.EaFms.ApprovalCycle", b =>
+                {
+                    b.HasOne("Jarvis5.Entities.EaFms.ApprovalRequest", "ApprovalRequest")
+                        .WithMany()
+                        .HasForeignKey("ApprovalRequestId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("ApprovalRequest");
+                });
+
+            modelBuilder.Entity("Jarvis5.Entities.EaFms.ApprovalRequest", b =>
+                {
+                    b.HasOne("Jarvis5.Entities.EaFms.EaTask", "EaTask")
+                        .WithMany()
+                        .HasForeignKey("EaTaskId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("EaTask");
                 });
 
             modelBuilder.Entity("Jarvis5.Entities.EaFms.EaTask", b =>

@@ -4,6 +4,7 @@ public class ApprovalCycle
 {
     public long Id { get; set; }
     public long ApprovalRequestId { get; set; }
+    public ApprovalRequest ApprovalRequest { get; set; } = null!;
     // TaskId is derived from ApprovalRequest.EaTaskId; do not duplicate GUID-based TaskId here.
     public int CycleNo { get; set; }
     public DateTime? SubmittedAt { get; set; }

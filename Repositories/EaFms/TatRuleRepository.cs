@@ -18,5 +18,31 @@ public class TatRuleRepository(EaFmsDbContext db) : ITatRuleRepository
         db.TatRules.FromSqlInterpolated($"SELECT * FROM public.ea_tat_rules WHERE \"BusinessModuleId\" = {moduleId} AND lower(btrim(\"Type\")) = lower(btrim({type})) AND lower(btrim(\"Subtype\")) = lower(btrim({subtype})) AND \"IsActive\" AND NOT \"IsDeleted\" LIMIT 2 FOR SHARE")
             .AsNoTracking().ToListAsync(ct);
 
+    // Approval supports progressively broader classifications. A type-level rule is
+    // represented by a null Subtype; a module-level rule has null Type and Subtype.
+    public async Task<List<TatRule>> GetApplicableForApprovalAsync(long moduleId, string? type, string? subtype, CancellationToken ct)
+    {
+        var typeKey = string.IsNullOrWhiteSpace(type) ? null : type.Trim().ToLowerInvariant();
+        var subtypeKey = string.IsNullOrWhiteSpace(subtype) ? null : subtype.Trim().ToLowerInvariant();
+
+        if (typeKey is not null && subtypeKey is not null)
+        {
+            var exact = await MatchingRules(moduleId, x => x.Type != null && x.Subtype != null
+                && x.Type.Trim().ToLower() == typeKey && x.Subtype.Trim().ToLower() == subtypeKey, ct);
+            if (exact.Count != 0) return exact;
+        }
+        if (typeKey is not null)
+        {
+            var typeOnly = await MatchingRules(moduleId, x => x.Type != null && x.Subtype == null
+                && x.Type.Trim().ToLower() == typeKey, ct);
+            if (typeOnly.Count != 0) return typeOnly;
+        }
+        return await MatchingRules(moduleId, x => x.Type == null && x.Subtype == null, ct);
+    }
+
+    private Task<List<TatRule>> MatchingRules(long moduleId, System.Linq.Expressions.Expression<Func<TatRule, bool>> classification, CancellationToken ct) =>
+        db.TatRules.AsNoTracking().Where(x => x.BusinessModuleId == moduleId && x.IsActive && !x.IsDeleted && x.TatMinutes > 0)
+            .Where(classification).Take(2).ToListAsync(ct);
+
     public async Task AddAsync(TatRule rule, CancellationToken ct) => await db.TatRules.AddAsync(rule, ct);
 }

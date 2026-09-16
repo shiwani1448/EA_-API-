@@ -29,7 +29,7 @@ public class ApprovalService
     public async Task<ApprovalRequest> CreateDraftAsync(ApprovalRequest request, CancellationToken ct = default)
     {
         // Validate business module exists
-        var approvalModule = await _context.BusinessModules.FirstOrDefaultAsync(b => b.Name == "Approval" && b.IsActive && !b.IsDeleted, ct);
+        var approvalModule = await _context.BusinessModules.FirstOrDefaultAsync(b => b.Name == "EA Approval" && b.IsActive && !b.IsDeleted, ct);
         if (approvalModule is null)
             throw new InvalidOperationException("EA Approval business module not registered in ea_business_modules.");
 
@@ -43,29 +43,27 @@ public class ApprovalService
         request.CreatedAt = DateTime.UtcNow;
         request.CreatedBy = request.CreatedBy ?? "system";
 
-        await _context.ApprovalRequests.AddAsync(request, ct);
-        await _context.SaveChangesAsync(ct);
-
-        // Create central ea_tasks row using the shared EaTaskService which enforces TAT rules
+        // Create the required central task before inserting ApprovalRequest. EaTaskId is a
+        // non-nullable FK, so persisting the request with its default value would violate
+        // the relationship. ReferenceNo is generated above and is the stable record key
+        // available before the approval identity is assigned.
         var createTaskDto = new Jarvis5.Dtos.EaFms.CreateEaTaskDto
         {
             ModuleId = approvalModule.Id,
-            BusinessRecordId = request.Id.ToString(),
+            BusinessRecordId = request.ReferenceNo,
             Task = request.RequestTitle ?? reference,
             Description = string.IsNullOrWhiteSpace(request.Description) ? null : request.Description?.Trim(),
-            // For TAT resolution the shared service requires both Type and Subtype. Use RequestType as Type
-            // and Department as Subtype. This follows the mapping convention for Approval where RequestType identifies
-            // the approval classification and Department refines it for TAT lookup.
+            // Preserve classification; Approval draft creation does not consume a TAT rule.
             Type = request.RequestType?.Trim(),
             Subtype = request.Department?.Trim(),
             WorkflowInstanceId = null
         };
 
-        var eaTaskDto = await _eaTaskService.CreateAsync(createTaskDto, ct);
+        var eaTaskDto = await _eaTaskService.CreateWithoutTatAsync(createTaskDto, ct);
 
-        // Link back to created central task
+        // Persist the approval only after a valid central task exists.
         request.EaTaskId = eaTaskDto.EaTaskId;
-        _context.ApprovalRequests.Update(request);
+        await _context.ApprovalRequests.AddAsync(request, ct);
         await _context.SaveChangesAsync(ct);
 
         // Audit

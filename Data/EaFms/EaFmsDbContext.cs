@@ -144,7 +144,10 @@ public class EaFmsDbContext : DbContext
             entity.Property(e => e.ClosedAt).HasColumnType("timestamp with time zone");
 
             entity.HasIndex(e => e.EaTaskId).IsUnique();
-            entity.HasOne<Entities.EaFms.EaTask>().WithMany().HasForeignKey(e => e.EaTaskId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(e => e.EaTask)
+                .WithMany()
+                .HasForeignKey(e => e.EaTaskId)
+                .OnDelete(DeleteBehavior.Restrict);
             entity.HasIndex(e => e.ReferenceNo).IsUnique();
             entity.HasIndex(e => e.WorkflowStatus);
             entity.HasIndex(e => e.ApproverId);
@@ -170,6 +173,10 @@ public class EaFmsDbContext : DbContext
             entity.Property(e => e.CreatedAt).HasColumnType("timestamp with time zone");
             entity.Property(e => e.UpdatedAt).HasColumnType("timestamp with time zone");
 
+            entity.HasOne(e => e.ApprovalRequest)
+                .WithMany()
+                .HasForeignKey(e => e.ApprovalRequestId)
+                .OnDelete(DeleteBehavior.Restrict);
             entity.HasIndex(e => new { e.ApprovalRequestId, e.CycleNo }).IsUnique().HasDatabaseName("UX_ea_approval_cycles_ApprovalRequestId_CycleNo");
             entity.HasIndex(e => e.ApprovalRequestId);
         });
@@ -716,6 +723,7 @@ public class EaFmsDbContext : DbContext
             entity.HasKey(e => e.Id);
             entity.Property(e => e.Id).UseIdentityByDefaultColumn();
             entity.Property(e => e.BusinessModuleId).HasColumnType("bigint").IsRequired();
+            entity.Property(e => e.ModuleName).IsRequired().HasMaxLength(200);
             entity.Property(e => e.Type).HasMaxLength(200);
             entity.Property(e => e.Subtype).HasMaxLength(200);
             entity.Property(e => e.TatMinutes).HasColumnType("integer").IsRequired();
@@ -743,7 +751,7 @@ public class EaFmsDbContext : DbContext
             entity.Property(e => e.BusinessRecordId).HasMaxLength(200).IsRequired();
             entity.Property(e => e.Task).HasMaxLength(500).IsRequired();
             entity.Property(e => e.Description).HasColumnType("text");
-            entity.Property(e => e.AllottedTatMinutes).HasColumnType("integer").IsRequired();
+            entity.Property(e => e.AllottedTatMinutes).HasColumnType("integer").IsRequired(false);
             entity.Property(e => e.CreatedBy).HasMaxLength(100).IsRequired();
             entity.Property(e => e.ModifiedBy).HasMaxLength(100);
             entity.Property(e => e.CreatedDate).HasColumnType("timestamp with time zone");
