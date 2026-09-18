@@ -3,6 +3,7 @@ using System;
 using Jarvis5.Data.EaFms;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Studio5JarvisMasterApi.Migrations
 {
     [DbContext(typeof(EaFmsDbContext))]
-    partial class EaFmsDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260918062604_ConvertMeetingActionPriorityToString")]
+    partial class ConvertMeetingActionPriorityToString
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -481,10 +484,11 @@ namespace Studio5JarvisMasterApi.Migrations
                         .IsRequired()
                         .HasColumnType("varchar(40)");
 
-                    b.Property<long?>("SourceBusinessModuleId")
+                    b.Property<long>("SourceBusinessModuleId")
                         .HasColumnType("bigint");
 
                     b.Property<string>("SourceEntityId")
+                        .IsRequired()
                         .HasMaxLength(200)
                         .HasColumnType("character varying(200)");
 
@@ -3039,7 +3043,8 @@ namespace Studio5JarvisMasterApi.Migrations
                     b.HasOne("Jarvis5.Entities.EaFms.BusinessModule", "SourceBusinessModule")
                         .WithMany()
                         .HasForeignKey("SourceBusinessModuleId")
-                        .OnDelete(DeleteBehavior.Restrict);
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
 
                     b.Navigation("EaTask");
 

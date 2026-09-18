@@ -67,6 +67,10 @@ public class TravelDocumentService : ITravelDocumentService
             .AnyAsync(t => t.Id == travelRequestId && !t.IsDeleted, ct);
         if (!travelExists) throw new NotFoundException($"Travel request {travelRequestId} not found.");
 
+        // Actor must be an authenticated user; anonymous uploads ("0") are not permitted.
+        if (_user.UserId == 0 && _user.UserName is null)
+            throw new BusinessRuleException("Authenticated user identity is required to upload a Travel document.");
+
         // Prepare storage key (same layout convention as Approval documents).
         var generated = $"{Guid.NewGuid():N}{ext}";
         var key = Path.Combine("Content", "Travel", travelRequestId.ToString(CultureInfo.InvariantCulture), generated)

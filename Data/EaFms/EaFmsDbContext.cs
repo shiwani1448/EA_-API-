@@ -215,8 +215,10 @@ public class EaFmsDbContext : DbContext
                 t.HasCheckConstraint("CK_ea_travel_requests_ApprovalState", "\"ApprovalState\" IN ('NotRequired', 'NotSubmitted', 'Pending', 'ChangesRequested', 'Approved', 'Rejected')");
                 t.HasCheckConstraint("CK_ea_travel_requests_TravelDates", "\"DepartureDate\" IS NULL OR \"ReturnDate\" IS NULL OR \"ReturnDate\" >= \"DepartureDate\"");
                 t.HasCheckConstraint("CK_ea_travel_requests_HotelDates", "\"CheckInDate\" IS NULL OR \"CheckOutDate\" IS NULL OR \"CheckOutDate\" >= \"CheckInDate\"");
-                t.HasCheckConstraint("CK_ea_travel_requests_NumberOfTravellers_Positive", "\"NumberOfTravellers\" IS NULL OR \"NumberOfTravellers\" > 0");
-                t.HasCheckConstraint("CK_ea_travel_requests_NumberOfRooms_Positive", "\"NumberOfRooms\" IS NULL OR \"NumberOfRooms\" > 0");
+                // Zero is a legitimate supplied value (frontend-owned business data);
+                // only a physically-impossible negative count is an integrity violation.
+                t.HasCheckConstraint("CK_ea_travel_requests_NumberOfTravellers_NonNegative", "\"NumberOfTravellers\" IS NULL OR \"NumberOfTravellers\" >= 0");
+                t.HasCheckConstraint("CK_ea_travel_requests_NumberOfRooms_NonNegative", "\"NumberOfRooms\" IS NULL OR \"NumberOfRooms\" >= 0");
                 t.HasCheckConstraint("CK_ea_travel_requests_NumberOfGuests_NonNegative", "\"NumberOfGuests\" IS NULL OR \"NumberOfGuests\" >= 0");
                 t.HasCheckConstraint("CK_ea_travel_requests_EstimatedCosts_NonNegative", "(\"EstimatedTravelCost\" IS NULL OR \"EstimatedTravelCost\" >= 0) AND (\"EstimatedHotelCost\" IS NULL OR \"EstimatedHotelCost\" >= 0) AND (\"EstimatedLocalTransportCost\" IS NULL OR \"EstimatedLocalTransportCost\" >= 0) AND (\"EstimatedHospitalityCost\" IS NULL OR \"EstimatedHospitalityCost\" >= 0)");
             });
@@ -316,7 +318,7 @@ public class EaFmsDbContext : DbContext
             entity.Property(e => e.AssignedByNameSnapshot).HasMaxLength(200);
             entity.Property(e => e.Priority).HasMaxLength(100);
             entity.Property(e => e.Status).HasMaxLength(30).IsRequired().HasDefaultValue("Pending");
-            entity.Property(e => e.SourceEntityId).HasMaxLength(200).IsRequired();
+            entity.Property(e => e.SourceEntityId).HasMaxLength(200);
             entity.Property(e => e.SourceReference).HasMaxLength(200);
             entity.Property(e => e.AdditionalNotes).HasMaxLength(4000);
             entity.Property(e => e.CompletedById).HasMaxLength(100);
@@ -923,7 +925,7 @@ public class EaFmsDbContext : DbContext
             // AssignedById. Nullable — see the entity's own doc comment for why.
             entity.Property(e => e.AssignedToId).HasMaxLength(100);
             entity.Property(e => e.OwnerName).HasMaxLength(200);
-            entity.Property(e => e.PriorityLevelId);
+            entity.Property(e => e.Priority).HasMaxLength(100);
             entity.Property(e => e.DueDate);
             entity.Property(e => e.Status).HasMaxLength(200);
             entity.Property(e => e.ActionRecordId).HasMaxLength(200);
@@ -935,7 +937,7 @@ public class EaFmsDbContext : DbContext
 
             entity.HasIndex(e => e.MeetingId);
             entity.HasIndex(e => e.DueDate);
-            entity.HasIndex(e => e.PriorityLevelId);
+            entity.HasIndex(e => e.Priority);
             entity.HasIndex(e => e.Status);
             entity.HasOne(e => e.Meeting)
                 .WithMany()

@@ -62,6 +62,18 @@ public class MeetingListItemResponseDto
     public int? TatUsedMinutes { get; set; }
     public int? TatPausedMinutes { get; set; }
 
+    /// <summary>
+    /// Full-precision TAT summary, computed via the exact same calculation path as
+    /// GetByIdAsync's dto.TatSummary (WorkPauseClassifier.GetPausedDuration, same
+    /// start/end/paused/used formula). Added so the register table's initial values
+    /// already match what View Details shows, instead of the row visibly "correcting
+    /// itself" once the whole-minute list snapshot is replaced by the detail response.
+    /// Never null: mirrors GetByIdAsync's own guaranteed-non-null "unavailable" fallback
+    /// (Tat: null, TotalTat/PauseTime: zero, PauseCount: 0) when there is no workflow, no
+    /// task snapshot, or no configured TAT.
+    /// </summary>
+    public MeetingTatSummaryDto TatSummary { get; set; } = new();
+
     public DateTime CreatedDate { get; set; }
     public DateTime? ModifiedDate { get; set; }
 }

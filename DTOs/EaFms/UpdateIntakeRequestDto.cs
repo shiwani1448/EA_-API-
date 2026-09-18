@@ -2,7 +2,8 @@ namespace Jarvis5.Dtos.EaFms;
 
 public class UpdateIntakeRequestDto
 {
-    public string Title { get; set; } = string.Empty;
+    // See CreateIntakeRequestDto — same implicit-required rationale.
+    public string? Title { get; set; }
     public string? Description { get; set; }
     public long? BusinessModuleId { get; set; }
     public int? StatusId { get; set; }

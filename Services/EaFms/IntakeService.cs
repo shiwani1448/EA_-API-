@@ -56,7 +56,7 @@ public class IntakeService : IIntakeService
 
         var entity = new IntakeRequest
         {
-            Title = dto.Title.Trim(),
+            Title = dto.Title?.Trim() ?? string.Empty,
             Description = dto.Description?.Trim(),
             RequiredDate = dto.RequiredDate,
             BusinessModuleId = dto.BusinessModuleId,
@@ -165,7 +165,7 @@ public class IntakeService : IIntakeService
         // capture old snapshot
         var oldSnapshot = new { entity.Id, entity.Title, entity.StatusId, entity.BusinessModuleId };
 
-        entity.Title = dto.Title.Trim();
+        entity.Title = dto.Title?.Trim() ?? string.Empty;
         entity.Description = dto.Description?.Trim();
         entity.RequiredDate = dto.RequiredDate;
         entity.BusinessModuleId = dto.BusinessModuleId;

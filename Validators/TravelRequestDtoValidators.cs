@@ -56,19 +56,21 @@ public class CreateTravelRequestDtoValidator : AbstractValidator<CreateTravelReq
                 .WithMessage("CheckOutDate must be on or after CheckInDate.");
         });
 
-        // ---- Positive count rules (only when supplied) ----
+        // ---- Non-negative count rules (only when supplied). Zero is a legitimate
+        // supplied value (e.g. no rooms needed yet) and must not be rejected — only a
+        // physically-impossible negative count is a real integrity violation. ----
         When(x => x.NumberOfTravellers.HasValue, () =>
         {
             RuleFor(x => x.NumberOfTravellers)
-                .GreaterThan(0)
-                .WithMessage("NumberOfTravellers must be greater than 0 when supplied.");
+                .GreaterThanOrEqualTo(0)
+                .WithMessage("NumberOfTravellers must be >= 0 when supplied.");
         });
 
         When(x => x.NumberOfRooms.HasValue, () =>
         {
             RuleFor(x => x.NumberOfRooms)
-                .GreaterThan(0)
-                .WithMessage("NumberOfRooms must be greater than 0 when supplied.");
+                .GreaterThanOrEqualTo(0)
+                .WithMessage("NumberOfRooms must be >= 0 when supplied.");
         });
 
         When(x => x.NumberOfGuests.HasValue, () =>
@@ -161,19 +163,20 @@ public class UpdateTravelDraftDtoValidator : AbstractValidator<UpdateTravelDraft
                 .WithMessage("CheckOutDate must be on or after CheckInDate.");
         });
 
-        // ---- Positive count rules (only when supplied) ----
+        // ---- Non-negative count rules (only when supplied). Zero is a legitimate
+        // supplied value; only a physically-impossible negative count is invalid. ----
         When(x => x.NumberOfTravellers.HasValue, () =>
         {
             RuleFor(x => x.NumberOfTravellers)
-                .GreaterThan(0)
-                .WithMessage("NumberOfTravellers must be greater than 0 when supplied.");
+                .GreaterThanOrEqualTo(0)
+                .WithMessage("NumberOfTravellers must be >= 0 when supplied.");
         });
 
         When(x => x.NumberOfRooms.HasValue, () =>
         {
             RuleFor(x => x.NumberOfRooms)
-                .GreaterThan(0)
-                .WithMessage("NumberOfRooms must be greater than 0 when supplied.");
+                .GreaterThanOrEqualTo(0)
+                .WithMessage("NumberOfRooms must be >= 0 when supplied.");
         });
 
         When(x => x.NumberOfGuests.HasValue, () =>

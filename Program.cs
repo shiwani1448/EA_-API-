@@ -372,7 +372,12 @@ builder.Services.AddScoped<Jarvis5.Services.EaFms.ITravelExpenseService, Jarvis5
 
 // Delegation services
 builder.Services.AddScoped<Jarvis5.Repositories.EaFms.IDelegationNumberRepository, Jarvis5.Repositories.EaFms.DelegationRepository>();
-builder.Services.AddScoped<Jarvis5.Services.EaFms.IDelegationService, Jarvis5.Services.EaFms.DelegationService>();
+// Registered as the concrete type too (same scoped instance as IDelegationService) so
+// source-module callers such as MeetingLifecycleService can inject DelegationService
+// directly and reuse its transaction-composable CreateCoreAsync inside their own already-
+// open transaction — the exact reuse path CreateCoreAsync's own XML doc anticipates.
+builder.Services.AddScoped<Jarvis5.Services.EaFms.DelegationService>();
+builder.Services.AddScoped<Jarvis5.Services.EaFms.IDelegationService>(sp => sp.GetRequiredService<Jarvis5.Services.EaFms.DelegationService>());
 
 // ============================================================
 // ANTHROPIC / CLAUDE

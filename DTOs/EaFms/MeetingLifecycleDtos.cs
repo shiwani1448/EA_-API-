@@ -3,7 +3,21 @@ using System.Text.Json.Serialization;
 namespace Jarvis5.Dtos.EaFms;
 
 public class MeetingStartRequestDto { }
-public class MeetingPauseRequestDto { }
+
+/// <summary>
+/// Request body for POST /api/ea/meetings/{meetingId}/pause.
+/// PauseReason is required: blank or whitespace is rejected at the pause boundary.
+/// Maximum 2000 characters (matches WorkPause.Reason varchar(2000)).
+/// </summary>
+public class MeetingPauseRequestDto
+{
+    /// <summary>
+    /// The reason for pausing the Meeting task. Must be non-empty, non-whitespace,
+    /// and at most 2000 characters. Stored verbatim (trimmed) as WorkPause.Reason.
+    /// </summary>
+    public string? PauseReason { get; set; }
+}
+
 public class MeetingResumeRequestDto { }
 
 public class MeetingCompleteRequestDto

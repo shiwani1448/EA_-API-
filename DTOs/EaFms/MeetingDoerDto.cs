@@ -3,6 +3,9 @@ namespace Jarvis5.Dtos.EaFms;
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 public class MeetingDoerDto
 {
-    public string DoerId { get; set; } = string.Empty;
-    public string DoerName { get; set; } = string.Empty;
+    // Frontend-owned form fields, not backend-mandatory. Nullable so ASP.NET Core's
+    // implicit-required validation for non-nullable reference types (from [ApiController])
+    // does not silently re-impose the requiredness FluentValidation deliberately omits.
+    public string? DoerId { get; set; }
+    public string? DoerName { get; set; }
 }

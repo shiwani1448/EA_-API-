@@ -11,8 +11,7 @@ public class MeetingActionDto
     /// historical/not-yet-updated rows that only ever captured OwnerName.</summary>
     public string? AssignedToId { get; set; }
     public string? OwnerName { get; set; }
-    public int? PriorityLevelId { get; set; }
-    public string? PriorityLevelName { get; set; }
+    public string? Priority { get; set; }
     public DateTime? DueDate { get; set; }
     public string? Status { get; set; }
     public bool IsOverdue { get; set; }

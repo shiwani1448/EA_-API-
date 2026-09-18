@@ -512,4 +512,189 @@ public sealed class MeetingListTatTests
         // Merged overlap: from min -90 to min -40 = 50 min
         Assert.Equal(50, (int)result.TotalMinutes);
     }
+
+    // ----------------------------------------------------------------
+    // TatSummary — full-precision field added to the list response so the
+    // register table's initial values already match View Details, instead of
+    // "correcting" once the detail response replaces the list's whole-minute
+    // baseline. Same calculation path as GetByIdAsync's dto.TatSummary.
+    // ----------------------------------------------------------------
+
+    [Fact]
+    public async Task QueryAsync_TatSummary_NeverNull_EvenWithNoWorkflow()
+    {
+        await using var db = MakeDb();
+        var meeting = new Meeting
+        {
+            Title = "No Workflow",
+            MeetingType = "External",
+            Category = "Other",
+            WorkflowInstanceId = null,
+            DoerIds = Array.Empty<string>(),
+            DoerNames = Array.Empty<string>(),
+            CreatedBy = "seed",
+            CreatedDate = DateTime.UtcNow
+        };
+        db.Meetings.Add(meeting);
+        await db.SaveChangesAsync();
+
+        var result = await MakeService(db).QueryAsync();
+
+        Assert.Single(result);
+        var summary = result[0].TatSummary;
+        // Mirrors GetByIdAsync's own non-null "unavailable" fallback shape.
+        Assert.NotNull(summary);
+        Assert.Null(summary.Tat);
+        Assert.Equal(TimeSpan.Zero, summary.TotalTat);
+        Assert.Equal(TimeSpan.Zero, summary.TatDifference);
+        Assert.Equal(TimeSpan.Zero, summary.PauseTime);
+        Assert.Equal(0, summary.PauseCount);
+    }
+
+    [Fact]
+    public async Task QueryAsync_TatSummary_NotStarted_TatAndPauseTimeAreZero_NotNull()
+    {
+        // Task exists with a configured TAT, but the workflow's TatStartedAt is null
+        // (meeting not yet started). Detail returns Tat/PauseTime = TimeSpan.Zero here
+        // (not null) — the list's TatSummary must match that exactly, even though the
+        // separate whole-minute TatUsedMinutes/TatPausedMinutes stay null for this case.
+        await using var db = MakeDb();
+
+        var module = new BusinessModule { Name = "Meeting", IsActive = true, CreatedBy = "s", CreatedDate = DateTime.UtcNow };
+        db.BusinessModules.Add(module);
+        var status = new Status { Name = "Not Started", CreatedBy = "s", CreatedDate = DateTime.UtcNow };
+        db.Statuses.Add(status);
+        await db.SaveChangesAsync();
+
+        var workflow = new WorkflowInstance
+        {
+            StatusId = status.Id,
+            StartedAt = DateTime.UtcNow,
+            TatStartedAt = null,
+            IsActive = true,
+            CreatedBy = "s",
+            CreatedDate = DateTime.UtcNow
+        };
+        db.WorkflowInstances.Add(workflow);
+        var meeting = new Meeting
+        {
+            Title = "Not Started",
+            MeetingType = "Internal",
+            Category = "General",
+            WorkflowInstanceId = workflow.Id,
+            DoerIds = Array.Empty<string>(),
+            DoerNames = Array.Empty<string>(),
+            CreatedBy = "s",
+            CreatedDate = DateTime.UtcNow
+        };
+        db.Meetings.Add(meeting);
+        await db.SaveChangesAsync();
+
+        var task = new EaTask
+        {
+            BusinessModuleId = module.Id,
+            BusinessModule = module,
+            ModuleName = module.Name,
+            BusinessRecordId = meeting.Id.ToString(),
+            Task = "T",
+            AllottedTatMinutes = 60,
+            ExecutionStatus = "NotStarted",
+            IsActive = true,
+            CreatedBy = "s",
+            CreatedDate = DateTime.UtcNow
+        };
+        db.Tasks.Add(task);
+        await db.SaveChangesAsync();
+
+        var result = await MakeService(db).QueryAsync();
+
+        Assert.Single(result);
+        var item = result[0];
+        Assert.Null(item.TatUsedMinutes);
+        Assert.Null(item.TatPausedMinutes);
+
+        var summary = item.TatSummary;
+        Assert.NotNull(summary);
+        Assert.Equal(TimeSpan.Zero, summary.Tat);
+        Assert.Equal(TimeSpan.Zero, summary.PauseTime);
+        Assert.Equal(TimeSpan.FromMinutes(60), summary.TotalTat);
+        Assert.Null(summary.StartTime);
+    }
+
+    [Fact]
+    public async Task QueryAsync_TatSummary_Running_WithSimplePause_MatchesDetailCalculationExactly()
+    {
+        await using var db = MakeDb();
+        var tatStart = DateTime.UtcNow.AddMinutes(-90);
+        var pauseStart = DateTime.UtcNow.AddMinutes(-60);
+        var pauseEnd = DateTime.UtcNow.AddMinutes(-30);
+
+        await SeedMeetingAsync(db, tatStart, tatMinutes: 180, pauses: [(pauseStart, pauseEnd)]);
+
+        var result = await MakeService(db).QueryAsync();
+        Assert.Single(result);
+        var summary = result[0].TatSummary;
+        Assert.NotNull(summary);
+
+        // Recompute expected via the exact same canonical helper GetByIdAsync uses.
+        var wf = await db.WorkflowInstances.FirstAsync();
+        var allPauses = await db.WorkPauses.OrderBy(p => p.StartAt).ToListAsync();
+        var now = DateTime.UtcNow;
+        var end = wf.CompletedAt ?? now;
+        var expectedPaused = WorkPauseClassifier.GetPausedDuration(wf.TatStartedAt!.Value, end, allPauses);
+        var expectedUsed = end - wf.TatStartedAt!.Value - expectedPaused;
+        if (expectedUsed < TimeSpan.Zero) expectedUsed = TimeSpan.Zero;
+
+        // Full-precision (TimeSpan), not truncated to whole minutes — allow a small
+        // tolerance only for the test's own wall-clock execution gap.
+        Assert.True(Math.Abs((summary.Tat!.Value - expectedUsed).TotalSeconds) < 5);
+        Assert.True(Math.Abs((summary.PauseTime - expectedPaused).TotalSeconds) < 5);
+        Assert.Equal(TimeSpan.FromMinutes(180), summary.TotalTat);
+        Assert.Equal(summary.TotalTat - summary.Tat!.Value, summary.TatDifference);
+        Assert.Equal(1, summary.PauseCount);
+        Assert.Equal(wf.TatStartedAt, summary.StartTime);
+        Assert.Null(summary.EndTime);
+    }
+
+    [Fact]
+    public async Task QueryAsync_TatSummary_Completed_UsesCompletedAtAsEndTimeAndLastActiveTime()
+    {
+        await using var db = MakeDb();
+        var baseNow = DateTime.UtcNow;
+        var tatStart = baseNow.AddMinutes(-200);
+        var completedAt = baseNow.AddMinutes(-100);
+
+        await SeedMeetingAsync(db, tatStart, tatMinutes: 60, completedAt: completedAt);
+
+        var result = await MakeService(db).QueryAsync();
+        Assert.Single(result);
+        var summary = result[0].TatSummary;
+
+        Assert.NotNull(summary);
+        Assert.Equal(TimeSpan.FromMinutes(100), summary.Tat);
+        Assert.Equal(TimeSpan.Zero, summary.PauseTime);
+        Assert.Equal(completedAt, summary.EndTime);
+        Assert.Equal(completedAt, summary.LastActiveTime);
+        Assert.Equal(0, summary.PauseCount);
+    }
+
+    [Fact]
+    public async Task QueryAsync_TatSummary_OpenPause_LastActiveTimeIsPauseStart()
+    {
+        // A currently-open simple pause: LastActiveTime should be the pause's StartAt,
+        // exactly like GetByIdAsync's openSimplePause?.StartAt fallback.
+        await using var db = MakeDb();
+        var tatStart = DateTime.UtcNow.AddMinutes(-60);
+        var pauseStart = DateTime.UtcNow.AddMinutes(-20);
+
+        await SeedMeetingAsync(db, tatStart, tatMinutes: 120, pauses: [(pauseStart, null)]);
+
+        var result = await MakeService(db).QueryAsync();
+        Assert.Single(result);
+        var summary = result[0].TatSummary;
+
+        Assert.NotNull(summary);
+        Assert.Equal(pauseStart, summary.LastActiveTime);
+        Assert.Equal(1, summary.PauseCount);
+    }
 }

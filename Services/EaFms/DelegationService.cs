@@ -96,11 +96,17 @@ public class DelegationService : IDelegationService
                 $"Insert an active '{DelegationBusinessModuleName}' record into ea_business_modules.");
 
         // ---- 2. Validate the SOURCE module (a different concept — WHERE the work came from) ----
-        var sourceModule = await _db.BusinessModules.AsNoTracking()
-            .FirstOrDefaultAsync(m => m.Id == command.SourceBusinessModuleId && m.IsActive && !m.IsDeleted, ct)
-            ?? throw new BusinessRuleException("SourceBusinessModuleId must refer to an active business module.");
+        // Null means a direct/manual Delegation: no originating module or record, never
+        // defaulted to the Delegation module itself and never fabricated.
+        BusinessModule? sourceModule = null;
+        if (command.SourceBusinessModuleId.HasValue)
+        {
+            sourceModule = await _db.BusinessModules.AsNoTracking()
+                .FirstOrDefaultAsync(m => m.Id == command.SourceBusinessModuleId.Value && m.IsActive && !m.IsDeleted, ct)
+                ?? throw new BusinessRuleException("SourceBusinessModuleId must refer to an active business module.");
+        }
 
-        var priority = await ResolvePriorityAsync(command.Priority, ct);
+        var priority = NormalizePriority(command.Priority);
 
         var actor = Actor();
         var actorName = _user.UserName;
@@ -144,8 +150,8 @@ public class DelegationService : IDelegationService
             DueDate = command.DueDate,
             Status = DelegationStatus.Pending,
 
-            SourceBusinessModuleId = sourceModule.Id,
-            SourceEntityId = command.SourceEntityId?.Trim() ?? string.Empty,
+            SourceBusinessModuleId = sourceModule?.Id,
+            SourceEntityId = string.IsNullOrWhiteSpace(command.SourceEntityId) ? null : command.SourceEntityId.Trim(),
             SourceReference = string.IsNullOrWhiteSpace(command.SourceReference) ? null : command.SourceReference.Trim(),
 
             AdditionalNotes = string.IsNullOrWhiteSpace(command.AdditionalNotes) ? null : command.AdditionalNotes.Trim(),
@@ -173,7 +179,7 @@ public class DelegationService : IDelegationService
             "Delegation created");
         await _db.SaveChangesAsync(ct);
 
-        return ToDto(entity, sourceModule.Name);
+        return ToDto(entity, sourceModule?.Name);
     }
 
     // ============================================================
@@ -187,7 +193,7 @@ public class DelegationService : IDelegationService
             .FirstOrDefaultAsync(d => d.Id == delegationId && !d.IsDeleted, ct)
             ?? throw new NotFoundException($"Delegation {delegationId} not found.");
 
-        return ToDto(entity, entity.SourceBusinessModule.Name);
+        return ToDto(entity, entity.SourceBusinessModule?.Name);
     }
 
     // ============================================================
@@ -207,11 +213,15 @@ public class DelegationService : IDelegationService
         if (entity.Status == DelegationStatus.Completed)
             throw new BusinessRuleException("Completed delegations cannot be edited.");
 
-        var sourceModule = await _db.BusinessModules.AsNoTracking()
-            .FirstOrDefaultAsync(m => m.Id == dto.SourceBusinessModuleId && m.IsActive && !m.IsDeleted, ct)
-            ?? throw new BusinessRuleException("SourceBusinessModuleId must refer to an active business module.");
+        BusinessModule? sourceModule = null;
+        if (dto.SourceBusinessModuleId.HasValue)
+        {
+            sourceModule = await _db.BusinessModules.AsNoTracking()
+                .FirstOrDefaultAsync(m => m.Id == dto.SourceBusinessModuleId.Value && m.IsActive && !m.IsDeleted, ct)
+                ?? throw new BusinessRuleException("SourceBusinessModuleId must refer to an active business module.");
+        }
 
-        var priority = await ResolvePriorityAsync(dto.Priority, ct);
+        var priority = NormalizePriority(dto.Priority);
 
         var snapshot = new
         {
@@ -229,8 +239,8 @@ public class DelegationService : IDelegationService
         entity.AssignedToNameSnapshot = string.IsNullOrWhiteSpace(dto.AssignedToNameSnapshot) ? null : dto.AssignedToNameSnapshot.Trim();
         entity.DueDate = dto.DueDate;
         entity.Priority = priority;
-        entity.SourceBusinessModuleId = sourceModule.Id;
-        entity.SourceEntityId = dto.SourceEntityId?.Trim() ?? string.Empty;
+        entity.SourceBusinessModuleId = sourceModule?.Id;
+        entity.SourceEntityId = string.IsNullOrWhiteSpace(dto.SourceEntityId) ? null : dto.SourceEntityId.Trim();
         entity.SourceReference = string.IsNullOrWhiteSpace(dto.SourceReference) ? null : dto.SourceReference.Trim();
         entity.AdditionalNotes = string.IsNullOrWhiteSpace(dto.AdditionalNotes) ? null : dto.AdditionalNotes.Trim();
 
@@ -255,7 +265,7 @@ public class DelegationService : IDelegationService
         await _db.SaveChangesAsync(ct);
         await transaction.CommitAsync(ct);
 
-        return ToDto(entity, sourceModule.Name);
+        return ToDto(entity, sourceModule?.Name);
     }
 
     // ============================================================
@@ -407,7 +417,7 @@ public class DelegationService : IDelegationService
 
         return new PagedResult<DelegationResponseDto>
         {
-            Items = items.Select(d => ToDto(d, d.SourceBusinessModule.Name)).ToArray(),
+            Items = items.Select(d => ToDto(d, d.SourceBusinessModule?.Name)).ToArray(),
             PageNumber = page,
             PageSize = pageSize,
             TotalCount = totalCount
@@ -478,26 +488,26 @@ public class DelegationService : IDelegationService
     }
 
     /// <summary>SourceBusinessModuleId never changes during a lifecycle action, so it's
-    /// resolved fresh here rather than requiring the caller to have an Include loaded.</summary>
-    private async Task<string> ResolveSourceModuleNameAsync(long sourceBusinessModuleId, CancellationToken ct) =>
-        await _db.BusinessModules.AsNoTracking()
-            .Where(m => m.Id == sourceBusinessModuleId)
-            .Select(m => m.Name)
-            .SingleAsync(ct);
+    /// resolved fresh here rather than requiring the caller to have an Include loaded.
+    /// Null means a direct/manual Delegation with no originating module — returns null
+    /// rather than resolving anything.</summary>
+    private async Task<string?> ResolveSourceModuleNameAsync(long? sourceBusinessModuleId, CancellationToken ct) =>
+        sourceBusinessModuleId.HasValue
+            ? await _db.BusinessModules.AsNoTracking()
+                .Where(m => m.Id == sourceBusinessModuleId.Value)
+                .Select(m => m.Name)
+                .SingleAsync(ct)
+            : null;
 
     private string Actor() => _user.UserName ?? _user.UserId.ToString(CultureInfo.InvariantCulture);
 
-    /// <summary>Meeting's established convention: validate against active PriorityLevel.Name, store the canonical name.</summary>
-    private async Task<string?> ResolvePriorityAsync(string? priority, CancellationToken ct)
-    {
-        if (string.IsNullOrWhiteSpace(priority)) return null;
-        var normalized = priority.Trim();
-        return await _db.PriorityLevels.AsNoTracking()
-            .Where(p => p.IsActive && !p.IsDeleted && p.Name.ToLower() == normalized.ToLower())
-            .Select(p => p.Name)
-            .SingleOrDefaultAsync(ct)
-            ?? throw new BadRequestException($"Priority '{normalized}' is not an active priority level.");
-    }
+    /// <summary>
+    /// Priority is a frontend-owned business string (PriorityLevel is optional discovery
+    /// data for a dropdown, not a persistence gate). Only whitespace is trimmed; any
+    /// submitted value, including one PriorityLevel doesn't know about, is stored as-is.
+    /// </summary>
+    private static string? NormalizePriority(string? priority) =>
+        string.IsNullOrWhiteSpace(priority) ? null : priority.Trim();
 
     private static string? NormalizeStatus(string? status)
     {
@@ -537,7 +547,7 @@ public class DelegationService : IDelegationService
             throw new BadRequestException($"view '{view}' conflicts with status '{status}' (Completed is excluded from {view}).");
     }
 
-    private static DelegationResponseDto ToDto(Delegation d, string sourceModuleName)
+    private static DelegationResponseDto ToDto(Delegation d, string? sourceModuleName)
     {
         var today = IndiaBusinessCalendar.Today;
         // Compiled from the exact same expressions used for the register view filter and

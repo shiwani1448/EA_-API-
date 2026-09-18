@@ -40,10 +40,14 @@ public class Delegation
 
     // WHY this work exists: the originating module and record. SourceBusinessModuleId
     // reuses the existing BusinessModule catalog rather than a free-text module name.
-    public long SourceBusinessModuleId { get; set; }
-    public BusinessModule SourceBusinessModule { get; set; } = null!;
+    // Nullable: a directly/manually created Delegation has no originating module or
+    // record — that is NOT the same thing as originating from the Delegation module
+    // itself, so it must never default to Delegation's own BusinessModule.
+    public long? SourceBusinessModuleId { get; set; }
+    public BusinessModule? SourceBusinessModule { get; set; }
     // Stable identity of the originating record (e.g. TravelRequest.Id, Meeting.Id as string).
-    public string SourceEntityId { get; set; } = string.Empty;
+    // Nullable for the same reason as SourceBusinessModuleId.
+    public string? SourceEntityId { get; set; }
     // Display/business context only (e.g. a ReferenceNo) — never used as relational identity.
     public string? SourceReference { get; set; }
 

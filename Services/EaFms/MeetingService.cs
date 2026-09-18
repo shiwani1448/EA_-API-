@@ -32,7 +32,7 @@ public class MeetingService : IMeetingService
 
     public async Task<MeetingDetailResponseDto> CreateAsync(CreateMeetingRequestDto dto, CancellationToken ct = default)
     {
-        var priority = await ResolvePriorityAsync(dto.Priority, ct);
+        var priority = NormalizePriority(dto.Priority);
         if (dto.StatusId.HasValue && !await _context.Statuses.AnyAsync(x => x.Id == dto.StatusId.Value && !x.IsDeleted, ct))
             throw new NotFoundException($"Status {dto.StatusId} not found.");
         if (dto.IntakeRequestId.HasValue && !await _context.IntakeRequests.AnyAsync(x => x.Id == dto.IntakeRequestId.Value && !x.IsDeleted, ct))
@@ -194,8 +194,10 @@ public class MeetingService : IMeetingService
                 item.StartedAt = workflow.TatStartedAt;
                 item.CompletedAt = workflow.CompletedAt;
                 item.ExecutionState = MeetingExecutionStateMapper.Map(workflow.TatStartedAt.HasValue, workflow.CompletedAt.HasValue);
-                item.IsPaused = pausesByWorkflow.TryGetValue(workflowId, out var pausesForItem)
-                    && pausesForItem.Any(p => p.EndAt == null && WorkPauseClassifier.IsSimplePause(p));
+                var pauses = pausesByWorkflow.TryGetValue(workflowId, out var wfPauses)
+                    ? wfPauses
+                    : new List<WorkPause>();
+                item.IsPaused = pauses.Any(p => p.EndAt == null && WorkPauseClassifier.IsSimplePause(p));
 
                 // Populate TAT used/paused using the same formula as GetByIdAsync:
                 //   end  = CompletedAt when completed, otherwise current UTC time.
@@ -204,10 +206,6 @@ public class MeetingService : IMeetingService
                 // Only calculated when the task has an AllottedTatMinutes value (TAT exists).
                 if (task is not null && task.AllottedTatMinutes.HasValue && workflow.TatStartedAt.HasValue)
                 {
-                    var pauses = pausesByWorkflow.TryGetValue(workflowId, out var wfPauses)
-                        ? wfPauses
-                        : new List<WorkPause>();
-
                     var end = workflow.CompletedAt ?? now;
                     var paused = GetPausedDuration(workflow.TatStartedAt.Value, end, pauses);
                     var used = end - workflow.TatStartedAt.Value - paused;
@@ -219,6 +217,43 @@ public class MeetingService : IMeetingService
                 // When no TAT data exists (no task or no TatStartedAt), leave
                 // TatUsedMinutes/TatPausedMinutes as null — preserving existing
                 // "unavailable" behaviour and not converting nulls to 0.
+
+                // Full-precision TatSummary — identical calculation path to GetByIdAsync's
+                // dto.TatSummary (same GetPausedDuration helper, same end/paused/used/
+                // TatDifference/LastActiveTime/PauseCount formulas), sourced from the batch-
+                // loaded task/workflow/pauses above so no per-row query or detail call is
+                // introduced. Gated on task+AllottedTatMinutes only (not TatStartedAt), just
+                // like detail, so a not-yet-started meeting still gets Tat/PauseTime = zero
+                // (not null) — matching detail exactly instead of the whole-minute fields above.
+                if (task is not null && task.AllottedTatMinutes.HasValue)
+                {
+                    var totalTat = TimeSpan.FromMinutes(task.AllottedTatMinutes.Value);
+                    var end = workflow.CompletedAt ?? now;
+                    var paused = workflow.TatStartedAt.HasValue
+                        ? GetPausedDuration(workflow.TatStartedAt.Value, end, pauses)
+                        : TimeSpan.Zero;
+                    var used = workflow.TatStartedAt.HasValue
+                        ? end - workflow.TatStartedAt.Value - paused
+                        : TimeSpan.Zero;
+                    if (used < TimeSpan.Zero) used = TimeSpan.Zero;
+
+                    var openSimplePause = pauses.FirstOrDefault(p => p.EndAt == null && WorkPauseClassifier.IsSimplePause(p));
+
+                    item.TatSummary = new MeetingTatSummaryDto
+                    {
+                        Tat = used,
+                        TotalTat = totalTat,
+                        TatDifference = totalTat - used,
+                        StartTime = workflow.TatStartedAt,
+                        EndTime = workflow.CompletedAt,
+                        LastActiveTime = workflow.CompletedAt ?? (openSimplePause?.StartAt ?? end),
+                        PauseTime = paused,
+                        PauseCount = pauses.Count(WorkPauseClassifier.IsSimplePause)
+                    };
+                }
+                // When no task or no configured TAT exists, item.TatSummary keeps its default
+                // MeetingTatSummaryDto (Tat: null, TotalTat/PauseTime: zero, PauseCount: 0) —
+                // the same non-null "unavailable" shape GetByIdAsync falls back to.
             }
         }
 
@@ -230,6 +265,11 @@ public class MeetingService : IMeetingService
         var m = await _repo.GetByIdAsync(id, ct) ?? throw new NotFoundException($"Meeting {id} not found.");
         var dto = _mapper.Map<MeetingDetailResponseDto>(m);
         dto.MeetingId = m.Id;
+        // MappingProfile explicitly ignores Priority on this map (it sits alongside the
+        // task-snapshot fields populated below), so it must be set from the entity here —
+        // otherwise the detail endpoint would always return Priority: null regardless of
+        // what was stored, even though the list endpoint (QueryAsync) already surfaces it.
+        dto.Priority = m.Priority;
         dto.StartedAt = null;
         var task = await GetMeetingTaskSnapshotAsync(m.Id, ct);
         if (task is not null)
@@ -379,7 +419,7 @@ public class MeetingService : IMeetingService
         m.MeetingLink = dto.MeetingLink;
         m.OrganizerId = dto.OrganizerId;
         m.OrganizerName = dto.OrganizerName;
-        m.Priority = await ResolvePriorityAsync(dto.Priority, ct);
+        m.Priority = NormalizePriority(dto.Priority);
         m.StatusId = dto.StatusId;
         m.RequiredDate = dto.RequiredDate;
         m.AgendaDueAt = dto.AgendaDueAt;
@@ -411,13 +451,13 @@ public class MeetingService : IMeetingService
         await _context.SaveChangesAsync(ct);
     }
 
-    private async Task<string?> ResolvePriorityAsync(string? priority, CancellationToken ct)
-    {
-        if (string.IsNullOrWhiteSpace(priority)) return null;
-        var normalized = priority.Trim();
-        return await _context.PriorityLevels.AsNoTracking().Where(p => p.IsActive && !p.IsDeleted && p.Name.ToLower() == normalized.ToLower()).Select(p => p.Name).SingleOrDefaultAsync(ct)
-            ?? throw new BadRequestException($"Priority '{normalized}' is not an active priority level.");
-    }
+    /// <summary>
+    /// Priority is a frontend-owned business string (PriorityLevel is optional discovery
+    /// data for a dropdown, not a persistence gate). Only whitespace is trimmed; any
+    /// submitted value, including one PriorityLevel doesn't know about, is stored as-is.
+    /// </summary>
+    private static string? NormalizePriority(string? priority) =>
+        string.IsNullOrWhiteSpace(priority) ? null : priority.Trim();
 
     private async Task<EaTask?> GetMeetingTaskSnapshotAsync(long meetingId, CancellationToken ct)
     {

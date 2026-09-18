@@ -7,7 +7,9 @@ public class UpdateMeetingRequestDtoValidator : AbstractValidator<UpdateMeetingR
 {
     public UpdateMeetingRequestDtoValidator()
     {
-        RuleFor(x => x.Title).NotEmpty().MaximumLength(500);
+        // Frontend-owned form requiredness — Meeting.Title is nullable at the DB/entity
+        // level, so backend only guards the technical DB column length, not presence.
+        RuleFor(x => x.Title).MaximumLength(500);
         RuleFor(x => x.Description).MaximumLength(4000);
         RuleFor(x => x.Purpose).MaximumLength(2000);
         RuleFor(x => x.OrganizerId).MaximumLength(100);

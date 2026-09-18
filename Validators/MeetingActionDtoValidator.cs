@@ -7,8 +7,9 @@ public class MeetingActionDtoValidator : AbstractValidator<CreateMeetingActionDt
 {
     public MeetingActionDtoValidator()
     {
+        // Frontend-owned business fields — optional; only DB column length is guarded.
         RuleFor(x => x.Title).MaximumLength(500);
-        RuleFor(x => x.PriorityLevelId).GreaterThan(0);
+        RuleFor(x => x.Priority).MaximumLength(100);
         RuleFor(x => x.Description).MaximumLength(4000);
         RuleFor(x => x.AssignedToId).MaximumLength(100);
         RuleFor(x => x.OwnerName).MaximumLength(200);

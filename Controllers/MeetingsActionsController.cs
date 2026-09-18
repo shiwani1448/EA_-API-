@@ -24,7 +24,6 @@ public class MeetingsActionsController : ControllerBase
         if (m is null) return NotFound();
 
         var list = await _context.MeetingActions.Where(a => a.MeetingId == meetingId && !a.IsDeleted).ToListAsync(ct);
-        var priorities = await _context.PriorityLevels.ToListAsync(ct);
 
         var now = Jarvis5.Common.Clock.UtcNowTz;
         var result = list.Select(a => new MeetingActionDto {
@@ -33,8 +32,7 @@ public class MeetingsActionsController : ControllerBase
             Description = a.Description,
             AssignedToId = a.AssignedToId,
             OwnerName = a.OwnerName,
-            PriorityLevelId = a.PriorityLevelId,
-            PriorityLevelName = a.PriorityLevelId.HasValue ? priorities.FirstOrDefault(p => p.Id == a.PriorityLevelId.Value)?.Name : null,
+            Priority = a.Priority,
             DueDate = a.DueDate,
             Status = a.Status,
             IsOverdue = a.CompletedAt == null && a.DueDate != null && a.DueDate < now
@@ -58,7 +56,7 @@ public class MeetingsActionsController : ControllerBase
             Description = dto.Description,
             AssignedToId = string.IsNullOrWhiteSpace(dto.AssignedToId) ? null : dto.AssignedToId.Trim(),
             OwnerName = dto.OwnerName,
-            PriorityLevelId = dto.PriorityLevelId,
+            Priority = string.IsNullOrWhiteSpace(dto.Priority) ? null : dto.Priority.Trim(),
             DueDate = dto.DueDate,
             Status = dto.Status,
             CreatedBy = User?.Identity?.Name ?? string.Empty,

@@ -7,7 +7,9 @@ public class CreateMeetingRequestDtoValidator : AbstractValidator<CreateMeetingR
 {
     public CreateMeetingRequestDtoValidator()
     {
-        RuleFor(x => x.Title).NotEmpty().MaximumLength(500);
+        // Frontend-owned form requiredness — Meeting.Title is nullable at the DB/entity
+        // level, so backend only guards the technical DB column length, not presence.
+        RuleFor(x => x.Title).MaximumLength(500);
         RuleFor(x => x.Priority).MaximumLength(100);
         RuleFor(x => x.StatusId).GreaterThan(0).When(x => x.StatusId.HasValue);
         RuleFor(x => x.IntakeRequestId).GreaterThan(0).When(x => x.IntakeRequestId.HasValue);

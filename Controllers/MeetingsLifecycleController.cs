@@ -25,8 +25,8 @@ public class MeetingsLifecycleController : ControllerBase
     /// <summary>Pause Meeting Task</summary>
     [HttpPost("pause")]
     [ProducesResponseType(typeof(MeetingPauseResponseDto), 200)]
-    public async Task<IActionResult> Pause(long meetingId, CancellationToken ct)
-        => Ok(await _lifecycle.PauseAsync(meetingId, new MeetingPauseRequestDto(), ct));
+    public async Task<IActionResult> Pause(long meetingId, [FromBody] MeetingPauseRequestDto dto, CancellationToken ct)
+        => Ok(await _lifecycle.PauseAsync(meetingId, dto, ct));
 
     /// <summary>Resume Meeting Task</summary>
     [HttpPost("resume")]

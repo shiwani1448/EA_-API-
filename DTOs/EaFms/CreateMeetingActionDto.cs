@@ -8,7 +8,7 @@ public class CreateMeetingActionDto
     /// OwnerName continue to work unchanged.</summary>
     public string? AssignedToId { get; set; }
     public string? OwnerName { get; set; }
-    public int? PriorityLevelId { get; set; }
+    public string? Priority { get; set; }
     public DateTime? DueDate { get; set; }
     public string? Status { get; set; }
 }

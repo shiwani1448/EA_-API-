@@ -35,6 +35,10 @@ public class ExceptionHandlingMiddleware
             // to keep returning 409 when this middleware is registered before other handlers.
             await WriteProblemAsync(context, StatusCodes.Status409Conflict, "Conflict", ex.Message);
         }
+        catch (BadRequestException ex)
+        {
+            await WriteProblemAsync(context, StatusCodes.Status400BadRequest, "Bad Request", ex.Message);
+        }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Unhandled exception while processing {Method} {Path}", context.Request.Method, context.Request.Path);

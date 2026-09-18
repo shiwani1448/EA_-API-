@@ -164,4 +164,82 @@ public class MeetingActionAssignedToIdTests
             .ToListAsync();
         Assert.Equal(2, futureSourceEntityIds.Distinct().Count());
     }
+
+    // ----------------------------------------------------------------
+    // PRIORITY (EA-wide frontend-owned-requiredness cleanup)
+    //
+    // MeetingAction previously required PriorityLevelId (a catalog FK, GreaterThan(0)
+    // validated). It is now a plain frontend-owned Priority string, matching Meeting/
+    // Delegation's convention: no PriorityLevel existence check, no mandatory rule.
+    // ----------------------------------------------------------------
+
+    [Theory]
+    [InlineData("High")]
+    [InlineData("Urgent")]
+    [InlineData("Anything Selected By Frontend")]
+    public async Task Create_ArbitraryPriority_AcceptedAndStoredVerbatim_NoCatalogGate(string priority)
+    {
+        var db = MakeDb();
+        var meeting = await SeedMeetingAsync(db);
+        var controller = new MeetingsActionsController(db);
+
+        var result = await controller.Create(meeting.Id, new CreateMeetingActionDto { Title = "X", Priority = priority }, default);
+
+        var created = Assert.IsType<CreatedAtActionResult>(result);
+        var action = Assert.IsType<MeetingAction>(created.Value);
+        Assert.Equal(priority, action.Priority);
+
+        var saved = await db.MeetingActions.SingleAsync(a => a.Id == action.Id);
+        Assert.Equal(priority, saved.Priority);
+    }
+
+    [Fact]
+    public async Task Create_WithoutPriority_IsNotMandatory()
+    {
+        var db = MakeDb();
+        var meeting = await SeedMeetingAsync(db);
+        var controller = new MeetingsActionsController(db);
+
+        var result = await controller.Create(meeting.Id, new CreateMeetingActionDto { Title = "No priority at all" }, default);
+
+        var created = Assert.IsType<CreatedAtActionResult>(result);
+        var action = Assert.IsType<MeetingAction>(created.Value);
+        Assert.Null(action.Priority);
+    }
+
+    [Fact]
+    public async Task Create_TrimsPriority_AndTreatsWhitespaceAsNull()
+    {
+        var db = MakeDb();
+        var meeting = await SeedMeetingAsync(db);
+        var controller = new MeetingsActionsController(db);
+
+        await controller.Create(meeting.Id, new CreateMeetingActionDto { Title = "X", Priority = "  High  " }, default);
+        await controller.Create(meeting.Id, new CreateMeetingActionDto { Title = "Y", Priority = "   " }, default);
+
+        var saved = await db.MeetingActions.OrderBy(a => a.Id).ToListAsync();
+        Assert.Equal("High", saved[0].Priority);
+        Assert.Null(saved[1].Priority);
+    }
+
+    [Fact]
+    public async Task Get_ExposesPriority_AsPlainString()
+    {
+        var db = MakeDb();
+        var meeting = await SeedMeetingAsync(db);
+        db.MeetingActions.Add(new MeetingAction
+        {
+            MeetingId = meeting.Id, Title = "A", Priority = "Urgent",
+            CreatedBy = "seed", CreatedDate = DateTime.UtcNow
+        });
+        await db.SaveChangesAsync();
+        var controller = new MeetingsActionsController(db);
+
+        var result = await controller.Get(meeting.Id, default);
+
+        var ok = Assert.IsType<OkObjectResult>(result);
+        var list = Assert.IsAssignableFrom<System.Collections.Generic.List<MeetingActionDto>>(ok.Value);
+        var a = Assert.Single(list);
+        Assert.Equal("Urgent", a.Priority);
+    }
 }

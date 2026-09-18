@@ -6,19 +6,22 @@ public static class MeetingDoers
     public static List<MeetingDoerDto> ToDtos(Meeting meeting) => meeting.DoerIds
         .Select((id, i) => new MeetingDoerDto { DoerId = id, DoerName = meeting.DoerNames[i] }).ToList();
 
+    /// <summary>
+    /// DoerId/DoerName are frontend-owned form fields — neither is backend-mandatory.
+    /// A null/blank value is stored as "" (Meeting.DoerIds/DoerNames are parallel
+    /// non-nullable string[] columns, so this is the storage-permitted representation
+    /// of "no value supplied", not a fabricated identity). DoerId and DoerName are
+    /// never copied into one another.
+    /// </summary>
     public static (string[] Ids, string[] Names) ToArrays(IEnumerable<MeetingDoerDto> doers)
     {
         var ids = new List<string>();
         var names = new List<string>();
         foreach (var doer in doers)
         {
-            if (doer is null || string.IsNullOrWhiteSpace(doer.DoerId))
-                throw new Jarvis5.Common.BadRequestException("Each doer must have a nonblank DoerId.");
-            if (string.IsNullOrWhiteSpace(doer.DoerName))
-                throw new Jarvis5.Common.BadRequestException("Each doer must have a nonblank DoerName.");
-
-            ids.Add(doer.DoerId.Trim());
-            names.Add(doer.DoerName.Trim());
+            if (doer is null) continue;
+            ids.Add(doer.DoerId?.Trim() ?? string.Empty);
+            names.Add(doer.DoerName?.Trim() ?? string.Empty);
         }
 
         return (ids.ToArray(), names.ToArray());

@@ -20,7 +20,7 @@ public sealed class DelegationCreateCommand
     public string? Priority { get; init; }
     public DateTime? DueDate { get; init; }
 
-    public long SourceBusinessModuleId { get; init; }
+    public long? SourceBusinessModuleId { get; init; }
     public string? SourceEntityId { get; init; }
     public string? SourceReference { get; init; }
 

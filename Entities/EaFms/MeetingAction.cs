@@ -18,7 +18,9 @@ public class MeetingAction
     // AssignedToId, OwnerName -> Delegation.AssignedToNameSnapshot.
     public string? AssignedToId { get; set; }
     public string? OwnerName { get; set; }
-    public int? PriorityLevelId { get; set; }
+    // Frontend-owned business string, stored as submitted — not restricted to
+    // PriorityLevel's catalog (PriorityLevel is optional discovery data only).
+    public string? Priority { get; set; }
     public DateTime? DueDate { get; set; }
     public string? Status { get; set; }
     public DateTime? AcknowledgedAt { get; set; }

@@ -62,6 +62,8 @@ public partial class TravelRequestService : ITravelRequestService
         }
 
         var actor = _currentUser.UserName ?? _currentUser.UserId.ToString(CultureInfo.InvariantCulture);
+        if (_currentUser.UserId == 0 && _currentUser.UserName is null)
+            throw new BusinessRuleException("Authenticated user identity is required to create a Travel request.");
         var now = Clock.UtcNowTz;
         var referenceNo = await _travelNumbers.GenerateNextReferenceNoAsync(ct);
 

@@ -12,17 +12,24 @@ namespace Jarvis5.Dtos.EaFms;
 /// </summary>
 public class DelegationCreateRequestDto
 {
-    public string Title { get; set; } = string.Empty;
+    // Frontend-owned form fields — nullable so ASP.NET Core's implicit-required
+    // validation for non-nullable reference types (from [ApiController]) does not
+    // silently re-impose requiredness the service deliberately does not enforce
+    // (CreateCoreAsync already coalesces a missing value to "" rather than throwing).
+    public string? Title { get; set; }
     public string? Description { get; set; }
 
-    public string AssignedToId { get; set; } = string.Empty;
+    public string? AssignedToId { get; set; }
     public string? AssignedToNameSnapshot { get; set; }
 
     public DateTime? DueDate { get; set; }
     public string? Priority { get; set; }
 
-    public long SourceBusinessModuleId { get; set; }
-    public string SourceEntityId { get; set; } = string.Empty;
+    // Origin of the delegated work — null means a direct/manual Delegation with no
+    // originating module or record. When supplied, it must resolve to a real,
+    // active BusinessModule (never Delegation's own module, never fabricated).
+    public long? SourceBusinessModuleId { get; set; }
+    public string? SourceEntityId { get; set; }
     public string? SourceReference { get; set; }
 
     public string? AdditionalNotes { get; set; }
@@ -34,17 +41,19 @@ public class DelegationCreateRequestDto
 /// </summary>
 public class DelegationUpdateRequestDto
 {
-    public string Title { get; set; } = string.Empty;
+    // See DelegationCreateRequestDto — same implicit-required rationale.
+    public string? Title { get; set; }
     public string? Description { get; set; }
 
-    public string AssignedToId { get; set; } = string.Empty;
+    public string? AssignedToId { get; set; }
     public string? AssignedToNameSnapshot { get; set; }
 
     public DateTime? DueDate { get; set; }
     public string? Priority { get; set; }
 
-    public long SourceBusinessModuleId { get; set; }
-    public string SourceEntityId { get; set; } = string.Empty;
+    // See DelegationCreateRequestDto — same nullable-source semantics.
+    public long? SourceBusinessModuleId { get; set; }
+    public string? SourceEntityId { get; set; }
     public string? SourceReference { get; set; }
 
     public string? AdditionalNotes { get; set; }
@@ -75,9 +84,9 @@ public class DelegationResponseDto
 
     public string Status { get; set; } = string.Empty;
 
-    public long SourceBusinessModuleId { get; set; }
-    public string SourceModuleName { get; set; } = string.Empty;
-    public string SourceEntityId { get; set; } = string.Empty;
+    public long? SourceBusinessModuleId { get; set; }
+    public string? SourceModuleName { get; set; }
+    public string? SourceEntityId { get; set; }
     public string? SourceReference { get; set; }
 
     public string? AdditionalNotes { get; set; }

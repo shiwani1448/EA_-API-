@@ -183,8 +183,16 @@ public class DelegationServiceTests
         Assert.Empty(await db.Delegations.ToListAsync());
     }
 
+    // ----------------------------------------------------------------
+    // EA-wide frontend-owned-requiredness cleanup: Priority is a frontend-owned
+    // business string. PriorityLevel is optional discovery/reference data only —
+    // it is no longer a persistence gate, so a Priority value with no matching
+    // PriorityLevel row must NOT be rejected, and casing must NOT be rewritten to
+    // match some canonical PriorityLevel.Name.
+    // ----------------------------------------------------------------
+
     [Fact]
-    public async Task Create_UnknownPriority_IsRejected()
+    public async Task Create_UnknownPriority_IsAcceptedAndStoredVerbatim()
     {
         var db = MakeDb();
         var module = await AddModuleAsync(db, ModuleName);
@@ -193,12 +201,14 @@ public class DelegationServiceTests
         var (service, _) = MakeService(db, numbers, eaTasks);
 
         var dto = MakeCreateDto(source.Id);
-        dto.Priority = "Urgent-ish"; // not a configured PriorityLevel
-        await Assert.ThrowsAsync<BadRequestException>(() => service.CreateAsync(dto));
+        dto.Priority = "Anything Selected By Frontend"; // not a configured PriorityLevel
+        var result = await service.CreateAsync(dto);
+
+        Assert.Equal("Anything Selected By Frontend", result.Priority);
     }
 
     [Fact]
-    public async Task Create_PriorityCasingIsCanonicalized()
+    public async Task Create_PriorityCasingIsPreservedVerbatim_NotCanonicalized()
     {
         var db = MakeDb();
         var module = await AddModuleAsync(db, ModuleName);
@@ -211,7 +221,24 @@ public class DelegationServiceTests
         dto.Priority = "high"; // lower-case input
         var result = await service.CreateAsync(dto);
 
-        Assert.Equal("High", result.Priority); // stored as the canonical PriorityLevel.Name
+        // Only whitespace is trimmed — casing is never rewritten against PriorityLevel.
+        Assert.Equal("high", result.Priority);
+    }
+
+    [Fact]
+    public async Task Create_PriorityWithSurroundingWhitespace_IsTrimmed()
+    {
+        var db = MakeDb();
+        var module = await AddModuleAsync(db, ModuleName);
+        var source = await AddModuleAsync(db, "Meeting");
+        var (numbers, eaTasks) = MakeCreateMocks(db, module.Id);
+        var (service, _) = MakeService(db, numbers, eaTasks);
+
+        var dto = MakeCreateDto(source.Id);
+        dto.Priority = "  Urgent  ";
+        var result = await service.CreateAsync(dto);
+
+        Assert.Equal("Urgent", result.Priority);
     }
 
     [Fact]
@@ -879,5 +906,214 @@ public class DelegationServiceTests
         Assert.False(completed.IsDueToday);
         Assert.Empty((await service.ListAsync(new DelegationListQueryDto { View = "dueToday" })).Items);
         Assert.Equal(0, (await service.GetSummaryAsync()).DueToday);
+    }
+
+    // ----------------------------------------------------------------
+    // MANUAL / DIRECT DELEGATION SOURCE CLEANUP
+    //
+    // Architectural correction: there is no "Manual / Direct Delegation" BusinessModule.
+    // A direct/manual Delegation has SourceBusinessModuleId/SourceEntityId/SourceReference
+    // all null — never a fake source module, never defaulted to the Delegation module
+    // itself (that would mean "Delegation originated from Delegation").
+    // ----------------------------------------------------------------
+
+    [Fact]
+    public async Task Create_ManualDelegation_AllSourceFieldsNull_NoSourceModuleRequired()
+    {
+        var db = MakeDb();
+        var module = await AddModuleAsync(db, ModuleName);
+        await AddPriorityAsync(db, "High", 3);
+        var (numbers, eaTasks) = MakeCreateMocks(db, module.Id);
+        var (service, auditSpy) = MakeService(db, numbers, eaTasks);
+
+        // Exactly what a manual/direct Delegation frontend submission looks like: no source
+        // fields at all — no fake "Manual / Direct Delegation" module to pick from a dropdown.
+        var result = await service.CreateAsync(new DelegationCreateRequestDto
+        {
+            Title = "Prepare quarterly summary",
+            Description = "Ad hoc EA request, no source record",
+            AssignedToId = "emp-manual-1",
+            AssignedToNameSnapshot = "Manual Doer",
+            Priority = "High"
+        });
+
+        Assert.Equal("Pending", result.Status);
+        Assert.Equal("emp-manual-1", result.AssignedToId);
+        Assert.Equal("Manual Doer", result.AssignedToName);
+        Assert.Equal("manager-1", result.AssignedById); // server-owned actor, unchanged
+        Assert.Null(result.SourceBusinessModuleId);
+        Assert.Null(result.SourceModuleName);
+        Assert.Null(result.SourceEntityId); // never fabricated as "" or defaulted
+        Assert.Null(result.SourceReference);
+        Assert.Equal("High", result.Priority);
+        Assert.Null(result.StartedAt);
+        Assert.Null(result.CompletedAt);
+
+        var task = await db.Tasks.SingleAsync(t => t.Id == result.EaTaskId);
+        Assert.Equal("NotStarted", task.ExecutionStatus);
+        Assert.Null(task.StartedAt);
+        Assert.Null(task.CompletedAt);
+        Assert.Null(task.TatRuleId);
+        Assert.Null(task.AllottedTatMinutes);
+        Assert.Null(task.TatUsedMinutes);
+        Assert.Null(task.WorkflowInstanceId);
+
+        auditSpy.Verify(a => a.AddAudit("DELEGATION_CREATE", "Delegation", nameof(Jarvis5.Entities.EaFms.Delegation),
+            It.IsAny<string>(), null, It.IsAny<object?>(), It.IsAny<string?>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task Create_ManualDelegation_ExplicitNullSourceFields_SameAsOmitted()
+    {
+        var db = MakeDb();
+        var module = await AddModuleAsync(db, ModuleName);
+        var (numbers, eaTasks) = MakeCreateMocks(db, module.Id);
+        var (service, _) = MakeService(db, numbers, eaTasks);
+
+        var result = await service.CreateAsync(new DelegationCreateRequestDto
+        {
+            Title = "Prepare quarterly summary",
+            AssignedToId = "emp-manual-1",
+            SourceBusinessModuleId = null,
+            SourceEntityId = null,
+            SourceReference = null
+        });
+
+        Assert.Null(result.SourceBusinessModuleId);
+        Assert.Null(result.SourceModuleName);
+        Assert.Null(result.SourceEntityId);
+        Assert.Null(result.SourceReference);
+    }
+
+    [Fact]
+    public async Task Create_ManualDelegation_EaTask_StillBelongsToCanonicalDelegationModule()
+    {
+        var db = MakeDb();
+        var module = await AddModuleAsync(db, ModuleName);
+        var (numbers, eaTasks) = MakeCreateMocks(db, module.Id);
+        var (service, _) = MakeService(db, numbers, eaTasks);
+
+        var result = await service.CreateAsync(new DelegationCreateRequestDto
+        {
+            Title = "Send report",
+            AssignedToId = "emp-manual-3"
+        });
+
+        var task = await db.Tasks.SingleAsync(t => t.Id == result.EaTaskId);
+        Assert.Equal(module.Id, task.BusinessModuleId); // canonical "Delegation" module, unaffected by source
+    }
+
+    [Fact]
+    public async Task Create_ManualDelegation_WithOptionalSourceReferenceOnly_Persists()
+    {
+        // SourceReference is a free-text business note independent of SourceBusinessModuleId/
+        // SourceEntityId — a manual Delegation may still carry one without implying a real source.
+        var db = MakeDb();
+        var module = await AddModuleAsync(db, ModuleName);
+        var (numbers, eaTasks) = MakeCreateMocks(db, module.Id);
+        var (service, _) = MakeService(db, numbers, eaTasks);
+
+        var result = await service.CreateAsync(new DelegationCreateRequestDto
+        {
+            Title = "Follow up with vendor",
+            AssignedToId = "emp-manual-2",
+            SourceReference = "Verbal instruction from EA on 2026-09-18"
+        });
+
+        Assert.Equal("Verbal instruction from EA on 2026-09-18", result.SourceReference);
+        Assert.Null(result.SourceBusinessModuleId);
+        Assert.Null(result.SourceEntityId);
+    }
+
+    [Fact]
+    public async Task Create_RealSourceModule_StillRequiresValidBusinessModule_AndStillWorks()
+    {
+        var db = MakeDb();
+        var module = await AddModuleAsync(db, ModuleName);
+        var source = await AddModuleAsync(db, "Meeting");
+        var (numbers, eaTasks) = MakeCreateMocks(db, module.Id);
+        var (service, _) = MakeService(db, numbers, eaTasks);
+
+        var result = await service.CreateAsync(new DelegationCreateRequestDto
+        {
+            Title = "Chase meeting action",
+            AssignedToId = "emp-1",
+            SourceBusinessModuleId = source.Id,
+            SourceEntityId = "MTG-ACTION-4",
+            SourceReference = "MTG-000060"
+        });
+
+        Assert.Equal(source.Id, result.SourceBusinessModuleId);
+        Assert.Equal("Meeting", result.SourceModuleName);
+        Assert.Equal("MTG-ACTION-4", result.SourceEntityId);
+    }
+
+    [Fact]
+    public async Task Create_NonNullInvalidSourceModule_StillRejected()
+    {
+        var db = MakeDb();
+        var module = await AddModuleAsync(db, ModuleName);
+        var (numbers, eaTasks) = MakeCreateMocks(db, module.Id);
+        var (service, _) = MakeService(db, numbers, eaTasks);
+
+        await Assert.ThrowsAsync<BusinessRuleException>(() => service.CreateAsync(new DelegationCreateRequestDto
+        {
+            Title = "Should fail",
+            AssignedToId = "emp-1",
+            SourceBusinessModuleId = 999999
+        }));
+        Assert.Empty(await db.Delegations.ToListAsync());
+    }
+
+    [Fact]
+    public async Task List_FilterBySourceBusinessModuleId_StillWorks_ManualDelegationsExcluded()
+    {
+        var db = MakeDb();
+        var module = await AddModuleAsync(db, ModuleName);
+        var source = await AddModuleAsync(db, "Meeting");
+        var (numbers, eaTasks) = MakeCreateMocks(db, module.Id);
+        var (service, _) = MakeService(db, numbers, eaTasks);
+
+        var sourced = await service.CreateAsync(new DelegationCreateRequestDto
+        {
+            Title = "Sourced", AssignedToId = "emp-1", SourceBusinessModuleId = source.Id, SourceEntityId = "1"
+        });
+        var manual = await service.CreateAsync(new DelegationCreateRequestDto
+        {
+            Title = "Manual", AssignedToId = "emp-2"
+        });
+
+        var filtered = await service.ListAsync(new DelegationListQueryDto { SourceBusinessModuleId = source.Id });
+
+        Assert.Single(filtered.Items);
+        Assert.Equal(sourced.DelegationId, filtered.Items[0].DelegationId);
+        Assert.DoesNotContain(filtered.Items, i => i.DelegationId == manual.DelegationId);
+    }
+
+    [Fact]
+    public async Task Update_CanClearSourceFieldsBackToNull()
+    {
+        var db = MakeDb();
+        var module = await AddModuleAsync(db, ModuleName);
+        var source = await AddModuleAsync(db, "Meeting");
+        var (numbers, eaTasks) = MakeCreateMocks(db, module.Id);
+        var (service, _) = MakeService(db, numbers, eaTasks);
+
+        var created = await service.CreateAsync(new DelegationCreateRequestDto
+        {
+            Title = "Sourced initially", AssignedToId = "emp-1",
+            SourceBusinessModuleId = source.Id, SourceEntityId = "1", SourceReference = "MTG-1"
+        });
+
+        var updated = await service.UpdateAsync(created.DelegationId, new DelegationUpdateRequestDto
+        {
+            Title = "Now manual", AssignedToId = "emp-1",
+            SourceBusinessModuleId = null, SourceEntityId = null, SourceReference = null
+        });
+
+        Assert.Null(updated.SourceBusinessModuleId);
+        Assert.Null(updated.SourceModuleName);
+        Assert.Null(updated.SourceEntityId);
+        Assert.Null(updated.SourceReference);
     }
 }
