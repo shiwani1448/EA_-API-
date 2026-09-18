@@ -38,4 +38,11 @@
     <PackageReference Include="UglyToad.PdfPig" Version="1.7.0-custom-5" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- Lets the test project exercise transaction-composable internal service methods
+         (e.g. DelegationService.CreateCoreAsync) directly, without making them part of
+         the public API/interface surface. -->
+    <InternalsVisibleTo Include="Studio5Jarvis.Tests" />
+  </ItemGroup>
+
 </Project>

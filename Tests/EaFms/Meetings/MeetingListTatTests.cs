@@ -63,7 +63,7 @@ public sealed class MeetingListTatTests
                 Doers = new List<MeetingDoerDto>(),
                 CreatedDate = meeting.CreatedDate,
                 ModifiedDate = meeting.ModifiedDate,
-                ExecutionState = "Captured"
+                ExecutionState = "NotStarted"
             });
         return mock.Object;
     }
@@ -127,9 +127,13 @@ public sealed class MeetingListTatTests
         {
             BusinessModuleId = module.Id,
             BusinessModule = module,
+            ModuleName = module.Name,
             BusinessRecordId = meeting.Id.ToString(),
             Task = "Meeting Task",
             AllottedTatMinutes = tatMinutes,
+            ExecutionStatus = completedAt.HasValue ? "Completed" : "InProgress",
+            StartedAt = tatStart,
+            CompletedAt = completedAt,
             IsActive = true,
             CreatedBy = "seed",
             CreatedDate = DateTime.UtcNow
@@ -420,9 +424,11 @@ public sealed class MeetingListTatTests
         {
             BusinessModuleId = module.Id,
             BusinessModule = module,
+            ModuleName = module.Name,
             BusinessRecordId = meeting.Id.ToString(),
             Task = "T",
             AllottedTatMinutes = 60,
+            ExecutionStatus = "NotStarted",
             IsActive = true,
             CreatedBy = "s",
             CreatedDate = DateTime.UtcNow

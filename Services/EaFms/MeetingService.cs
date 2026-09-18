@@ -193,7 +193,9 @@ public class MeetingService : IMeetingService
                 item.StatusName = statusNamesById.TryGetValue(workflow.StatusId, out var statusName) ? statusName : null;
                 item.StartedAt = workflow.TatStartedAt;
                 item.CompletedAt = workflow.CompletedAt;
-                item.ExecutionState = string.Equals(item.StatusName, "Completed", StringComparison.OrdinalIgnoreCase) ? "Completed" : "Captured";
+                item.ExecutionState = MeetingExecutionStateMapper.Map(workflow.TatStartedAt.HasValue, workflow.CompletedAt.HasValue);
+                item.IsPaused = pausesByWorkflow.TryGetValue(workflowId, out var pausesForItem)
+                    && pausesForItem.Any(p => p.EndAt == null && WorkPauseClassifier.IsSimplePause(p));
 
                 // Populate TAT used/paused using the same formula as GetByIdAsync:
                 //   end  = CompletedAt when completed, otherwise current UTC time.
@@ -279,7 +281,7 @@ public class MeetingService : IMeetingService
 
                 var openSimplePause = pauses.FirstOrDefault(p => p.EndAt == null && WorkPauseClassifier.IsSimplePause(p));
                 dto.IsPaused = openSimplePause is not null;
-                dto.ExecutionState = string.Equals(status?.Name, "Completed", StringComparison.OrdinalIgnoreCase) ? "Completed" : openSimplePause is not null ? "Paused" : string.Equals(status?.Name, "In Progress", StringComparison.OrdinalIgnoreCase) ? "Running" : "Captured";
+                dto.ExecutionState = MeetingExecutionStateMapper.Map(wf.TatStartedAt.HasValue, wf.CompletedAt.HasValue);
 
                 dto.WaitingSummary = new MeetingWaitingSummaryDto
                 {

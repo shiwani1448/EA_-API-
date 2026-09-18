@@ -1,6 +1,7 @@
 using System.Globalization;
 using FluentValidation;
 using Jarvis5.Common;
+using Jarvis5.Common.EaFms;
 using Jarvis5.Data.EaFms;
 using Jarvis5.Dtos.EaFms;
 using Jarvis5.Entities.EaFms;
@@ -12,17 +13,42 @@ namespace Jarvis5.Services.EaFms;
 public class EaTaskService(EaFmsDbContext db, IEaTaskRepository repository, ITatRuleRepository rules,
     IValidator<CreateEaTaskDto> validator, ICurrentUserService user, IAuditService audit) : IEaTaskService
 {
+    // Explicit backend module policy for the no-TAT task-creation path. The frontend never
+    // selects this; only module identity (resolved server-side by name) does.
+    private static readonly HashSet<string> NoTatAuthorizedModules =
+        new(StringComparer.OrdinalIgnoreCase) { "EA Approval", "Travel & Hospitality", "Delegation" };
+
+    public static bool IsNoTatAuthorized(string moduleName) =>
+        NoTatAuthorizedModules.Contains(moduleName.Trim());
+
     public async Task<List<EaTaskResponseDto>> QueryAsync(long? moduleId, string? recordId, CancellationToken ct)
     {
         var query = repository.Query();
         if (moduleId.HasValue) query = query.Where(x => x.BusinessModuleId == moduleId.Value);
         if (recordId is not null) query = query.Where(x => x.BusinessRecordId == recordId.Trim());
-        return (await query.OrderByDescending(x => x.Id).ToListAsync(ct)).Select(ToDto).ToList();
+        var tasks = await query.OrderByDescending(x => x.Id).ToListAsync(ct);
+        var pausesByWorkflow = await LoadPausesAsync(tasks, ct);
+        var now = Clock.UtcNowTz;
+        return tasks.Select(t => ToDto(t, pausesByWorkflow, now)).ToList();
     }
 
-    public async Task<EaTaskResponseDto> GetAsync(long id, CancellationToken ct) =>
-        ToDto(await repository.Query().FirstOrDefaultAsync(x => x.Id == id, ct)
-            ?? throw new NotFoundException($"EA task {id} not found."));
+    public async Task<EaTaskResponseDto> GetAsync(long id, CancellationToken ct)
+    {
+        var task = await repository.Query().FirstOrDefaultAsync(x => x.Id == id, ct)
+            ?? throw new NotFoundException($"EA task {id} not found.");
+        var pausesByWorkflow = await LoadPausesAsync(new[] { task }, ct);
+        return ToDto(task, pausesByWorkflow, Clock.UtcNowTz);
+    }
+
+    private async Task<Dictionary<long, List<WorkPause>>> LoadPausesAsync(IReadOnlyCollection<EaTask> tasks, CancellationToken ct)
+    {
+        var workflowIds = tasks.Where(t => t.WorkflowInstanceId.HasValue).Select(t => t.WorkflowInstanceId!.Value).Distinct().ToList();
+        if (workflowIds.Count == 0) return new Dictionary<long, List<WorkPause>>();
+        var pauses = await db.WorkPauses.AsNoTracking()
+            .Where(p => p.WorkflowInstanceId.HasValue && workflowIds.Contains(p.WorkflowInstanceId.Value) && !p.IsDeleted)
+            .ToListAsync(ct);
+        return pauses.GroupBy(p => p.WorkflowInstanceId!.Value).ToDictionary(g => g.Key, g => g.ToList());
+    }
 
     public Task<EaTaskResponseDto> CreateAsync(CreateEaTaskDto dto, CancellationToken ct) =>
         CreateCoreAsync(dto, requireTat: true, ct);
@@ -58,8 +84,8 @@ public class EaTaskService(EaFmsDbContext db, IEaTaskRepository repository, ITat
         var type = dto.Type;
         var subtype = dto.Subtype;
         var isApproval = string.Equals(module.Name.Trim(), "EA Approval", StringComparison.OrdinalIgnoreCase);
-        if (!requireTat && !isApproval)
-            throw new BusinessRuleException("Task creation without TAT is only supported for EA Approval.");
+        if (!requireTat && !IsNoTatAuthorized(module.Name))
+            throw new BusinessRuleException("Task creation without TAT is only supported for EA Approval, Travel & Hospitality, and Delegation.");
         if (string.Equals(module.Name.Trim(), "Meeting", StringComparison.OrdinalIgnoreCase))
         {
             if (!long.TryParse(dto.BusinessRecordId, NumberStyles.None, CultureInfo.InvariantCulture, out var meetingId))
@@ -75,6 +101,7 @@ public class EaTaskService(EaFmsDbContext db, IEaTaskRepository repository, ITat
             dto.WorkflowInstanceId = meeting.WorkflowInstanceId;
         }
         int? allottedTatMinutes = null;
+        long? tatRuleId = null;
         if (requireTat)
         {
             if (!isApproval && (string.IsNullOrWhiteSpace(type) || string.IsNullOrWhiteSpace(subtype)))
@@ -86,6 +113,7 @@ public class EaTaskService(EaFmsDbContext db, IEaTaskRepository repository, ITat
             if (applicable.Count != 1) throw new BusinessRuleException("Multiple active TAT rules are configured for this module/type/subtype combination.");
             if (applicable[0].TatMinutes <= 0) throw new BusinessRuleException("The module TAT must be greater than zero.");
             allottedTatMinutes = applicable[0].TatMinutes;
+            tatRuleId = applicable[0].Id;
         }
 
         if (dto.WorkflowInstanceId.HasValue)
@@ -102,9 +130,15 @@ public class EaTaskService(EaFmsDbContext db, IEaTaskRepository repository, ITat
 
         var task = new EaTask
         {
-            BusinessModuleId = dto.ModuleId, BusinessRecordId = dto.BusinessRecordId,
+            BusinessModuleId = dto.ModuleId, ModuleName = module.Name, BusinessRecordId = dto.BusinessRecordId,
             Task = dto.Task, Description = dto.Description,
+            Type = type, Subtype = subtype, TatRuleId = tatRuleId,
             AllottedTatMinutes = allottedTatMinutes, WorkflowInstanceId = dto.WorkflowInstanceId,
+            // Every new EaTask starts here, regardless of module. A module whose work is
+            // already actionable the instant the record exists (Approval — see
+            // ApprovalService.CreateAsync) transitions it to InProgress immediately
+            // afterward, in the same transaction; this service never guesses that for them.
+            ExecutionStatus = EaTaskExecutionStatus.NotStarted,
             IsActive = true, CreatedBy = user.UserId.ToString(CultureInfo.InvariantCulture), CreatedDate = Clock.UtcNowTz
         };
         await repository.AddAsync(task, ct);
@@ -115,15 +149,88 @@ public class EaTaskService(EaFmsDbContext db, IEaTaskRepository repository, ITat
         if (transaction is not null)
             await transaction.CommitAsync(ct);
         task.BusinessModule = module;
-        return ToDto(task);
+        return ToDto(task, new Dictionary<long, List<WorkPause>>(), Clock.UtcNowTz);
     }
 
-    private static EaTaskResponseDto ToDto(EaTask task) => new()
+    /// <summary>
+    /// Derived only, never persisted: AllottedTatMinutes - TatUsedMinutes. Null unless
+    /// both inputs are present. Positive = completed within TAT; negative = exceeded TAT.
+    /// </summary>
+    public static int? CalculateTatDifferenceMinutes(int? allottedTatMinutes, int? tatUsedMinutes) =>
+        allottedTatMinutes.HasValue && tatUsedMinutes.HasValue
+            ? allottedTatMinutes.Value - tatUsedMinutes.Value
+            : null;
+
+    private static EaTaskResponseDto ToDto(EaTask task, IReadOnlyDictionary<long, List<WorkPause>> pausesByWorkflow, DateTime now)
     {
-        EaTaskId = task.Id, ModuleId = task.BusinessModuleId, ModuleName = task.BusinessModule.Name,
-        BusinessRecordId = task.BusinessRecordId, Task = task.Task, Description = task.Description,
-        AllottedTatMinutes = task.AllottedTatMinutes, IsActive = task.IsActive,
-        CreatedBy = task.CreatedBy, CreatedDate = task.CreatedDate,
-        ModifiedBy = task.ModifiedBy, ModifiedDate = task.ModifiedDate
-    };
+        List<WorkPause> pauses = task.WorkflowInstanceId.HasValue
+            && pausesByWorkflow.TryGetValue(task.WorkflowInstanceId.Value, out var wfPauses)
+            ? wfPauses : new List<WorkPause>();
+
+        bool? isPaused = null;
+        int? pauseCount = null;
+        int? totalPausedMinutes = null;
+        if (task.WorkflowInstanceId.HasValue)
+        {
+            isPaused = pauses.Any(p => p.EndAt == null);
+            pauseCount = pauses.Count;
+            totalPausedMinutes = task.StartedAt.HasValue
+                ? TotalPausedMinutesAllTypes(task.StartedAt.Value, task.CompletedAt ?? now, pauses)
+                : 0;
+        }
+
+        var currentTatUsedMinutes = CalculateCurrentTatUsedMinutes(task, pauses, now);
+
+        return new EaTaskResponseDto
+        {
+            EaTaskId = task.Id, ModuleId = task.BusinessModuleId, ModuleName = task.ModuleName,
+            BusinessRecordId = task.BusinessRecordId, Task = task.Task, Description = task.Description,
+            Type = task.Type, Subtype = task.Subtype, TatRuleId = task.TatRuleId,
+            AllottedTatMinutes = task.AllottedTatMinutes, TatUsedMinutes = task.TatUsedMinutes,
+            TatDifferenceMinutes = CalculateTatDifferenceMinutes(task.AllottedTatMinutes, task.TatUsedMinutes),
+            ExecutionStatus = task.ExecutionStatus, StartedAt = task.StartedAt, CompletedAt = task.CompletedAt,
+            IsPaused = isPaused, PauseCount = pauseCount, TotalPausedMinutes = totalPausedMinutes,
+            CurrentTatUsedMinutes = currentTatUsedMinutes,
+            CurrentTatDifferenceMinutes = CalculateTatDifferenceMinutes(task.AllottedTatMinutes, currentTatUsedMinutes),
+            IsActive = task.IsActive,
+            CreatedBy = task.CreatedBy, CreatedDate = task.CreatedDate,
+            ModifiedBy = task.ModifiedBy, ModifiedDate = task.ModifiedDate
+        };
+    }
+
+    /// <summary>
+    /// Live TAT-consumed snapshot using the same canonical elapsed-minus-paused calculation
+    /// as the frozen TatUsedMinutes (WorkPauseClassifier.GetPausedDuration — simple pauses
+    /// only, matching the existing Meeting TAT semantics). Null before execution starts and
+    /// for no-TAT modules; equals the frozen value once Completed.
+    /// </summary>
+    private static int? CalculateCurrentTatUsedMinutes(EaTask task, IReadOnlyCollection<WorkPause> pauses, DateTime now)
+    {
+        if (!task.AllottedTatMinutes.HasValue) return null;
+        if (string.Equals(task.ExecutionStatus, EaTaskExecutionStatus.Completed, StringComparison.Ordinal))
+            return task.TatUsedMinutes;
+        if (!task.StartedAt.HasValue) return null;
+
+        var end = task.CompletedAt ?? now;
+        var paused = WorkPauseClassifier.GetPausedDuration(task.StartedAt.Value, end, pauses);
+        var used = end - task.StartedAt.Value - paused;
+        if (used < TimeSpan.Zero) used = TimeSpan.Zero;
+        return (int)used.TotalMinutes;
+    }
+
+    /// <summary>
+    /// General "how long has this task been paused/waiting" total — every WorkPause kind,
+    /// unlike WorkPauseClassifier.GetPausedDuration's TAT-specific simple-pause-only rule.
+    /// Mirrors the existing formula in WorkflowExecutionService.GetSummaryAsync.
+    /// </summary>
+    private static int TotalPausedMinutesAllTypes(DateTime start, DateTime end, IEnumerable<WorkPause> pauses) =>
+        (int)pauses.Sum(p =>
+        {
+            var a = p.StartAt > start ? p.StartAt : start;
+            var b = (p.EndAt ?? end) < end ? (p.EndAt ?? end) : end;
+            return b > a ? (b - a).TotalMinutes : 0;
+        });
+
+    public async Task<List<EaTaskHistoryEventDto>> GetHistoryAsync(long id, CancellationToken ct) =>
+        await new EaTaskHistoryBuilder(db).BuildAsync(id, ct);
 }

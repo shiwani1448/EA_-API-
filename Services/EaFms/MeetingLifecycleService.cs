@@ -1,5 +1,6 @@
 using System.Globalization;
 using Jarvis5.Common;
+using Jarvis5.Common.EaFms;
 using Jarvis5.Data.EaFms;
 using Jarvis5.Dtos.EaFms;
 using Jarvis5.Entities.EaFms;
@@ -70,7 +71,7 @@ public class MeetingLifecycleService : IMeetingLifecycleService
         {
             MeetingId = meetingId,            StatusName = wf.StatusName,
             IsPaused = false,
-            ExecutionState = string.Equals(wf.StatusName, "Completed", StringComparison.OrdinalIgnoreCase) ? "Completed" : "Running",
+            ExecutionState = MeetingExecutionStateMapper.Map(wf.TatStartedAt.HasValue, wf.CompletedAt.HasValue),
             StartedAt = wf.TatStartedAt,
             TatSummary = new MeetingTatSummaryDto { Tat = null, TotalTat = TimeSpan.Zero, StartTime = wf.TatStartedAt, EndTime = wf.CompletedAt, LastActiveTime = wf.CompletedAt ?? wf.TatStartedAt, PauseTime = TimeSpan.Zero, PauseCount = 0 },
             CompletedAt = wf.CompletedAt,
@@ -89,7 +90,7 @@ public class MeetingLifecycleService : IMeetingLifecycleService
             EndAt = pause.EndAt,
             StatusName = pause.Workflow.StatusName,
             IsPaused = !pause.EndAt.HasValue,
-            ExecutionState = pause.EndAt.HasValue ? "Running" : "Paused",
+            ExecutionState = MeetingExecutionStateMapper.Map(pause.Workflow.TatStartedAt.HasValue, pause.Workflow.CompletedAt.HasValue),
             StartedAt = pause.Workflow.TatStartedAt,
             TatSummary = new MeetingTatSummaryDto { Tat = null, TotalTat = TimeSpan.Zero, StartTime = pause.Workflow.TatStartedAt, EndTime = pause.Workflow.CompletedAt, LastActiveTime = pause.EndAt.HasValue ? pause.EndAt : pause.StartAt, PauseTime = pause.EndAt.HasValue ? pause.EndAt.Value - pause.StartAt : Clock.UtcNowTz - pause.StartAt, PauseCount = 1 },
             CompletedAt = pause.Workflow.CompletedAt,
@@ -118,9 +119,34 @@ public class MeetingLifecycleService : IMeetingLifecycleService
 
     public async Task<MeetingLifecycleResponseDto> StartAsync(long meetingId, MeetingStartRequestDto dto, CancellationToken ct)
     {
-        var (_, workflowId) = await RequireLinkedWorkflowAsync(meetingId, ct);
-        var wf = await _execution.StartAsync(workflowId, new StartWorkRequestDto(), ct);
-        return await EnrichAsync(MapLifecycle(meetingId, null, wf), ct);
+        // Own the transaction so the shared execution engine joins it (it begins its own
+        // only when none is ambient) and the EaTask sync below commits atomically with it —
+        // no second HTTP round trip, no separate write outside this call.
+        await using var tx = await _db.Database.BeginTransactionAsync(ct);
+        try
+        {
+            var (meeting, workflowId) = await RequireLinkedWorkflowAsync(meetingId, ct);
+            var wf = await _execution.StartAsync(workflowId, new StartWorkRequestDto(), ct);
+            var tasks = await _db.Tasks.Include(x => x.BusinessModule)
+                .Where(x => x.BusinessRecordId == meetingId.ToString(CultureInfo.InvariantCulture) && !x.IsDeleted
+                    && x.BusinessModule.Name.Trim().ToLower() == "meeting")
+                .Take(2).ToListAsync(ct);
+            if (tasks.Count > 1) throw new BusinessRuleException("Meeting has ambiguous EA task snapshots.");
+            if (tasks.Count == 1 && wf.TatStartedAt.HasValue)
+            {
+                tasks[0].ExecutionStatus = EaTaskExecutionStatus.InProgress;
+                tasks[0].StartedAt = wf.TatStartedAt;
+                await _db.SaveChangesAsync(ct);
+            }
+            var result = await EnrichAsync(MapLifecycle(meetingId, null, wf), ct);
+            await tx.CommitAsync(ct);
+            return result;
+        }
+        catch
+        {
+            await tx.RollbackAsync(CancellationToken.None);
+            throw;
+        }
     }
 
     public async Task<MeetingPauseResponseDto> PauseAsync(long meetingId, MeetingPauseRequestDto dto, CancellationToken ct)
@@ -186,7 +212,25 @@ public class MeetingLifecycleService : IMeetingLifecycleService
             // Preserve the shared engine's prohibition on generic evidence IDs.
             var completed = await _execution.CompleteAsync(workflowId, new CompleteWorkRequestDto(), ct);
             meeting.CompletedAt = completed.Workflow.CompletedAt ?? now;
-            if (tasks.Count == 1) { tasks[0].IsActive = false; tasks[0].ModifiedBy = Actor; tasks[0].ModifiedDate = now; }
+            if (tasks.Count == 1)
+            {
+                tasks[0].IsActive = false; tasks[0].ModifiedBy = Actor; tasks[0].ModifiedDate = now;
+                tasks[0].ExecutionStatus = EaTaskExecutionStatus.Completed;
+                tasks[0].CompletedAt ??= meeting.CompletedAt;
+                // Freeze actual TAT used, once, using the same canonical elapsed-minus-paused
+                // calculation already used for Meeting display (WorkPauseClassifier). wf.TatStartedAt
+                // is guaranteed set here by the completion precondition checked above.
+                if (tasks[0].AllottedTatMinutes.HasValue && wf.TatStartedAt.HasValue)
+                {
+                    var pausesForTat = await _db.WorkPauses.AsNoTracking()
+                        .Where(p => p.WorkflowInstanceId == workflowId && !p.IsDeleted).ToListAsync(ct);
+                    var pausedDuration = WorkPauseClassifier.GetPausedDuration(
+                        wf.TatStartedAt.Value, meeting.CompletedAt.Value, pausesForTat);
+                    var usedDuration = meeting.CompletedAt.Value - wf.TatStartedAt.Value - pausedDuration;
+                    if (usedDuration < TimeSpan.Zero) usedDuration = TimeSpan.Zero;
+                    tasks[0].TatUsedMinutes = (int)usedDuration.TotalMinutes;
+                }
+            }
             _audit.AddAudit("MEETING_COMPLETE", "Meeting", nameof(Meeting), meeting.Id.ToString(CultureInfo.InvariantCulture), null,
                 new { meeting.Id, meeting.CompletedAt, meeting.CompletionPdfAttachmentId }, "Meeting completed with independent evidence");
             await _db.SaveChangesAsync(ct);

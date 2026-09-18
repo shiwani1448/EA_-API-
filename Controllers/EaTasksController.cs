@@ -23,6 +23,10 @@ public class EaTasksController(IEaTaskService service) : ControllerBase
     public async Task<IActionResult> GetById(long eaTaskId, CancellationToken ct) =>
         Ok(await service.GetAsync(eaTaskId, ct));
 
+    [HttpGet("{eaTaskId:long}/history")]
+    public async Task<IActionResult> GetHistory(long eaTaskId, CancellationToken ct) =>
+        Ok(await service.GetHistoryAsync(eaTaskId, ct));
+
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] CreateEaTaskDto? dto, CancellationToken ct)
     {

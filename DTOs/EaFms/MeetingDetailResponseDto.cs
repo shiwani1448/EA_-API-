@@ -42,7 +42,7 @@ public class MeetingDetailResponseDto
     public string? Priority { get; set; }
 
     public string? StatusName { get; set; }
-    public string ExecutionState { get; set; } = "Captured";
+    public string ExecutionState { get; set; } = "NotStarted";
     public bool IsPaused { get; set; }
 
 

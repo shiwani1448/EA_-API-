@@ -1,26 +1,28 @@
 using Jarvis5.Dtos.EaFms;
 using Jarvis5.Services.EaFms;
-using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Jarvis5.Controllers.EaFms;
 
 /// <summary>
-/// Travel Request CRUD and read APIs (Step 3).
+/// Travel CRUD and submission/approval APIs.
 ///
 /// Routes:
 ///   POST   /api/ea/travel/requests
 ///   GET    /api/ea/travel/requests/{travelRequestId}
 ///   PUT    /api/ea/travel/requests/{travelRequestId}
 ///   GET    /api/ea/travel/requests
+///   POST   /api/ea/travel/requests/{travelRequestId}/start
+///   POST   /api/ea/travel/requests/{travelRequestId}/complete
+///   POST   /api/ea/travel/requests/{travelRequestId}/cancel
+///   GET    /api/ea/travel/requests/{travelRequestId}/history
 ///
-/// NOT implemented in this step:
-///   /submit, /approve, /reject, /request-changes, /resubmit,
-///   /start, /pause, /resume, /complete, /cancel
+/// NOT implemented — deferred (not part of the Travel business lifecycle established
+/// by the frontend for this step):
+///   /pause, /resume
 /// </summary>
 [ApiController]
 [Route("api/ea/travel/requests")]
-[Authorize]
 public class TravelRequestsController : ControllerBase
 {
     private readonly ITravelRequestService _service;
@@ -32,10 +34,9 @@ public class TravelRequestsController : ControllerBase
 
     /// <summary>
     /// Create a new Travel Request draft.
-    ///
-    /// ⚠ BLOCKED — TRAVEL EATASK/TAT CREATION POLICY REQUIRES DECISION
-    /// The endpoint is wired; the service will throw a 409 with a precise
-    /// message until the TAT/task-creation policy for Travel is approved.
+    /// Creates the TravelRequest and its required central EaTask (no TAT — Travel has
+    /// no approved TAT classification yet) atomically. Returns 409 if the "Travel &amp;
+    /// Hospitality" BusinessModule is not configured.
     /// </summary>
     [HttpPost]
     [ProducesResponseType(typeof(TravelRequestCreatedDto), StatusCodes.Status201Created)]
@@ -68,7 +69,7 @@ public class TravelRequestsController : ControllerBase
 
     /// <summary>
     /// Update a Travel Request draft.
-    /// Only allowed while BusinessState == "Draft".
+    /// Pre-submission draft edit, or controlled ChangesRequested rework with expectedCycleNo.
     /// </summary>
     [HttpPut("{travelRequestId:long}")]
     [ProducesResponseType(typeof(TravelRequestDetailDto), StatusCodes.Status200OK)]
@@ -78,11 +79,68 @@ public class TravelRequestsController : ControllerBase
     public async Task<IActionResult> UpdateDraft(
         long travelRequestId,
         [FromBody] UpdateTravelDraftDto dto,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        [FromQuery, System.ComponentModel.DataAnnotations.Range(1, int.MaxValue)] int? expectedCycleNo = null)
     {
-        var result = await _service.UpdateDraftAsync(travelRequestId, dto, cancellationToken);
+        var result = await _service.UpdateDraftAsync(travelRequestId, dto, cancellationToken, expectedCycleNo);
         return Ok(result);
     }
+
+    [HttpPost("{travelRequestId:long}/submit")]
+    [ProducesResponseType(typeof(TravelActionResponseDto), StatusCodes.Status200OK)]
+    public async Task<IActionResult> Submit(long travelRequestId, CancellationToken ct) =>
+        Ok(await _service.SubmitAsync(travelRequestId, ct));
+
+    [HttpPost("{travelRequestId:long}/approve")]
+    [ProducesResponseType(typeof(TravelActionResponseDto), StatusCodes.Status200OK)]
+    public async Task<IActionResult> Approve(long travelRequestId, [FromBody] ApproveTravelRequestDto dto, CancellationToken ct) =>
+        Ok(await _service.ApproveAsync(travelRequestId, dto, ct));
+
+    [HttpPost("{travelRequestId:long}/reject")]
+    [ProducesResponseType(typeof(TravelActionResponseDto), StatusCodes.Status200OK)]
+    public async Task<IActionResult> Reject(long travelRequestId, [FromBody] RejectTravelRequestDto dto, CancellationToken ct) =>
+        Ok(await _service.RejectAsync(travelRequestId, dto, ct));
+
+    [HttpPost("{travelRequestId:long}/request-changes")]
+    [ProducesResponseType(typeof(TravelActionResponseDto), StatusCodes.Status200OK)]
+    public async Task<IActionResult> RequestChanges(long travelRequestId, [FromBody] RequestTravelChangesDto dto, CancellationToken ct) =>
+        Ok(await _service.RequestChangesAsync(travelRequestId, dto, ct));
+
+    [HttpPost("{travelRequestId:long}/resubmit")]
+    [ProducesResponseType(typeof(TravelActionResponseDto), StatusCodes.Status200OK)]
+    public async Task<IActionResult> Resubmit(long travelRequestId, [FromBody] ResubmitTravelRequestDto dto, CancellationToken ct) =>
+        Ok(await _service.ResubmitAsync(travelRequestId, dto, ct));
+
+    /// <summary>Upcoming -&gt; Active. Bodyless.</summary>
+    [HttpPost("{travelRequestId:long}/start")]
+    [ProducesResponseType(typeof(TravelActionResponseDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> Start(long travelRequestId, CancellationToken ct) =>
+        Ok(await _service.StartAsync(travelRequestId, ct));
+
+    /// <summary>Active -&gt; Completed. Bodyless.</summary>
+    [HttpPost("{travelRequestId:long}/complete")]
+    [ProducesResponseType(typeof(TravelActionResponseDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> Complete(long travelRequestId, CancellationToken ct) =>
+        Ok(await _service.CompleteAsync(travelRequestId, ct));
+
+    /// <summary>Business cancellation. Bodyless — no cancellation-reason input exists in the current frontend contract.</summary>
+    [HttpPost("{travelRequestId:long}/cancel")]
+    [ProducesResponseType(typeof(TravelActionResponseDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> Cancel(long travelRequestId, CancellationToken ct) =>
+        Ok(await _service.CancelAsync(travelRequestId, ct));
+
+    /// <summary>
+    /// Complete chronological Travel timeline (oldest to newest), read from the shared
+    /// audit infrastructure. Never writes a new audit record.
+    /// </summary>
+    [HttpGet("{travelRequestId:long}/history")]
+    [ProducesResponseType(typeof(List<TravelHistoryEventDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> History(long travelRequestId, CancellationToken ct) =>
+        Ok(await _service.GetHistoryAsync(travelRequestId, ct));
 
     /// <summary>
     /// List/search/filter Travel Requests with pagination.

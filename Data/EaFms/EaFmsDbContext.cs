@@ -41,8 +41,15 @@ public class EaFmsDbContext : DbContext
     // Approval management (EA-specific)
     public DbSet<Entities.EaFms.ApprovalRequest> ApprovalRequests { get; set; } = null!;
     public DbSet<Entities.EaFms.ApprovalCycle> ApprovalCycles { get; set; } = null!;
+    public DbSet<TravelLocalTransport> TravelLocalTransports { get; set; } = null!;
+    public DbSet<TravelHospitality> TravelHospitalityArrangements { get; set; } = null!;
+    public DbSet<TravelExpense> TravelExpenses { get; set; } = null!;
+    public DbSet<TravelBooking> TravelBookings { get; set; } = null!;
     public DbSet<TravelRequest> TravelRequests { get; set; } = null!;
     public DbSet<TravelRequestCycle> TravelRequestCycles { get; set; } = null!;
+
+    // Delegation (EA-specific) — Step 1 foundation
+    public DbSet<Delegation> Delegations { get; set; } = null!;
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -114,6 +121,90 @@ public class EaFmsDbContext : DbContext
         // Approval management sequence for ReferenceNo generation (EA-specific)
         modelBuilder.HasSequence<long>("ea_approval_no_seq").StartsAt(1).IncrementsBy(1);
         modelBuilder.HasSequence<long>("ea_travel_no_seq").StartsAt(1).IncrementsBy(1);
+        modelBuilder.HasSequence<long>("ea_delegation_no_seq").StartsAt(1).IncrementsBy(1);
+
+        modelBuilder.Entity<TravelLocalTransport>(entity =>
+        {
+            entity.ToTable("ea_travel_local_transports", "public", t =>
+            {
+                t.HasCheckConstraint("CK_ea_travel_local_transports_EstimatedCost", "\"EstimatedCost\" IS NULL OR \"EstimatedCost\" >= 0");
+                t.HasCheckConstraint("CK_ea_travel_local_transports_ActualCost", "\"ActualCost\" IS NULL OR \"ActualCost\" >= 0");
+            });
+            entity.HasKey(x => x.Id);
+            entity.HasOne(x => x.TravelRequest).WithMany().HasForeignKey(x => x.TravelRequestId).OnDelete(DeleteBehavior.Restrict);
+            entity.Property(x => x.TransportStatus).HasMaxLength(50).IsRequired();
+            entity.Property(x => x.TransportType).HasMaxLength(50);
+            entity.Property(x => x.PickupLocation).HasMaxLength(500);
+            entity.Property(x => x.DropLocation).HasMaxLength(500);
+            entity.Property(x => x.VehiclePreference).HasMaxLength(200);
+            entity.Property(x => x.BookingReference).HasMaxLength(200);
+            entity.Property(x => x.Provider).HasMaxLength(200);
+            entity.Property(x => x.Currency).HasMaxLength(10);
+            entity.Property(x => x.EstimatedCost).HasPrecision(18, 2);
+            entity.Property(x => x.ActualCost).HasPrecision(18, 2);
+            entity.Property(x => x.CreatedBy).HasMaxLength(100).IsRequired();
+            entity.Property(x => x.ModifiedBy).HasMaxLength(100);
+            entity.HasIndex(x => x.TravelRequestId);
+        });
+
+        modelBuilder.Entity<TravelHospitality>(entity =>
+        {
+            entity.ToTable("ea_travel_hospitality_arrangements", "public", t =>
+            {
+                t.HasCheckConstraint("CK_ea_travel_hospitality_arrangements_EstimatedCost", "\"EstimatedCost\" IS NULL OR \"EstimatedCost\" >= 0");
+                t.HasCheckConstraint("CK_ea_travel_hospitality_arrangements_ActualCost", "\"ActualCost\" IS NULL OR \"ActualCost\" >= 0");
+                t.HasCheckConstraint("CK_ea_travel_hospitality_arrangements_NumberOfGuests", "\"NumberOfGuests\" IS NULL OR \"NumberOfGuests\" >= 0");
+            });
+            entity.HasKey(x => x.Id);
+            entity.HasOne(x => x.TravelRequest).WithMany().HasForeignKey(x => x.TravelRequestId).OnDelete(DeleteBehavior.Restrict);
+            entity.Property(x => x.Status).HasMaxLength(50).IsRequired();
+            entity.Property(x => x.Location).HasMaxLength(500);
+            entity.Property(x => x.Provider).HasMaxLength(200);
+            entity.Property(x => x.Currency).HasMaxLength(10);
+            entity.Property(x => x.EstimatedCost).HasPrecision(18, 2);
+            entity.Property(x => x.ActualCost).HasPrecision(18, 2);
+            entity.Property(x => x.CreatedBy).HasMaxLength(100).IsRequired();
+            entity.Property(x => x.ModifiedBy).HasMaxLength(100);
+            entity.HasIndex(x => x.TravelRequestId);
+        });
+
+        modelBuilder.Entity<TravelExpense>(entity =>
+        {
+            entity.ToTable("ea_travel_expenses", "public", t =>
+                t.HasCheckConstraint("CK_ea_travel_expenses_Amount", "\"Amount\" >= 0"));
+            entity.HasKey(x => x.Id);
+            entity.HasOne(x => x.TravelRequest).WithMany().HasForeignKey(x => x.TravelRequestId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(x => x.ReceiptAttachment).WithMany().HasForeignKey(x => x.ReceiptAttachmentId).OnDelete(DeleteBehavior.Restrict);
+            entity.Property(x => x.Category).HasMaxLength(50).IsRequired();
+            entity.Property(x => x.Status).HasMaxLength(50).IsRequired();
+            entity.Property(x => x.Amount).HasPrecision(18, 2);
+            entity.Property(x => x.Currency).HasMaxLength(10);
+            entity.Property(x => x.SubmittedBy).HasMaxLength(100);
+            entity.Property(x => x.ApprovedBy).HasMaxLength(100);
+            entity.Property(x => x.RejectedBy).HasMaxLength(100);
+            entity.Property(x => x.CreatedBy).HasMaxLength(100).IsRequired();
+            entity.Property(x => x.ModifiedBy).HasMaxLength(100);
+            entity.HasIndex(x => x.TravelRequestId);
+            entity.HasIndex(x => x.ReceiptAttachmentId);
+        });
+
+        modelBuilder.Entity<TravelBooking>(entity =>
+        {
+            entity.ToTable("ea_travel_bookings", "public", table =>
+                table.HasCheckConstraint("CK_ea_travel_bookings_Cost", "\"Cost\" IS NULL OR \"Cost\" >= 0"));
+            entity.HasKey(e => e.Id);
+            entity.HasOne(e => e.TravelRequest).WithMany().HasForeignKey(e => e.TravelRequestId).OnDelete(DeleteBehavior.Restrict);
+            entity.Property(e => e.BookingType).HasMaxLength(50).IsRequired();
+            entity.Property(e => e.BookingStatus).HasMaxLength(50).IsRequired();
+            entity.Property(e => e.Provider).HasMaxLength(200);
+            entity.Property(e => e.BookingReference).HasMaxLength(200);
+            entity.Property(e => e.Currency).HasMaxLength(10);
+            entity.Property(e => e.Cost).HasPrecision(18, 2);
+            entity.Property(e => e.CreatedBy).HasMaxLength(100).IsRequired();
+            entity.Property(e => e.ModifiedBy).HasMaxLength(100);
+            entity.HasIndex(e => e.TravelRequestId);
+            entity.HasIndex(e => e.BookingStatus);
+        });
 
         modelBuilder.Entity<TravelRequest>(entity =>
         {
@@ -121,7 +212,7 @@ public class EaFmsDbContext : DbContext
             {
                 t.HasCheckConstraint("CK_ea_travel_requests_CurrentCycleNo_NonNegative", "\"CurrentCycleNo\" >= 0");
                 t.HasCheckConstraint("CK_ea_travel_requests_BusinessState", "\"BusinessState\" IN ('Draft', 'Upcoming', 'Active', 'Completed', 'Cancelled')");
-                t.HasCheckConstraint("CK_ea_travel_requests_ApprovalState", "\"ApprovalState\" IN ('NotRequired', 'Pending', 'ChangesRequested', 'Approved', 'Rejected')");
+                t.HasCheckConstraint("CK_ea_travel_requests_ApprovalState", "\"ApprovalState\" IN ('NotRequired', 'NotSubmitted', 'Pending', 'ChangesRequested', 'Approved', 'Rejected')");
                 t.HasCheckConstraint("CK_ea_travel_requests_TravelDates", "\"DepartureDate\" IS NULL OR \"ReturnDate\" IS NULL OR \"ReturnDate\" >= \"DepartureDate\"");
                 t.HasCheckConstraint("CK_ea_travel_requests_HotelDates", "\"CheckInDate\" IS NULL OR \"CheckOutDate\" IS NULL OR \"CheckOutDate\" >= \"CheckInDate\"");
                 t.HasCheckConstraint("CK_ea_travel_requests_NumberOfTravellers_Positive", "\"NumberOfTravellers\" IS NULL OR \"NumberOfTravellers\" > 0");
@@ -206,6 +297,43 @@ public class EaFmsDbContext : DbContext
             entity.HasOne(e => e.TravelRequest).WithMany(e => e.Cycles).HasForeignKey(e => e.TravelRequestId).OnDelete(DeleteBehavior.Restrict);
             entity.HasIndex(e => new { e.TravelRequestId, e.CycleNo }).IsUnique().HasDatabaseName("UX_ea_travel_request_cycles_TravelRequestId_CycleNo");
             entity.HasIndex(e => e.TravelRequestId);
+        });
+
+        // Delegation — Step 1 persistence foundation. No service/API exists yet.
+        modelBuilder.Entity<Delegation>(entity =>
+        {
+            entity.ToTable("ea_delegations", "public", t =>
+                t.HasCheckConstraint("CK_ea_delegations_Status", "\"Status\" IN ('Pending', 'InProgress', 'Completed')"));
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).UseIdentityByDefaultColumn();
+            entity.Property(e => e.ReferenceNo).HasColumnType("varchar(40)").IsRequired();
+            entity.Property(e => e.EaTaskId).HasColumnType("bigint");
+            entity.Property(e => e.Title).HasMaxLength(500).IsRequired();
+            entity.Property(e => e.Description).HasColumnType("text");
+            entity.Property(e => e.AssignedToId).HasMaxLength(100).IsRequired();
+            entity.Property(e => e.AssignedToNameSnapshot).HasMaxLength(200);
+            entity.Property(e => e.AssignedById).HasMaxLength(100).IsRequired();
+            entity.Property(e => e.AssignedByNameSnapshot).HasMaxLength(200);
+            entity.Property(e => e.Priority).HasMaxLength(100);
+            entity.Property(e => e.Status).HasMaxLength(30).IsRequired().HasDefaultValue("Pending");
+            entity.Property(e => e.SourceEntityId).HasMaxLength(200).IsRequired();
+            entity.Property(e => e.SourceReference).HasMaxLength(200);
+            entity.Property(e => e.AdditionalNotes).HasMaxLength(4000);
+            entity.Property(e => e.CompletedById).HasMaxLength(100);
+            entity.Property(e => e.CompletedByNameSnapshot).HasMaxLength(200);
+            entity.Property(e => e.CreatedBy).HasMaxLength(100).IsRequired();
+            entity.Property(e => e.ModifiedBy).HasMaxLength(100);
+
+            entity.HasOne(e => e.EaTask).WithMany().HasForeignKey(e => e.EaTaskId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(e => e.SourceBusinessModule).WithMany().HasForeignKey(e => e.SourceBusinessModuleId).OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasIndex(e => e.ReferenceNo).IsUnique();
+            entity.HasIndex(e => e.EaTaskId).IsUnique();
+            entity.HasIndex(e => e.AssignedToId);
+            entity.HasIndex(e => e.DueDate);
+            entity.HasIndex(e => e.Status);
+            entity.HasIndex(e => e.SourceBusinessModuleId);
+            entity.HasIndex(e => e.SourceEntityId);
         });
 
         // EA Approval entities
@@ -791,6 +919,9 @@ public class EaFmsDbContext : DbContext
             entity.Property(e => e.MeetingId);
             entity.Property(e => e.Title).HasMaxLength(500);
             entity.Property(e => e.Description).HasMaxLength(4000);
+            // Opaque stable identity, same sizing convention as Delegation.AssignedToId/
+            // AssignedById. Nullable — see the entity's own doc comment for why.
+            entity.Property(e => e.AssignedToId).HasMaxLength(100);
             entity.Property(e => e.OwnerName).HasMaxLength(200);
             entity.Property(e => e.PriorityLevelId);
             entity.Property(e => e.DueDate);
@@ -840,14 +971,26 @@ public class EaFmsDbContext : DbContext
         modelBuilder.Entity<EaTask>(entity =>
         {
             entity.ToTable("ea_tasks", "public", t =>
-                t.HasCheckConstraint("CK_ea_tasks_AllottedTatMinutes_Positive", "\"AllottedTatMinutes\" > 0"));
+            {
+                t.HasCheckConstraint("CK_ea_tasks_AllottedTatMinutes_Positive", "\"AllottedTatMinutes\" > 0");
+                t.HasCheckConstraint("CK_ea_tasks_TatUsedMinutes_NonNegative", "\"TatUsedMinutes\" IS NULL OR \"TatUsedMinutes\" >= 0");
+                t.HasCheckConstraint("CK_ea_tasks_ExecutionStatus_Valid",
+                    "\"ExecutionStatus\" IN ('NotStarted', 'InProgress', 'Completed', 'Cancelled')");
+            });
             entity.HasKey(e => e.Id);
             entity.Property(e => e.Id).UseIdentityByDefaultColumn();
             entity.Property(e => e.BusinessModuleId).HasColumnType("bigint").IsRequired();
+            entity.Property(e => e.ModuleName).HasMaxLength(200).IsRequired();
             entity.Property(e => e.BusinessRecordId).HasMaxLength(200).IsRequired();
             entity.Property(e => e.Task).HasMaxLength(500).IsRequired();
             entity.Property(e => e.Description).HasColumnType("text");
+            entity.Property(e => e.Type).HasMaxLength(200);
+            entity.Property(e => e.Subtype).HasMaxLength(200);
             entity.Property(e => e.AllottedTatMinutes).HasColumnType("integer").IsRequired(false);
+            entity.Property(e => e.TatUsedMinutes).HasColumnType("integer").IsRequired(false);
+            entity.Property(e => e.ExecutionStatus).HasMaxLength(20).IsRequired();
+            entity.Property(e => e.StartedAt).HasColumnType("timestamp with time zone");
+            entity.Property(e => e.CompletedAt).HasColumnType("timestamp with time zone");
             entity.Property(e => e.CreatedBy).HasMaxLength(100).IsRequired();
             entity.Property(e => e.ModifiedBy).HasMaxLength(100);
             entity.Property(e => e.CreatedDate).HasColumnType("timestamp with time zone");
@@ -856,9 +999,13 @@ public class EaFmsDbContext : DbContext
                 .OnDelete(DeleteBehavior.Restrict);
             entity.HasOne(e => e.WorkflowInstance).WithMany().HasForeignKey(e => e.WorkflowInstanceId)
                 .OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(e => e.TatRule).WithMany().HasForeignKey(e => e.TatRuleId)
+                .OnDelete(DeleteBehavior.Restrict);
             entity.HasIndex(e => e.BusinessModuleId);
             entity.HasIndex(e => e.BusinessRecordId);
             entity.HasIndex(e => e.WorkflowInstanceId);
+            entity.HasIndex(e => e.TatRuleId);
+            entity.HasIndex(e => e.ExecutionStatus);
             entity.HasIndex(e => new { e.BusinessModuleId, e.BusinessRecordId });
         });
 

@@ -3,37 +3,43 @@ using Jarvis5.Common;
 using Jarvis5.Data.EaFms;
 using Jarvis5.Dtos.EaFms;
 using Jarvis5.Entities.EaFms;
+using Jarvis5.Repositories.EaFms;
 using Microsoft.EntityFrameworkCore;
 
 namespace Jarvis5.Services.EaFms;
 
 /// <summary>
-/// Travel Request CRUD/read service (Step 3).
+/// Travel CRUD and submission/approval service.
 ///
-/// POST (create draft) is PARTIALLY BLOCKED:
-///   ⚠ BLOCKED — TRAVEL EATASK/TAT CREATION POLICY REQUIRES DECISION
-///   The EaTaskService enforces that only EA Approval may skip TAT.
-///   Travel has no TAT rule and is not EA Approval, so no valid EaTask
-///   creation path currently exists.
-///   ReferenceNo is generated and the TravelRequest is persisted; EaTaskId
-///   is set to 0 as a placeholder. The FK constraint must be relaxed or the
-///   TAT/task policy must be resolved before true production use.
-///
-///   TRAVEL BUSINESS MODULE CONFIGURATION REQUIRED BEFORE RUNTIME TRAVEL CREATION
-///   The service validates that a "Travel" BusinessModule record is present and
-///   active before attempting any creation.
+/// Create draft persists a TravelRequest and its required central EaTask atomically.
+/// Travel has no approved TAT classification yet, so the EaTask is created via the
+/// backend-only no-TAT path (EaTaskService.CreateWithoutTatAsync) with
+/// AllottedTatMinutes = NULL, module policy resolved by module name (never by a
+/// frontend-supplied flag). Module lookup uses the canonical catalog name
+/// "Travel &amp; Hospitality".
 /// </summary>
-public class TravelRequestService : ITravelRequestService
+public partial class TravelRequestService : ITravelRequestService
 {
+    public const string TravelBusinessModuleName = "Travel & Hospitality";
+
     private readonly EaFmsDbContext _db;
     private readonly IAuditService _audit;
     private readonly ICurrentUserService _currentUser;
+    private readonly ITravelNumberRepository _travelNumbers;
+    private readonly IEaTaskService _eaTaskService;
 
-    public TravelRequestService(EaFmsDbContext db, IAuditService audit, ICurrentUserService currentUser)
+    public TravelRequestService(
+        EaFmsDbContext db,
+        IAuditService audit,
+        ICurrentUserService currentUser,
+        ITravelNumberRepository travelNumbers,
+        IEaTaskService eaTaskService)
     {
         _db = db;
         _audit = audit;
         _currentUser = currentUser;
+        _travelNumbers = travelNumbers;
+        _eaTaskService = eaTaskService;
     }
 
     // ============================================================
@@ -42,49 +48,53 @@ public class TravelRequestService : ITravelRequestService
 
     public async Task<TravelRequestCreatedDto> CreateDraftAsync(CreateTravelRequestDto dto, CancellationToken ct = default)
     {
-        // ---- 1. Resolve Travel BusinessModule ----
-        // Dynamic lookup; never hardcode a module ID.
+        // ---- 1. Resolve Travel BusinessModule (canonical name; never hardcode IDs) ----
         var travelModule = await _db.BusinessModules
-            .Where(m => !m.IsDeleted && m.IsActive
-                && (m.Name.Trim().ToLower() == "travel" || m.Name.Trim().ToLower() == "ea travel"))
+            .AsNoTracking()
+            .Where(m => !m.IsDeleted && m.IsActive && m.Name == TravelBusinessModuleName)
             .FirstOrDefaultAsync(ct);
 
         if (travelModule is null)
         {
-            // TRAVEL BUSINESS MODULE CONFIGURATION REQUIRED BEFORE RUNTIME TRAVEL CREATION
             throw new BusinessRuleException(
                 "TRAVEL BUSINESS MODULE CONFIGURATION REQUIRED BEFORE RUNTIME TRAVEL CREATION. " +
-                "Insert an active 'Travel' or 'EA Travel' record into ea_business_modules.");
+                $"Insert an active '{TravelBusinessModuleName}' record into ea_business_modules.");
         }
 
-        // ---- 2. Generate reference number (ea_travel_no_seq) ----
-        var seqValue = await _db.Database
-            .SqlQueryRaw<long>("SELECT nextval('ea_travel_no_seq') AS \"Value\"")
-            .SingleAsync(ct);
-
-        var year = DateTime.UtcNow.Year;
-        var referenceNo = $"TRV-{year}-{seqValue:D6}";
-
-        var now = Clock.UtcNowTz;
         var actor = _currentUser.UserName ?? _currentUser.UserId.ToString(CultureInfo.InvariantCulture);
+        var now = Clock.UtcNowTz;
+        var referenceNo = await _travelNumbers.GenerateNextReferenceNoAsync(ct);
 
-        // ---- 3. Determine initial ApprovalState ----
-        var approvalState = dto.ApprovalRequired ? "Pending" : "NotRequired";
+        await using var transaction = await _db.Database.BeginTransactionAsync(ct);
 
-        // ---- 4. Build entity ----
-        // BLOCKED: EaTaskId = 0 is a placeholder because TravelRequest.EaTaskId is
-        // a non-nullable FK and no valid EaTask creation path currently exists for Travel.
-        // This will violate the FK constraint in the real PostgreSQL database.
-        // The EaTask must be created once the TAT/task-creation policy is approved.
+        // ---- 2. Create the required central EaTask before the TravelRequest ----
+        // TravelRequest.EaTaskId is a required, non-deferrable FK, so a valid EaTask must
+        // exist before TravelRequest can be inserted. TravelRequest.Id is not known yet
+        // (identity-generated on insert), so BusinessRecordId is seeded with ReferenceNo
+        // here and corrected to the real TravelRequest.Id below, before commit — the
+        // persisted row never keeps the placeholder value. No EaTaskId=0 is ever set.
+        // Travel has no approved TAT classification, so this always goes through the
+        // backend-only no-TAT path — never TAT-required, never a frontend-selectable flag.
+        var eaTaskDto = await _eaTaskService.CreateWithoutTatAsync(new CreateEaTaskDto
+        {
+            ModuleId = travelModule.Id,
+            BusinessRecordId = referenceNo,
+            Task = referenceNo,
+            Description = string.IsNullOrWhiteSpace(dto.Purpose) ? null : dto.Purpose.Trim(),
+            WorkflowInstanceId = null
+        }, ct);
+
         var entity = new TravelRequest
         {
             ReferenceNo = referenceNo,
-            EaTaskId = 0, // ⚠ PLACEHOLDER — FK NOT SATISFIED until TAT policy resolved
+            EaTaskId = eaTaskDto.EaTaskId,
             CurrentCycleNo = 0,
+
             TravellerName = dto.TravellerName?.Trim(),
             EmployeePersonId = dto.EmployeePersonId?.Trim(),
             Department = dto.Department?.Trim(),
             ContactInformation = dto.ContactInformation?.Trim(),
+
             Purpose = dto.Purpose?.Trim(),
             TravelType = dto.TravelType?.Trim(),
             FromLocation = dto.FromLocation?.Trim(),
@@ -95,80 +105,75 @@ public class TravelRequestService : ITravelRequestService
             Priority = dto.Priority?.Trim(),
             SpecialRequirements = dto.SpecialRequirements?.Trim(),
             RequiredDate = dto.RequiredDate,
+
             TransportType = dto.TransportType?.Trim(),
             PreferredDeparture = dto.PreferredDeparture,
             PreferredArrival = dto.PreferredArrival,
             ClassPreference = dto.ClassPreference?.Trim(),
             BookingRequirements = dto.BookingRequirements?.Trim(),
+
             Hotel = dto.Hotel?.Trim(),
             CheckInDate = dto.CheckInDate,
             CheckOutDate = dto.CheckOutDate,
             NumberOfRooms = dto.NumberOfRooms,
             RoomPreference = dto.RoomPreference?.Trim(),
             LocationPreference = dto.LocationPreference?.Trim(),
+
             PickupRequired = dto.PickupRequired,
             PickupLocation = dto.PickupLocation?.Trim(),
             DropLocation = dto.DropLocation?.Trim(),
             VehiclePreference = dto.VehiclePreference?.Trim(),
+
             ClientGuestDetails = dto.ClientGuestDetails?.Trim(),
             HospitalityRequirement = dto.HospitalityRequirement?.Trim(),
             MeetingEventPurpose = dto.MeetingEventPurpose?.Trim(),
             NumberOfGuests = dto.NumberOfGuests,
             SpecialArrangements = dto.SpecialArrangements?.Trim(),
+
             ItineraryNotes = dto.ItineraryNotes?.Trim(),
             AdditionalInstructions = dto.AdditionalInstructions?.Trim(),
+
             EstimatedTravelCost = dto.EstimatedTravelCost,
             EstimatedHotelCost = dto.EstimatedHotelCost,
             EstimatedLocalTransportCost = dto.EstimatedLocalTransportCost,
             EstimatedHospitalityCost = dto.EstimatedHospitalityCost,
             Currency = dto.Currency?.Trim(),
+
             ApprovalRequired = dto.ApprovalRequired,
             ApproverId = dto.ApproverId?.Trim(),
-            // ApproverNameSnapshot: resolved server-side; not accepted from frontend.
-            // Current architecture does not expose an HRMS person-lookup service here.
-            // Snapshot must be populated once HRMS identity lookup is wired in.
-            ApproverNameSnapshot = null,
             BusinessState = "Draft",
-            ApprovalState = approvalState,
+            ApprovalState = ResolveDraftApprovalState(dto.ApprovalRequired),
+
             CreatedBy = actor,
-            CreatedDate = now,
-            IsDeleted = false
+            CreatedDate = now
         };
 
-        // ---- 5. Persist (BLOCKED at FK level until EaTask exists) ----
-        // Note: In the current state, saving will fail with a FK violation because
-        // EaTaskId = 0 does not reference a valid ea_tasks row.
-        // The service layer is complete; the blocker is architectural (TAT policy).
-        await _db.TravelRequests.AddAsync(entity, ct);
+        _db.TravelRequests.Add(entity);
+        await _db.SaveChangesAsync(ct);
 
-        // Audit (before SaveChanges — follows EA pattern)
+        // ---- 3. Correct the EaTask's BusinessRecordId to the real TravelRequest.Id ----
+        // Now that it exists. No orphan can result: if anything above or below fails,
+        // the whole transaction — including the EaTask insert — rolls back.
+        var eaTask = await _db.Tasks.FirstAsync(t => t.Id == eaTaskDto.EaTaskId, ct);
+        eaTask.BusinessRecordId = entity.Id.ToString(CultureInfo.InvariantCulture);
+        await _db.SaveChangesAsync(ct);
+
         _audit.AddAudit(
             "TRAVEL_CREATE_DRAFT",
             "Travel",
             nameof(TravelRequest),
-            "pending", // entity.Id not yet assigned
-            null,
-            new { entity.ReferenceNo, entity.BusinessState, entity.ApprovalState, travelModule.Id },
-            "Travel request draft created");
-
-        await _db.SaveChangesAsync(ct);
-
-        // Update audit with real Id now that SaveChanges assigned it
-        _audit.AddAudit(
-            "TRAVEL_CREATE_DRAFT_ID_ASSIGNED",
-            "Travel",
-            nameof(TravelRequest),
             entity.Id.ToString(CultureInfo.InvariantCulture),
             null,
-            new { entity.Id, entity.ReferenceNo },
-            "Travel request id assigned after insert");
-
+            new { entity.ReferenceNo, entity.EaTaskId, entity.BusinessState, entity.ApprovalState },
+            "Travel request draft created");
         await _db.SaveChangesAsync(ct);
+
+        await transaction.CommitAsync(ct);
 
         return new TravelRequestCreatedDto
         {
             TravelRequestId = entity.Id,
-            EaTaskId = entity.EaTaskId, // will be 0 until TAT policy resolved
+            EaTaskId = entity.EaTaskId,
             ReferenceNo = entity.ReferenceNo,
             BusinessState = entity.BusinessState,
             ApprovalState = entity.ApprovalState
@@ -186,7 +191,9 @@ public class TravelRequestService : ITravelRequestService
             .FirstOrDefaultAsync(x => x.Id == travelRequestId && !x.IsDeleted, ct)
             ?? throw new NotFoundException($"Travel request {travelRequestId} not found.");
 
-        return ToDetailDto(entity);
+        var cycle = await _db.TravelRequestCycles.AsNoTracking()
+            .SingleOrDefaultAsync(x => x.TravelRequestId == entity.Id && x.CycleNo == entity.CurrentCycleNo, ct);
+        return ToDetailDto(entity, cycle);
     }
 
     // ============================================================
@@ -194,19 +201,28 @@ public class TravelRequestService : ITravelRequestService
     // ============================================================
 
     public async Task<TravelRequestDetailDto> UpdateDraftAsync(
-        long travelRequestId, UpdateTravelDraftDto dto, CancellationToken ct = default)
+        long travelRequestId, UpdateTravelDraftDto dto, CancellationToken ct = default, int? expectedCycleNo = null)
     {
-        var entity = await _db.TravelRequests
-            .FirstOrDefaultAsync(x => x.Id == travelRequestId && !x.IsDeleted, ct)
-            ?? throw new NotFoundException($"Travel request {travelRequestId} not found.");
-
-        // Editability gate: only Draft is editable at this step.
-        // Post-submission edit semantics (ChangesRequested rework) belong to Step 4+.
-        if (!string.Equals(entity.BusinessState, "Draft", StringComparison.OrdinalIgnoreCase))
+        if (expectedCycleNo.HasValue && expectedCycleNo <= 0)
+            throw new BadRequestException("ExpectedCycleNo must be greater than zero.");
+        await using var transaction = await _db.Database.BeginTransactionAsync(ct);
+        var entity = await LockTravelParentAsync(travelRequestId, ct);
+        var rework = entity.ApprovalState == "ChangesRequested";
+        TravelRequestCycle? currentCycle = null;
+        if (rework)
         {
-            throw new BusinessRuleException(
-                $"Travel request is in state '{entity.BusinessState}' and cannot be edited via the draft endpoint. " +
-                "Only Draft requests may be updated here.");
+            if (!expectedCycleNo.HasValue)
+                throw new BusinessRuleException("ExpectedCycleNo is required for controlled rework.");
+            currentCycle = await LockCurrentTravelCycleAsync(entity, expectedCycleNo.Value, "ChangesRequested", ct);
+            if (dto.ApprovalRequired != entity.ApprovalRequired ||
+                !string.Equals(dto.ApproverId?.Trim(), entity.ApproverId, StringComparison.Ordinal))
+                throw new BusinessRuleException("Approval routing cannot change during rework.");
+        }
+        else
+        {
+            await ValidateUnsubmittedTravelAsync(entity, ct);
+            if (expectedCycleNo.HasValue)
+                throw new BusinessRuleException("An unsubmitted draft has no approval cycle.");
         }
 
         // Snapshot for audit
@@ -259,18 +275,15 @@ public class TravelRequestService : ITravelRequestService
         entity.EstimatedLocalTransportCost = dto.EstimatedLocalTransportCost;
         entity.EstimatedHospitalityCost = dto.EstimatedHospitalityCost;
         entity.Currency = dto.Currency?.Trim();
-        entity.ApprovalRequired = dto.ApprovalRequired;
-        entity.ApproverId = dto.ApproverId?.Trim();
-        // ApproverNameSnapshot: keep existing value or clear if ApproverId changed.
-        // Full HRMS lookup deferred; null out snapshot on approver change for consistency.
-        if (!string.Equals(entity.ApproverId, dto.ApproverId?.Trim(), StringComparison.Ordinal))
-            entity.ApproverNameSnapshot = null;
-
-        // Update ApprovalState if ApprovalRequired flag changed
-        if (!dto.ApprovalRequired)
-            entity.ApprovalState = "NotRequired";
-        else if (string.Equals(entity.ApprovalState, "NotRequired", StringComparison.OrdinalIgnoreCase))
-            entity.ApprovalState = "Pending";
+        if (!rework)
+        {
+            // Opaque IDs remain opaque; optional HRMS snapshot resolution is deferred.
+            if (!string.Equals(entity.ApproverId, dto.ApproverId?.Trim(), StringComparison.Ordinal))
+                entity.ApproverNameSnapshot = null;
+            entity.ApprovalRequired = dto.ApprovalRequired;
+            entity.ApproverId = dto.ApproverId?.Trim();
+            entity.ApprovalState = ResolveDraftApprovalState(dto.ApprovalRequired);
+        }
 
         // Backend-owned fields: do NOT allow frontend to set these
         // entity.Id, entity.ReferenceNo, entity.EaTaskId, entity.CurrentCycleNo,
@@ -289,12 +302,13 @@ public class TravelRequestService : ITravelRequestService
             snapshot,
             new { entity.TravellerName, entity.Purpose, entity.FromLocation, entity.ToLocation,
                   entity.DepartureDate, entity.ReturnDate, entity.Priority,
-                  entity.ApprovalRequired, entity.ApproverId },
+                  entity.ApprovalRequired, entity.ApproverId, entity.ApprovalState },
             "Travel request draft updated");
 
         await _db.SaveChangesAsync(ct);
+        await transaction.CommitAsync(ct);
 
-        return ToDetailDto(entity);
+        return ToDetailDto(entity, currentCycle);
     }
 
     // ============================================================
@@ -423,10 +437,18 @@ public class TravelRequestService : ITravelRequestService
     // MAPPING HELPERS (manual — no AutoMapper dependency needed here)
     // ============================================================
 
-    private static TravelRequestDetailDto ToDetailDto(TravelRequest e)
+    /// <summary>
+    /// Draft ApprovalState from ApprovalRequired. Pending is reserved for future Submit.
+    /// Public for unit-test access.
+    /// </summary>
+    public static string ResolveDraftApprovalState(bool approvalRequired) =>
+        approvalRequired ? "NotSubmitted" : "NotRequired";
+
+    private static TravelRequestDetailDto ToDetailDto(TravelRequest e, TravelRequestCycle? cycle = null)
     {
         return new TravelRequestDetailDto
         {
+            CurrentCycle = ToCurrentTravelCycle(cycle),
             Id = e.Id,
             ReferenceNo = e.ReferenceNo,
             EaTaskId = e.EaTaskId,
@@ -519,6 +541,7 @@ public class TravelRequestService : ITravelRequestService
             SubmittedAt = e.SubmittedAt,
             ApprovedAt = e.ApprovedAt,
             RejectedAt = e.RejectedAt,
+            StartedAt = e.StartedAt,
             CompletedAt = e.CompletedAt,
             CreatedBy = e.CreatedBy,
             CreatedDate = e.CreatedDate,
@@ -531,6 +554,10 @@ public class TravelRequestService : ITravelRequestService
     {
         return new TravelRequestListItemDto
         {
+            CurrentCycleNo = e.CurrentCycleNo,
+            SubmittedAt = e.SubmittedAt,
+            ApprovedAt = e.ApprovedAt,
+            RejectedAt = e.RejectedAt,
             Id = e.Id,
             ReferenceNo = e.ReferenceNo,
             TravellerName = e.TravellerName,

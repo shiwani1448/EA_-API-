@@ -48,10 +48,12 @@ public class ApprovalCreateSubmitTests
                 var task = new EaTask
                 {
                     BusinessModuleId = module.Id,
+                    ModuleName = module.Name,
                     BusinessRecordId = dto.BusinessRecordId,
                     Task = dto.Task,
                     Description = dto.Description,
                     AllottedTatMinutes = null,
+                    ExecutionStatus = "NotStarted",
                     IsActive = true,
                     CreatedBy = "tester",
                     CreatedDate = DateTime.UtcNow
@@ -67,6 +69,7 @@ public class ApprovalCreateSubmitTests
                     Task = task.Task,
                     Description = task.Description,
                     AllottedTatMinutes = null,
+                    ExecutionStatus = task.ExecutionStatus,
                     IsActive = true,
                     CreatedBy = task.CreatedBy,
                     CreatedDate = task.CreatedDate

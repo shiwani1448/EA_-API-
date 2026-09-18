@@ -20,7 +20,7 @@ public class ApprovalNoTatQueryTests
         await using var db = new EaFmsDbContext(new DbContextOptionsBuilder<EaFmsDbContext>()
             .UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
         var module = new BusinessModule { Name = "EA Approval", CreatedBy = "tester", CreatedDate = DateTime.UtcNow, IsActive = true };
-        var task = new EaTask { BusinessModule = module, BusinessRecordId = "APR-TEST", Task = "No TAT", CreatedBy = "tester", CreatedDate = DateTime.UtcNow.AddDays(-1), AllottedTatMinutes = minutes };
+        var task = new EaTask { BusinessModule = module, ModuleName = module.Name, ExecutionStatus = "InProgress", BusinessRecordId = "APR-TEST", Task = "No TAT", CreatedBy = "tester", CreatedDate = DateTime.UtcNow.AddDays(-1), AllottedTatMinutes = minutes };
         var approval = new ApprovalRequest { EaTask = task, ReferenceNo = "APR-TEST", CreatedBy = "tester", CreatedAt = task.CreatedDate, WorkflowStatus = "Draft" };
         db.ApprovalRequests.Add(approval);
         await db.SaveChangesAsync();

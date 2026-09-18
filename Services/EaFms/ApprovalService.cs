@@ -1,5 +1,6 @@
 using Jarvis5.Data.EaFms;
 using Jarvis5.Common;
+using Jarvis5.Common.EaFms;
 using Jarvis5.Entities.EaFms;
 using Jarvis5.Services;
 using Jarvis5.Repositories.EaFms;
@@ -68,6 +69,14 @@ public class ApprovalService
         };
 
         var eaTaskDto = await _eaTaskService.CreateWithoutTatAsync(createTaskDto, ct);
+
+        // Approval has no distinct "start" action: SubmittedAt == CreatedAt below (the
+        // request is immediately actionable — an approver can decide the moment it exists),
+        // unlike Meeting/Travel/Delegation which all have a real, separate Start step. The
+        // central task therefore begins InProgress rather than NotStarted for this module.
+        var eaTaskEntity = await _context.Tasks.FirstAsync(t => t.Id == eaTaskDto.EaTaskId, ct);
+        eaTaskEntity.ExecutionStatus = EaTaskExecutionStatus.InProgress;
+        eaTaskEntity.StartedAt = now;
 
         // Persist the approval only after a valid central task exists.
         request.EaTaskId = eaTaskDto.EaTaskId;

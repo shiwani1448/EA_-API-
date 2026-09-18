@@ -73,7 +73,7 @@ public class CreateTravelRequestDto
     public bool ApprovalRequired { get; set; }
     /// <summary>
     /// Opaque approver identifier sourced from the authenticated identity system.
-    /// ApproverNameSnapshot is resolved server-side and not accepted from the frontend.
+    /// ApproverNameSnapshot is backend-owned; optional identity lookup is deferred.
     /// </summary>
     public string? ApproverId { get; set; }
 }
@@ -250,6 +250,7 @@ public class TravelApprovalDto
 
 public class TravelRequestDetailDto
 {
+    public TravelCurrentCycleDto? CurrentCycle { get; set; }
     public long Id { get; set; }
     public string ReferenceNo { get; set; } = string.Empty;
     public long EaTaskId { get; set; }
@@ -270,6 +271,7 @@ public class TravelRequestDetailDto
     public DateTime? SubmittedAt { get; set; }
     public DateTime? ApprovedAt { get; set; }
     public DateTime? RejectedAt { get; set; }
+    public DateTime? StartedAt { get; set; }
     public DateTime? CompletedAt { get; set; }
     public string CreatedBy { get; set; } = string.Empty;
     public DateTime CreatedDate { get; set; }
@@ -284,10 +286,7 @@ public class TravelRequestDetailDto
 public class TravelRequestCreatedDto
 {
     public long TravelRequestId { get; set; }
-    /// <summary>
-    /// BLOCKED — TRAVEL EATASK/TAT CREATION POLICY REQUIRES DECISION.
-    /// EaTaskId will be 0 until the TAT policy is resolved and task creation is unblocked.
-    /// </summary>
+    /// <summary>Id of the central EaTask created atomically with this TravelRequest.</summary>
     public long EaTaskId { get; set; }
     public string ReferenceNo { get; set; } = string.Empty;
     public string BusinessState { get; set; } = string.Empty;
@@ -300,6 +299,10 @@ public class TravelRequestCreatedDto
 
 public class TravelRequestListItemDto
 {
+    public int CurrentCycleNo { get; set; }
+    public DateTime? SubmittedAt { get; set; }
+    public DateTime? ApprovedAt { get; set; }
+    public DateTime? RejectedAt { get; set; }
     public long Id { get; set; }
     public string ReferenceNo { get; set; } = string.Empty;
     public string? TravellerName { get; set; }

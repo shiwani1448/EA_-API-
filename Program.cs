@@ -362,7 +362,17 @@ builder.Services.AddScoped<Jarvis5.Services.EaFms.ApprovalQueryService>();
 // Ensure ITatRuleService is available for ApprovalService TAT resolution (already registered above)
 
 // Travel services
+builder.Services.AddScoped<Jarvis5.Repositories.EaFms.ITravelNumberRepository, Jarvis5.Repositories.EaFms.TravelRepository>();
 builder.Services.AddScoped<Jarvis5.Services.EaFms.ITravelRequestService, Jarvis5.Services.EaFms.TravelRequestService>();
+builder.Services.AddScoped<Jarvis5.Services.EaFms.ITravelDocumentService, Jarvis5.Services.EaFms.TravelDocumentService>();
+builder.Services.AddScoped<Jarvis5.Services.EaFms.ITravelApprovalQueryService, Jarvis5.Services.EaFms.TravelApprovalQueryService>();
+builder.Services.AddScoped<Jarvis5.Services.EaFms.ITravelBookingService, Jarvis5.Services.EaFms.TravelBookingService>();
+builder.Services.AddScoped<Jarvis5.Services.EaFms.ITravelArrangementService, Jarvis5.Services.EaFms.TravelArrangementService>();
+builder.Services.AddScoped<Jarvis5.Services.EaFms.ITravelExpenseService, Jarvis5.Services.EaFms.TravelExpenseService>();
+
+// Delegation services
+builder.Services.AddScoped<Jarvis5.Repositories.EaFms.IDelegationNumberRepository, Jarvis5.Repositories.EaFms.DelegationRepository>();
+builder.Services.AddScoped<Jarvis5.Services.EaFms.IDelegationService, Jarvis5.Services.EaFms.DelegationService>();
 
 // ============================================================
 // ANTHROPIC / CLAUDE

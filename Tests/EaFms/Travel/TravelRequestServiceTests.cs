@@ -1,6 +1,7 @@
 using Jarvis5.Data.EaFms;
 using Jarvis5.Dtos.EaFms;
 using Jarvis5.Entities.EaFms;
+using Jarvis5.Repositories.EaFms;
 using Jarvis5.Services;
 using Jarvis5.Services.EaFms;
 using Microsoft.EntityFrameworkCore;
@@ -22,6 +23,9 @@ public class TravelRequestServiceTests
     private static EaFmsDbContext MakeDb() =>
         new(new DbContextOptionsBuilder<EaFmsDbContext>()
             .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            // CreateDraftAsync opens a transaction (matching Meeting/Approval); InMemory
+            // does not honor transactions and only warns about it.
+            .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.InMemoryEventId.TransactionIgnoredWarning))
             .Options);
 
     private static (Mock<IAuditService> audit, Mock<ICurrentUserService> user) MakeMocks()
@@ -31,6 +35,81 @@ public class TravelRequestServiceTests
         user.SetupGet(u => u.UserId).Returns(42L);
         user.SetupGet(u => u.UserName).Returns("testuser");
         return (audit, user);
+    }
+
+    /// <summary>
+    /// Builds a service with unconfigured number/EaTask dependencies for tests that never
+    /// call CreateDraftAsync (Moq returns default completed tasks for un-setup members).
+    /// </summary>
+    private static TravelRequestService MakeService(
+        EaFmsDbContext db, Mock<IAuditService> audit, Mock<ICurrentUserService> user) =>
+        new(db, audit.Object, user.Object, new Mock<ITravelNumberRepository>().Object, new Mock<IEaTaskService>().Object);
+
+    /// <summary>
+    /// Mocks matching the Approval test convention: reference numbers are generated
+    /// in-memory, and the EaTask mock inserts a real row into the shared InMemory `db`
+    /// (via EaTaskService.CreateWithoutTatAsync) so it gets a real identity Id, exactly
+    /// as the real EaTaskService would inside the same transaction.
+    /// </summary>
+    private static (Mock<ITravelNumberRepository> numbers, Mock<IEaTaskService> eaTasks) MakeCreateMocks(
+        EaFmsDbContext db, long moduleId)
+    {
+        var numbers = new Mock<ITravelNumberRepository>();
+        var seq = 0;
+        numbers.Setup(r => r.GenerateNextReferenceNoAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(() => $"TRV-2026-{System.Threading.Interlocked.Increment(ref seq):D6}");
+
+        var eaTasks = new Mock<IEaTaskService>();
+        eaTasks.Setup(s => s.CreateWithoutTatAsync(It.IsAny<CreateEaTaskDto>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((CreateEaTaskDto dto, CancellationToken _) =>
+            {
+                var task = new EaTask
+                {
+                    BusinessModuleId = moduleId,
+                    ModuleName = TravelRequestService.TravelBusinessModuleName,
+                    BusinessRecordId = dto.BusinessRecordId,
+                    Task = dto.Task,
+                    Description = dto.Description,
+                    AllottedTatMinutes = null,
+                    ExecutionStatus = "NotStarted",
+                    IsActive = true,
+                    CreatedBy = "tester",
+                    CreatedDate = DateTime.UtcNow
+                };
+                db.Tasks.Add(task);
+                db.SaveChanges();
+                return new EaTaskResponseDto
+                {
+                    EaTaskId = task.Id,
+                    ModuleId = moduleId,
+                    ModuleName = TravelRequestService.TravelBusinessModuleName,
+                    BusinessRecordId = task.BusinessRecordId,
+                    Task = task.Task,
+                    Description = task.Description,
+                    AllottedTatMinutes = null,
+                    ExecutionStatus = task.ExecutionStatus,
+                    IsActive = true,
+                    CreatedBy = task.CreatedBy,
+                    CreatedDate = task.CreatedDate
+                };
+            });
+
+        return (numbers, eaTasks);
+    }
+
+    private static async Task<BusinessModule> AddTravelModuleAsync(EaFmsDbContext db)
+    {
+        var module = new BusinessModule
+        {
+            Name = TravelRequestService.TravelBusinessModuleName,
+            IsActive = true,
+            IsDeleted = false,
+            CreatedBy = "tester",
+            CreatedDate = DateTime.UtcNow
+        };
+        db.BusinessModules.Add(module);
+        await db.SaveChangesAsync();
+        return module;
     }
 
     // ----------------------------------------------------------------
@@ -112,15 +191,13 @@ public class TravelRequestServiceTests
 
     [Theory]
     [InlineData(false, "NotRequired")]
-    [InlineData(true, "Pending")]
+    [InlineData(true, "NotSubmitted")]
     public void CreateDraft_ApprovalStateDependsOnApprovalRequired(bool approvalRequired, string expectedApprovalState)
     {
-        // The service's ApprovalState logic:
-        //   if (!dto.ApprovalRequired) → "NotRequired"
-        //   else → "Pending"
-        // We test the logic directly without a real DB by reconstructing it.
-        var approvalState = approvalRequired ? "Pending" : "NotRequired";
+        // Draft semantics: Pending is reserved for future Submit, not Draft create/update.
+        var approvalState = TravelRequestService.ResolveDraftApprovalState(approvalRequired);
         Assert.Equal(expectedApprovalState, approvalState);
+        Assert.NotEqual("Pending", approvalState);
     }
 
     // ----------------------------------------------------------------
@@ -147,7 +224,7 @@ public class TravelRequestServiceTests
         db.TravelRequests.Add(entity);
         await db.SaveChangesAsync();
 
-        var service = new TravelRequestService(db, audit.Object, user.Object);
+        var service = MakeService(db, audit, user);
 
         var dto = new UpdateTravelDraftDto
         {
@@ -186,7 +263,7 @@ public class TravelRequestServiceTests
         db.TravelRequests.Add(entity);
         await db.SaveChangesAsync();
 
-        var service = new TravelRequestService(db, audit.Object, user.Object);
+        var service = MakeService(db, audit, user);
 
         await Assert.ThrowsAsync<Jarvis5.Common.BusinessRuleException>(
             () => service.UpdateDraftAsync(entity.Id, new UpdateTravelDraftDto()));
@@ -216,7 +293,7 @@ public class TravelRequestServiceTests
         db.TravelRequests.Add(entity);
         await db.SaveChangesAsync();
 
-        var service = new TravelRequestService(db, audit.Object, user.Object);
+        var service = MakeService(db, audit, user);
 
         var dto = new UpdateTravelDraftDto { TravellerName = "Alice", ApprovalRequired = false };
         var result = await service.UpdateDraftAsync(entity.Id, dto);
@@ -245,7 +322,7 @@ public class TravelRequestServiceTests
             ReferenceNo = "TRV-2026-000004",
             EaTaskId = 1,
             BusinessState = "Draft",
-            ApprovalState = "Pending",
+            ApprovalState = "NotSubmitted",
             ApprovalRequired = true,
             ApproverId = "mgr-1",
             CreatedBy = "testuser",
@@ -254,16 +331,17 @@ public class TravelRequestServiceTests
         db.TravelRequests.Add(entity);
         await db.SaveChangesAsync();
 
-        var service = new TravelRequestService(db, audit.Object, user.Object);
+        var service = MakeService(db, audit, user);
 
         var result = await service.UpdateDraftAsync(entity.Id,
             new UpdateTravelDraftDto { ApprovalRequired = false });
 
         Assert.Equal("NotRequired", result.ApprovalState);
+        Assert.NotEqual("Pending", result.ApprovalState);
     }
 
     [Fact]
-    public async Task UpdateDraft_WhenApprovalRequiredChangedToTrue_SetsApprovalStatePending()
+    public async Task UpdateDraft_WhenApprovalRequiredChangedToTrue_SetsApprovalStateNotSubmitted()
     {
         await using var db = MakeDb();
         var (audit, user) = MakeMocks();
@@ -281,12 +359,130 @@ public class TravelRequestServiceTests
         db.TravelRequests.Add(entity);
         await db.SaveChangesAsync();
 
-        var service = new TravelRequestService(db, audit.Object, user.Object);
+        var service = MakeService(db, audit, user);
 
         var result = await service.UpdateDraftAsync(entity.Id,
             new UpdateTravelDraftDto { ApprovalRequired = true, ApproverId = "mgr-2" });
 
-        Assert.Equal("Pending", result.ApprovalState);
+        Assert.Equal("NotSubmitted", result.ApprovalState);
+        Assert.NotEqual("Pending", result.ApprovalState);
+    }
+
+    [Fact]
+    public async Task CreateDraft_WhenModuleMissing_ThrowsConfigurationBusinessRule_BeforePolicyGate()
+    {
+        await using var db = MakeDb();
+        var (audit, user) = MakeMocks();
+        var service = MakeService(db, audit, user);
+
+        var ex = await Assert.ThrowsAsync<Jarvis5.Common.BusinessRuleException>(
+            () => service.CreateDraftAsync(new CreateTravelRequestDto { ApprovalRequired = true }));
+
+        Assert.Contains("TRAVEL BUSINESS MODULE CONFIGURATION REQUIRED BEFORE RUNTIME TRAVEL CREATION", ex.Message);
+        Assert.Empty(db.TravelRequests);
+        audit.Verify(a => a.AddAudit(
+            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(),
+            It.IsAny<object?>(), It.IsAny<object?>(), It.IsAny<string>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task CreateDraft_WhenModulePresent_CreatesTravelRequestAndNoTatEaTask_InOneTransaction()
+    {
+        await using var db = MakeDb();
+        var (audit, user) = MakeMocks();
+        var module = await AddTravelModuleAsync(db);
+        var (numbers, eaTasks) = MakeCreateMocks(db, module.Id);
+
+        var service = new TravelRequestService(db, audit.Object, user.Object, numbers.Object, eaTasks.Object);
+
+        var result = await service.CreateDraftAsync(new CreateTravelRequestDto
+        {
+            TravellerName = "Sam",
+            Purpose = "Client visit",
+            ApprovalRequired = false
+        });
+
+        // TravelRequest.Id / EaTask.Id are real, non-zero, and exactly one of each exists.
+        Assert.NotEqual(0, result.TravelRequestId);
+        Assert.NotEqual(0, result.EaTaskId);
+        Assert.Equal("Draft", result.BusinessState);
+        Assert.Equal("NotRequired", result.ApprovalState);
+        Assert.Single(db.TravelRequests);
+        Assert.Single(db.Tasks);
+
+        var persisted = await db.TravelRequests.SingleAsync();
+        Assert.Equal(result.TravelRequestId, persisted.Id);
+        Assert.Equal(result.EaTaskId, persisted.EaTaskId);
+        Assert.Equal(0, persisted.CurrentCycleNo);
+
+        // EaTask.BusinessRecordId must end up as the real TravelRequest.Id, not ReferenceNo.
+        var task = await db.Tasks.SingleAsync();
+        Assert.Equal(persisted.Id.ToString(System.Globalization.CultureInfo.InvariantCulture), task.BusinessRecordId);
+        Assert.Null(task.AllottedTatMinutes);
+        Assert.Equal(persisted.ReferenceNo, task.Task);
+        Assert.Equal("Client visit", task.Description);
+
+        // No cycle is created on Draft creation.
+        Assert.Empty(db.TravelRequestCycles);
+
+        // The no-TAT path was used, never the TAT-required path — this is fixed backend
+        // module policy, not something the caller/DTO can influence.
+        eaTasks.Verify(s => s.CreateWithoutTatAsync(It.IsAny<CreateEaTaskDto>(), It.IsAny<CancellationToken>()), Times.Once);
+        eaTasks.Verify(s => s.CreateAsync(It.IsAny<CreateEaTaskDto>(), It.IsAny<CancellationToken>()), Times.Never);
+
+        audit.Verify(a => a.AddAudit(
+            "TRAVEL_CREATE_DRAFT", It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(),
+            It.IsAny<object?>(), It.IsAny<object?>(), It.IsAny<string>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task CreateDraft_WhenApprovalRequiredTrue_SetsApprovalStateNotSubmitted_NotPending()
+    {
+        await using var db = MakeDb();
+        var (audit, user) = MakeMocks();
+        var module = await AddTravelModuleAsync(db);
+        var (numbers, eaTasks) = MakeCreateMocks(db, module.Id);
+        var service = new TravelRequestService(db, audit.Object, user.Object, numbers.Object, eaTasks.Object);
+
+        var result = await service.CreateDraftAsync(
+            new CreateTravelRequestDto { ApprovalRequired = true, ApproverId = "mgr-1" });
+
+        Assert.Equal("NotSubmitted", result.ApprovalState);
+        Assert.NotEqual("Pending", result.ApprovalState);
+    }
+
+    [Fact]
+    public async Task CreateDraft_ReferenceNo_UsesTrvFormat_AndIsBackendGenerated()
+    {
+        await using var db = MakeDb();
+        var (audit, user) = MakeMocks();
+        var module = await AddTravelModuleAsync(db);
+        var (numbers, eaTasks) = MakeCreateMocks(db, module.Id);
+        var service = new TravelRequestService(db, audit.Object, user.Object, numbers.Object, eaTasks.Object);
+
+        var result = await service.CreateDraftAsync(new CreateTravelRequestDto());
+
+        Assert.Matches(@"^TRV-\d{4}-\d{6}$", result.ReferenceNo);
+    }
+
+    [Fact]
+    public void CreateTravelRequestDto_DoesNotExposeBackendOwnedFields()
+    {
+        // Frontend can never supply EaTaskId/ReferenceNo/state — the DTO simply has no
+        // such properties, so this cannot regress silently.
+        var props = typeof(CreateTravelRequestDto).GetProperties().Select(p => p.Name).ToHashSet();
+        Assert.DoesNotContain("Id", props);
+        Assert.DoesNotContain("EaTaskId", props);
+        Assert.DoesNotContain("ReferenceNo", props);
+        Assert.DoesNotContain("BusinessState", props);
+        Assert.DoesNotContain("ApprovalState", props);
+        Assert.DoesNotContain("CurrentCycleNo", props);
+    }
+
+    [Fact]
+    public void TravelBusinessModule_CanonicalName_IsTravelAndHospitality()
+    {
+        Assert.Equal("Travel & Hospitality", TravelRequestService.TravelBusinessModuleName);
     }
 
     // ----------------------------------------------------------------
@@ -298,7 +494,7 @@ public class TravelRequestServiceTests
     {
         await using var db = MakeDb();
         var (audit, user) = MakeMocks();
-        var service = new TravelRequestService(db, audit.Object, user.Object);
+        var service = MakeService(db, audit, user);
 
         await Assert.ThrowsAsync<Jarvis5.Common.NotFoundException>(
             () => service.GetByIdAsync(999999L));
@@ -324,7 +520,7 @@ public class TravelRequestServiceTests
         db.TravelRequests.Add(entity);
         await db.SaveChangesAsync();
 
-        var service = new TravelRequestService(db, audit.Object, user.Object);
+        var service = MakeService(db, audit, user);
 
         await Assert.ThrowsAsync<Jarvis5.Common.NotFoundException>(
             () => service.GetByIdAsync(entity.Id));
@@ -358,7 +554,7 @@ public class TravelRequestServiceTests
         );
         await db.SaveChangesAsync();
 
-        var service = new TravelRequestService(db, audit.Object, user.Object);
+        var service = MakeService(db, audit, user);
         var result = await service.ListAsync(new TravelRequestListQueryDto { Search = "alice" });
 
         Assert.Single(result.Items);
@@ -387,7 +583,7 @@ public class TravelRequestServiceTests
         );
         await db.SaveChangesAsync();
 
-        var service = new TravelRequestService(db, audit.Object, user.Object);
+        var service = MakeService(db, audit, user);
         var result = await service.ListAsync(new TravelRequestListQueryDto { BusinessState = "Draft" });
 
         Assert.Single(result.Items);
@@ -418,7 +614,7 @@ public class TravelRequestServiceTests
         );
         await db.SaveChangesAsync();
 
-        var service = new TravelRequestService(db, audit.Object, user.Object);
+        var service = MakeService(db, audit, user);
         var result = await service.ListAsync(new TravelRequestListQueryDto());
 
         Assert.Single(result.Items);
@@ -446,7 +642,7 @@ public class TravelRequestServiceTests
         }
         await db.SaveChangesAsync();
 
-        var service = new TravelRequestService(db, audit.Object, user.Object);
+        var service = MakeService(db, audit, user);
 
         var page1 = await service.ListAsync(new TravelRequestListQueryDto { Page = 1, PageSize = 2 });
         Assert.Equal(5, page1.TotalCount);
@@ -502,7 +698,7 @@ public class TravelRequestServiceTests
         db.TravelRequests.Add(entity);
         await db.SaveChangesAsync();
 
-        var service = new TravelRequestService(db, audit.Object, user.Object);
+        var service = MakeService(db, audit, user);
         var result = await service.GetByIdAsync(entity.Id);
 
         // Total = 1000 + 0 + 500 + 0 = 1500

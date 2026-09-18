@@ -24,7 +24,7 @@ public class MeetingLifecycleResponseDto
     public List<MeetingDoerDto> Doers { get; set; } = new();
     public MeetingAssignmentSummaryDto? AssignmentSummary { get; set; }
     public long MeetingId { get; set; }    public string? StatusName { get; set; }
-    public string ExecutionState { get; set; } = "Running";
+    public string ExecutionState { get; set; } = "InProgress";
     public bool IsPaused { get; set; }
     public DateTime? StartedAt { get; set; }
     public MeetingTatSummaryDto TatSummary { get; set; } = new();
@@ -48,7 +48,7 @@ public class MeetingPauseResponseDto
     public DateTime StartAt { get; set; }
     public DateTime? EndAt { get; set; }
     public string? StatusName { get; set; }
-    public string ExecutionState { get; set; } = "Running";
+    public string ExecutionState { get; set; } = "InProgress";
     public bool IsPaused { get; set; }
     public DateTime? StartedAt { get; set; }
     public MeetingTatSummaryDto TatSummary { get; set; } = new();

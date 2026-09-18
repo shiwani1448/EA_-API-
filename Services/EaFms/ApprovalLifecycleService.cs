@@ -1,5 +1,6 @@
 using System.Globalization;
 using Jarvis5.Common;
+using Jarvis5.Common.EaFms;
 using Jarvis5.Data.EaFms;
 using Jarvis5.Dtos.EaFms;
 using Jarvis5.Entities.EaFms;
@@ -57,6 +58,13 @@ public class ApprovalLifecycleService : IApprovalLifecycleService
         req.WorkflowStatus = "PendingApproval";
         _db.ApprovalRequests.Update(req);
 
+        // Defensive symmetry: the live create path (ApprovalService.CreateAsync) already
+        // starts InProgress and never reaches Draft, so this is currently unreachable
+        // through it — kept correct in case a Draft-creating caller is ever wired up.
+        var eaTask = await _db.Tasks.FirstAsync(t => t.Id == req.EaTaskId, ct);
+        eaTask.ExecutionStatus = EaTaskExecutionStatus.InProgress;
+        eaTask.StartedAt ??= now;
+
         _audit.AddAudit("APPROVAL_SUBMIT", "Approval", nameof(ApprovalRequest), req.Id.ToString(), null, new { req.ReferenceNo, req.Id }, "Approval submitted");
         await _db.SaveChangesAsync(ct);
         await tx.CommitAsync(ct);
@@ -74,13 +82,20 @@ public class ApprovalLifecycleService : IApprovalLifecycleService
         var cycle = await _db.ApprovalCycles.Where(c => c.ApprovalRequestId == req.Id).OrderByDescending(c => c.CycleNo).FirstOrDefaultAsync(ct)
             ?? throw new BusinessRuleException("Approval has no cycle to approve.");
 
+        var decidedAt = Clock.UtcNowTz;
         cycle.Status = "Approved";
         cycle.DecisionComment = dto.Comment?.Trim();
-        cycle.UpdatedAt = Clock.UtcNowTz;
+        cycle.UpdatedAt = decidedAt;
         _db.ApprovalCycles.Update(cycle);
 
         req.WorkflowStatus = "Approved";
         _db.ApprovalRequests.Update(req);
+
+        // Approved/Rejected are business decisions, not execution states (a decision task's
+        // work is finished either way) — both map to central Completed.
+        var eaTask = await _db.Tasks.FirstAsync(t => t.Id == req.EaTaskId, ct);
+        eaTask.ExecutionStatus = EaTaskExecutionStatus.Completed;
+        eaTask.CompletedAt ??= decidedAt;
 
         _audit.AddAudit("APPROVAL_APPROVE", "Approval", nameof(ApprovalRequest), req.Id.ToString(), null, new { req.ReferenceNo, req.Id, cycle.CycleNo }, "Approval approved");
         await _db.SaveChangesAsync(ct);
@@ -100,13 +115,20 @@ public class ApprovalLifecycleService : IApprovalLifecycleService
         var cycle = await _db.ApprovalCycles.Where(c => c.ApprovalRequestId == req.Id).OrderByDescending(c => c.CycleNo).FirstOrDefaultAsync(ct)
             ?? throw new BusinessRuleException("Approval has no cycle to reject.");
 
+        var decidedAt = Clock.UtcNowTz;
         cycle.Status = "Rejected";
         cycle.DecisionComment = dto.Comment!.Trim();
-        cycle.UpdatedAt = Clock.UtcNowTz;
+        cycle.UpdatedAt = decidedAt;
         _db.ApprovalCycles.Update(cycle);
 
         req.WorkflowStatus = "Rejected";
         _db.ApprovalRequests.Update(req);
+
+        // Approved/Rejected are business decisions, not execution states (a decision task's
+        // work is finished either way) — both map to central Completed.
+        var eaTask = await _db.Tasks.FirstAsync(t => t.Id == req.EaTaskId, ct);
+        eaTask.ExecutionStatus = EaTaskExecutionStatus.Completed;
+        eaTask.CompletedAt ??= decidedAt;
 
         _audit.AddAudit("APPROVAL_REJECT", "Approval", nameof(ApprovalRequest), req.Id.ToString(), null, new { req.ReferenceNo, req.Id, cycle.CycleNo }, "Approval rejected");
         await _db.SaveChangesAsync(ct);

@@ -40,7 +40,7 @@ public class MeetingListItemResponseDto
 
     public bool IsConfidential { get; set; }
 
-    public string ExecutionState { get; set; } = "Captured";
+    public string ExecutionState { get; set; } = "NotStarted";
     public bool IsPaused { get; set; }
     public DateTime? StartedAt { get; set; }
     public DateTime? CompletedAt { get; set; }

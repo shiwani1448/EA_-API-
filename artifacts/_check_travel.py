@@ -1,0 +1,10 @@
+﻿import psycopg2
+c=psycopg2.connect(host="localhost",port=5432,dbname="DB_Studio5Jarvis",user="postgres",password="123456")
+cur=c.cursor()
+cur.execute("SELECT \"MigrationId\" FROM public.\"__EFMigrationsHistory\" WHERE \"MigrationId\" LIKE %s", ("%Travel%",))
+print("migrations", cur.fetchall())
+cur.execute("SELECT \"Id\",\"Name\",\"IsActive\",\"IsDeleted\" FROM ea_business_modules WHERE \"Name\" ILIKE %s OR \"Name\" ILIKE %s", ("%travel%","%hospitality%"))
+print("modules", cur.fetchall())
+cur.execute("SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='public' AND table_name IN ('ea_travel_requests','ea_travel_request_cycles')")
+print("tables", cur.fetchone())
+c.close()

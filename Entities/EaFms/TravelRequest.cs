@@ -70,6 +70,9 @@ public class TravelRequest
     public DateTime? SubmittedAt { get; set; }
     public DateTime? ApprovedAt { get; set; }
     public DateTime? RejectedAt { get; set; }
+    // Actual operational trip-commencement time (Upcoming -> Active), distinct from
+    // SubmittedAt (approval-cycle submission) and RequiredDate (business target date).
+    public DateTime? StartedAt { get; set; }
     public DateTime? CompletedAt { get; set; }
     public string CreatedBy { get; set; } = string.Empty;
     public DateTime CreatedDate { get; set; }

@@ -1,0 +1,883 @@
+using System;
+using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
+using Jarvis5.Common;
+using Jarvis5.Common.EaFms;
+using Jarvis5.Data.EaFms;
+using Jarvis5.Dtos.EaFms;
+using Jarvis5.Entities.EaFms;
+using Jarvis5.Repositories.EaFms;
+using Jarvis5.Services;
+using Jarvis5.Services.EaFms;
+using Microsoft.EntityFrameworkCore;
+using Moq;
+using Xunit;
+
+namespace Jarvis5.Tests.EaFms.Delegation;
+
+/// <summary>
+/// Step 2 CRUD/register tests. EaTaskService.CreateWithoutTatAsync runs Postgres-only raw
+/// SQL and cannot execute against EF InMemory, so IEaTaskService is mocked exactly as in
+/// TravelRequestServiceTests/TravelHistoryTests — the mock inserts a real EaTask row into
+/// the same InMemory db, giving it a real identity Id. IAuditService is the real
+/// AuditService so DELEGATION_CREATE/UPDATE rows are genuine, not hand-crafted.
+/// </summary>
+public class DelegationServiceTests
+{
+    private const string ModuleName = DelegationService.DelegationBusinessModuleName;
+
+    private static EaFmsDbContext MakeDb() => new(new DbContextOptionsBuilder<EaFmsDbContext>()
+        .UseInMemoryDatabase(Guid.NewGuid().ToString())
+        .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.InMemoryEventId.TransactionIgnoredWarning))
+        .Options);
+
+    private static async Task<BusinessModule> AddModuleAsync(EaFmsDbContext db, string name, bool active = true)
+    {
+        var m = new BusinessModule { Name = name, IsActive = active, IsDeleted = false, CreatedBy = "tester", CreatedDate = DateTime.UtcNow };
+        db.BusinessModules.Add(m);
+        await db.SaveChangesAsync();
+        return m;
+    }
+
+    private static async Task AddPriorityAsync(EaFmsDbContext db, string name, int level)
+    {
+        db.PriorityLevels.Add(new PriorityLevel { Name = name, Level = level, IsActive = true, IsDeleted = false, CreatedBy = "tester", CreatedDate = DateTime.UtcNow });
+        await db.SaveChangesAsync();
+    }
+
+    private static (Mock<IDelegationNumberRepository> numbers, Mock<IEaTaskService> eaTasks) MakeCreateMocks(EaFmsDbContext db, long moduleId)
+    {
+        var numbers = new Mock<IDelegationNumberRepository>();
+        var seq = 0;
+        numbers.Setup(r => r.GenerateNextReferenceNoAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(() => $"DLG-2026-{Interlocked.Increment(ref seq):D6}");
+
+        var eaTasks = new Mock<IEaTaskService>();
+        eaTasks.Setup(s => s.CreateWithoutTatAsync(It.IsAny<CreateEaTaskDto>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((CreateEaTaskDto dto, CancellationToken _) =>
+            {
+                var task = new EaTask
+                {
+                    BusinessModuleId = moduleId, ModuleName = ModuleName, BusinessRecordId = dto.BusinessRecordId,
+                    Task = dto.Task, Description = dto.Description,
+                    AllottedTatMinutes = null, WorkflowInstanceId = dto.WorkflowInstanceId,
+                    ExecutionStatus = "NotStarted",
+                    IsActive = true, CreatedBy = "tester", CreatedDate = DateTime.UtcNow
+                };
+                db.Tasks.Add(task);
+                db.SaveChanges();
+                return new EaTaskResponseDto
+                {
+                    EaTaskId = task.Id, ModuleId = moduleId, ModuleName = ModuleName,
+                    BusinessRecordId = task.BusinessRecordId, Task = task.Task, Description = task.Description,
+                    AllottedTatMinutes = null, ExecutionStatus = task.ExecutionStatus,
+                    IsActive = true, CreatedBy = task.CreatedBy, CreatedDate = task.CreatedDate
+                };
+            });
+        return (numbers, eaTasks);
+    }
+
+    private static (DelegationService service, Mock<IAuditService> auditSpy) MakeService(
+        EaFmsDbContext db, Mock<IDelegationNumberRepository>? numbers = null, Mock<IEaTaskService>? eaTasks = null,
+        string actor = "manager-1", long userId = 42)
+    {
+        var user = Mock.Of<ICurrentUserService>(u => u.UserName == actor && u.UserId == userId);
+        var realAudit = new AuditService(db, user);
+        var auditSpy = new Mock<IAuditService>();
+        auditSpy.Setup(a => a.AddAudit(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(),
+                It.IsAny<string>(), It.IsAny<object?>(), It.IsAny<object?>(), It.IsAny<string?>()))
+            .Callback<string, string, string, string, object?, object?, string?>(
+                (a, m, e, id, old, next, d) => realAudit.AddAudit(a, m, e, id, old, next, d));
+
+        numbers ??= new Mock<IDelegationNumberRepository>();
+        eaTasks ??= new Mock<IEaTaskService>();
+        return (new DelegationService(db, user, auditSpy.Object, numbers.Object, eaTasks.Object), auditSpy);
+    }
+
+    private static DelegationCreateRequestDto MakeCreateDto(long sourceModuleId, string sourceEntityId = "51") => new()
+    {
+        Title = "Prepare board deck",
+        Description = "Compile Q3 numbers",
+        AssignedToId = "emp-42",
+        AssignedToNameSnapshot = "Doer One",
+        DueDate = DateTime.UtcNow.Date.AddDays(3),
+        Priority = "High",
+        SourceBusinessModuleId = sourceModuleId,
+        SourceEntityId = sourceEntityId,
+        SourceReference = "MTG-000051",
+        AdditionalNotes = "Coordinate with finance"
+    };
+
+    // ----------------------------------------------------------------
+    // CREATE
+    // ----------------------------------------------------------------
+
+    [Fact]
+    public async Task Create_HappyPath_PersistsEverythingCorrectly()
+    {
+        var db = MakeDb();
+        var module = await AddModuleAsync(db, ModuleName);
+        var source = await AddModuleAsync(db, "Meeting");
+        await AddPriorityAsync(db, "High", 3);
+        var (numbers, eaTasks) = MakeCreateMocks(db, module.Id);
+        var (service, auditSpy) = MakeService(db, numbers, eaTasks);
+
+        var result = await service.CreateAsync(MakeCreateDto(source.Id));
+
+        Assert.Matches(@"^DLG-\d{4}-\d{6}$", result.ReferenceNo);
+        Assert.NotEqual(0, result.DelegationId);
+        Assert.NotEqual(0, result.EaTaskId);
+        Assert.Equal("Pending", result.Status);
+        Assert.Equal("emp-42", result.AssignedToId);
+        Assert.Equal("Doer One", result.AssignedToName);
+        Assert.Equal("manager-1", result.AssignedById);
+        Assert.Equal("High", result.Priority);
+        Assert.Equal(source.Id, result.SourceBusinessModuleId);
+        Assert.Equal("Meeting", result.SourceModuleName);
+        Assert.Equal("51", result.SourceEntityId);
+        Assert.Equal("MTG-000051", result.SourceReference);
+        Assert.Equal("Coordinate with finance", result.AdditionalNotes);
+        Assert.Null(result.StartedAt);
+        Assert.Null(result.CompletedAt);
+
+        // Exactly one EaTask, no TAT, no WorkflowInstance, no TatRule.
+        var task = Assert.Single(await db.Tasks.ToListAsync());
+        Assert.Equal(result.EaTaskId, task.Id);
+        Assert.Null(task.AllottedTatMinutes);
+        Assert.Null(task.WorkflowInstanceId);
+        Assert.Equal(result.DelegationId.ToString(), task.BusinessRecordId);
+        Assert.Empty(await db.WorkflowInstances.ToListAsync());
+        Assert.Empty(await db.TatRules.ToListAsync());
+
+        auditSpy.Verify(a => a.AddAudit("DELEGATION_CREATE", "Delegation", nameof(Jarvis5.Entities.EaFms.Delegation),
+            It.IsAny<string>(), null, It.IsAny<object?>(), It.IsAny<string?>()), Times.Once);
+        Assert.Contains(await db.AuditLogs.ToListAsync(), a => a.ActionType == "DELEGATION_CREATE");
+    }
+
+    [Fact]
+    public async Task Create_WhenDelegationModuleMissing_ThrowsBeforeEaTaskCreation()
+    {
+        var db = MakeDb();
+        var source = await AddModuleAsync(db, "Meeting");
+        var (numbers, eaTasks) = MakeCreateMocks(db, 999);
+        var (service, _) = MakeService(db, numbers, eaTasks);
+
+        var ex = await Assert.ThrowsAsync<BusinessRuleException>(() => service.CreateAsync(MakeCreateDto(source.Id)));
+
+        Assert.Contains("DELEGATION BUSINESS MODULE CONFIGURATION REQUIRED", ex.Message);
+        Assert.Empty(await db.Delegations.ToListAsync());
+        Assert.Empty(await db.Tasks.ToListAsync());
+        eaTasks.Verify(s => s.CreateWithoutTatAsync(It.IsAny<CreateEaTaskDto>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task Create_WhenSourceBusinessModuleInvalid_Throws()
+    {
+        var db = MakeDb();
+        await AddModuleAsync(db, ModuleName);
+        var (numbers, eaTasks) = MakeCreateMocks(db, 1);
+        var (service, _) = MakeService(db, numbers, eaTasks);
+
+        await Assert.ThrowsAsync<BusinessRuleException>(() => service.CreateAsync(MakeCreateDto(sourceModuleId: 999)));
+        Assert.Empty(await db.Delegations.ToListAsync());
+    }
+
+    [Fact]
+    public async Task Create_UnknownPriority_IsRejected()
+    {
+        var db = MakeDb();
+        var module = await AddModuleAsync(db, ModuleName);
+        var source = await AddModuleAsync(db, "Meeting");
+        var (numbers, eaTasks) = MakeCreateMocks(db, module.Id);
+        var (service, _) = MakeService(db, numbers, eaTasks);
+
+        var dto = MakeCreateDto(source.Id);
+        dto.Priority = "Urgent-ish"; // not a configured PriorityLevel
+        await Assert.ThrowsAsync<BadRequestException>(() => service.CreateAsync(dto));
+    }
+
+    [Fact]
+    public async Task Create_PriorityCasingIsCanonicalized()
+    {
+        var db = MakeDb();
+        var module = await AddModuleAsync(db, ModuleName);
+        var source = await AddModuleAsync(db, "Meeting");
+        await AddPriorityAsync(db, "High", 3);
+        var (numbers, eaTasks) = MakeCreateMocks(db, module.Id);
+        var (service, _) = MakeService(db, numbers, eaTasks);
+
+        var dto = MakeCreateDto(source.Id);
+        dto.Priority = "high"; // lower-case input
+        var result = await service.CreateAsync(dto);
+
+        Assert.Equal("High", result.Priority); // stored as the canonical PriorityLevel.Name
+    }
+
+    [Fact]
+    public async Task Create_NullPriority_IsAllowed()
+    {
+        var db = MakeDb();
+        var module = await AddModuleAsync(db, ModuleName);
+        var source = await AddModuleAsync(db, "Meeting");
+        var (numbers, eaTasks) = MakeCreateMocks(db, module.Id);
+        var (service, _) = MakeService(db, numbers, eaTasks);
+
+        var dto = MakeCreateDto(source.Id);
+        dto.Priority = null;
+        var result = await service.CreateAsync(dto);
+
+        Assert.Null(result.Priority);
+    }
+
+    // ----------------------------------------------------------------
+    // GET DETAIL
+    // ----------------------------------------------------------------
+
+    [Fact]
+    public async Task GetById_ReturnsPersistedDelegation_WithSourceModuleNameResolved()
+    {
+        var db = MakeDb();
+        var module = await AddModuleAsync(db, ModuleName);
+        var source = await AddModuleAsync(db, "Travel & Hospitality");
+        await AddPriorityAsync(db, "High", 3);
+        var (numbers, eaTasks) = MakeCreateMocks(db, module.Id);
+        var (service, _) = MakeService(db, numbers, eaTasks);
+        var created = await service.CreateAsync(MakeCreateDto(source.Id));
+
+        var detail = await service.GetByIdAsync(created.DelegationId);
+
+        Assert.Equal(created.ReferenceNo, detail.ReferenceNo);
+        Assert.Equal("Travel & Hospitality", detail.SourceModuleName);
+    }
+
+    [Fact]
+    public async Task GetById_UnknownId_ThrowsNotFound()
+    {
+        var db = MakeDb();
+        var (service, _) = MakeService(db);
+        await Assert.ThrowsAsync<NotFoundException>(() => service.GetByIdAsync(999));
+    }
+
+    [Fact]
+    public async Task GetById_SoftDeleted_ThrowsNotFound()
+    {
+        var db = MakeDb();
+        var module = await AddModuleAsync(db, ModuleName);
+        var source = await AddModuleAsync(db, "Meeting");
+        await AddPriorityAsync(db, "High", 3);
+        var (numbers, eaTasks) = MakeCreateMocks(db, module.Id);
+        var (service, _) = MakeService(db, numbers, eaTasks);
+        var created = await service.CreateAsync(MakeCreateDto(source.Id));
+
+        var entity = await db.Delegations.SingleAsync(d => d.Id == created.DelegationId);
+        entity.IsDeleted = true;
+        await db.SaveChangesAsync();
+
+        await Assert.ThrowsAsync<NotFoundException>(() => service.GetByIdAsync(created.DelegationId));
+    }
+
+    // ----------------------------------------------------------------
+    // UPDATE
+    // ----------------------------------------------------------------
+
+    [Fact]
+    public async Task Update_EditableFields_PersistAndReferenceNoNeverChanges_NoSecondEaTask()
+    {
+        var db = MakeDb();
+        var module = await AddModuleAsync(db, ModuleName);
+        var source = await AddModuleAsync(db, "Meeting");
+        var otherSource = await AddModuleAsync(db, "EA Approval");
+        await AddPriorityAsync(db, "High", 3);
+        await AddPriorityAsync(db, "Low", 1);
+        var (numbers, eaTasks) = MakeCreateMocks(db, module.Id);
+        var (service, auditSpy) = MakeService(db, numbers, eaTasks);
+        var created = await service.CreateAsync(MakeCreateDto(source.Id));
+
+        var update = new DelegationUpdateRequestDto
+        {
+            Title = "Updated title", Description = "Updated description",
+            AssignedToId = "emp-99", AssignedToNameSnapshot = "New Doer",
+            DueDate = DateTime.UtcNow.Date.AddDays(10), Priority = "Low",
+            SourceBusinessModuleId = otherSource.Id, SourceEntityId = "APR-2026-000010",
+            SourceReference = "APR-000010", AdditionalNotes = "Revised notes"
+        };
+
+        var result = await service.UpdateAsync(created.DelegationId, update);
+
+        Assert.Equal(created.ReferenceNo, result.ReferenceNo); // immutable
+        Assert.Equal(created.EaTaskId, result.EaTaskId); // no second EaTask
+        Assert.Equal("Updated title", result.Title);
+        Assert.Equal("emp-99", result.AssignedToId);
+        Assert.Equal("New Doer", result.AssignedToName);
+        Assert.Equal("Low", result.Priority);
+        Assert.Equal(otherSource.Id, result.SourceBusinessModuleId);
+        Assert.Equal("EA Approval", result.SourceModuleName);
+        Assert.Equal("APR-2026-000010", result.SourceEntityId);
+
+        Assert.Single(await db.Tasks.ToListAsync()); // still exactly one EaTask
+        Assert.Contains(await db.AuditLogs.ToListAsync(), a => a.ActionType == "DELEGATION_UPDATE");
+    }
+
+    [Fact]
+    public async Task Update_DoesNotAllowChangingAssignedByOrStatus_NoSuchFieldsExist()
+    {
+        // Structural guard: the update DTO has no AssignedBy/Status properties at all.
+        var props = typeof(DelegationUpdateRequestDto).GetProperties().Select(p => p.Name).ToHashSet();
+        Assert.DoesNotContain("AssignedById", props);
+        Assert.DoesNotContain("AssignedByNameSnapshot", props);
+        Assert.DoesNotContain("Status", props);
+        Assert.DoesNotContain("Id", props);
+        Assert.DoesNotContain("ReferenceNo", props);
+        Assert.DoesNotContain("EaTaskId", props);
+        await Task.CompletedTask;
+    }
+
+    [Fact]
+    public async Task Update_WhenCompleted_IsBlocked()
+    {
+        var db = MakeDb();
+        var module = await AddModuleAsync(db, ModuleName);
+        var source = await AddModuleAsync(db, "Meeting");
+        await AddPriorityAsync(db, "High", 3);
+        var (numbers, eaTasks) = MakeCreateMocks(db, module.Id);
+        var (service, _) = MakeService(db, numbers, eaTasks);
+        var created = await service.CreateAsync(MakeCreateDto(source.Id));
+
+        var entity = await db.Delegations.SingleAsync(d => d.Id == created.DelegationId);
+        entity.Status = "Completed";
+        await db.SaveChangesAsync();
+
+        await Assert.ThrowsAsync<BusinessRuleException>(() => service.UpdateAsync(created.DelegationId,
+            new DelegationUpdateRequestDto { Title = "x", AssignedToId = "emp-1", SourceBusinessModuleId = source.Id, SourceEntityId = "1" }));
+    }
+
+    // ----------------------------------------------------------------
+    // LIST / SEARCH / FILTER / VIEW
+    // ----------------------------------------------------------------
+
+    private static async Task<(EaFmsDbContext db, DelegationService service, BusinessModule source)> SeedRegisterAsync()
+    {
+        var db = MakeDb();
+        var module = await AddModuleAsync(db, ModuleName);
+        var source = await AddModuleAsync(db, "Meeting");
+        var otherSource = await AddModuleAsync(db, "Travel & Hospitality");
+        await AddPriorityAsync(db, "High", 3);
+        await AddPriorityAsync(db, "Low", 1);
+        var (numbers, eaTasks) = MakeCreateMocks(db, module.Id);
+        var (service, _) = MakeService(db, numbers, eaTasks);
+
+        // Match the exact reference point DelegationService itself uses (IndiaBusinessCalendar.Today,
+        // not DateTime.UtcNow.Date) so these assertions stay correct regardless of when the
+        // test runs relative to the UTC/IST midnight boundary.
+        var today = IndiaBusinessCalendar.Today;
+
+        var a = await service.CreateAsync(new DelegationCreateRequestDto
+        {
+            Title = "Prepare board deck", AssignedToId = "emp-1", AssignedToNameSnapshot = "Alice",
+            DueDate = today, Priority = "High", SourceBusinessModuleId = source.Id,
+            SourceEntityId = "51", SourceReference = "MTG-000051"
+        });
+        var b = await service.CreateAsync(new DelegationCreateRequestDto
+        {
+            Title = "Chase travel booking", AssignedToId = "emp-2", AssignedToNameSnapshot = "Bob",
+            DueDate = today.AddDays(-2), Priority = "Low", SourceBusinessModuleId = otherSource.Id,
+            SourceEntityId = "9", SourceReference = "TRV-2026-000009"
+        });
+        var c = await service.CreateAsync(new DelegationCreateRequestDto
+        {
+            Title = "Follow up notes", AssignedToId = "emp-1", AssignedToNameSnapshot = "Alice",
+            DueDate = today.AddDays(5), SourceBusinessModuleId = source.Id, SourceEntityId = "52"
+        });
+
+        // Directly mutate persisted state to exercise InProgress/Completed without a
+        // lifecycle service (Start/Complete arrive in a later step).
+        var bEntity = await db.Delegations.SingleAsync(d => d.Id == b.DelegationId);
+        bEntity.Status = "InProgress";
+        var cEntity = await db.Delegations.SingleAsync(d => d.Id == c.DelegationId);
+        cEntity.Status = "Completed";
+        cEntity.DueDate = today.AddDays(-10); // would be "overdue" by date alone, but Completed excludes it
+        await db.SaveChangesAsync();
+
+        // A soft-deleted record that must never appear in any list result.
+        var deleted = await service.CreateAsync(new DelegationCreateRequestDto
+        {
+            Title = "Should never appear", AssignedToId = "emp-3", SourceBusinessModuleId = source.Id, SourceEntityId = "999"
+        });
+        var deletedEntity = await db.Delegations.SingleAsync(d => d.Id == deleted.DelegationId);
+        deletedEntity.IsDeleted = true;
+        await db.SaveChangesAsync();
+
+        return (db, service, source);
+    }
+
+    [Fact]
+    public async Task List_Pagination_IsDeterministic()
+    {
+        var (db, service, _) = await SeedRegisterAsync();
+        var page1 = await service.ListAsync(new DelegationListQueryDto { PageNumber = 1, PageSize = 2 });
+        Assert.Equal(2, page1.Items.Count);
+        Assert.Equal(3, page1.TotalCount); // excludes the soft-deleted one
+        var page2 = await service.ListAsync(new DelegationListQueryDto { PageNumber = 2, PageSize = 2 });
+        Assert.Single(page2.Items);
+        _ = db;
+    }
+
+    [Fact]
+    public async Task Search_ByTitle_ReferenceDoerName_AndSourceReference_AllMatch()
+    {
+        var (_, service, _) = await SeedRegisterAsync();
+
+        var byTitle = await service.ListAsync(new DelegationListQueryDto { Search = "board deck" });
+        Assert.Single(byTitle.Items);
+
+        var created = byTitle.Items[0];
+        var byReference = await service.ListAsync(new DelegationListQueryDto { Search = created.ReferenceNo });
+        Assert.Single(byReference.Items);
+
+        var byDoerName = await service.ListAsync(new DelegationListQueryDto { Search = "bob" });
+        Assert.Single(byDoerName.Items);
+        Assert.Equal("emp-2", byDoerName.Items[0].AssignedToId);
+
+        var bySourceReference = await service.ListAsync(new DelegationListQueryDto { Search = "TRV-2026-000009" });
+        Assert.Single(bySourceReference.Items);
+    }
+
+    [Fact]
+    public async Task Filter_AssignedTo_Priority_Status_SourceModule_DueDate_AllNarrowCorrectly()
+    {
+        var (_, service, source) = await SeedRegisterAsync();
+
+        var byAssignee = await service.ListAsync(new DelegationListQueryDto { AssignedToId = "emp-1" });
+        Assert.Equal(2, byAssignee.Items.Count);
+
+        var byPriority = await service.ListAsync(new DelegationListQueryDto { Priority = "high" });
+        Assert.Single(byPriority.Items);
+
+        var byStatus = await service.ListAsync(new DelegationListQueryDto { Status = "InProgress" });
+        Assert.Single(byStatus.Items);
+
+        var bySourceModule = await service.ListAsync(new DelegationListQueryDto { SourceBusinessModuleId = source.Id });
+        Assert.Equal(2, bySourceModule.Items.Count); // "Prepare board deck" + "Follow up notes"
+
+        var byDueDate = await service.ListAsync(new DelegationListQueryDto { DueDate = DateTime.UtcNow.Date });
+        Assert.Single(byDueDate.Items);
+    }
+
+    [Theory]
+    [InlineData("pending", 1)]
+    [InlineData("inProgress", 1)]
+    [InlineData("completed", 1)]
+    public async Task View_PendingInProgressCompleted_MatchPersistedStatusExactly(string view, int expectedCount)
+    {
+        var (_, service, _) = await SeedRegisterAsync();
+        var result = await service.ListAsync(new DelegationListQueryDto { View = view });
+        Assert.Equal(expectedCount, result.Items.Count);
+    }
+
+    [Fact]
+    public async Task View_DueToday_IsDerivedNotPersisted()
+    {
+        var (_, service, _) = await SeedRegisterAsync();
+        var result = await service.ListAsync(new DelegationListQueryDto { View = "dueToday" });
+        Assert.Single(result.Items);
+        Assert.True(result.Items[0].IsDueToday);
+    }
+
+    [Fact]
+    public async Task View_Overdue_IsDerived_AndExcludesCompletedEvenWithPastDueDate()
+    {
+        var (_, service, _) = await SeedRegisterAsync();
+        var result = await service.ListAsync(new DelegationListQueryDto { View = "overdue" });
+
+        Assert.Single(result.Items); // only "Chase travel booking" (InProgress, due -2 days)
+        Assert.True(result.Items[0].IsOverdue);
+        Assert.DoesNotContain(result.Items, x => x.Status == "Completed"); // Completed never counts as overdue
+    }
+
+    [Fact]
+    public async Task ConflictingViewAndStatus_IsRejectedDeterministically()
+    {
+        var (_, service, _) = await SeedRegisterAsync();
+        await Assert.ThrowsAsync<BadRequestException>(() =>
+            service.ListAsync(new DelegationListQueryDto { View = "pending", Status = "Completed" }));
+        await Assert.ThrowsAsync<BadRequestException>(() =>
+            service.ListAsync(new DelegationListQueryDto { View = "overdue", Status = "Completed" }));
+    }
+
+    [Fact]
+    public async Task List_NeverReturnsSoftDeletedRecords()
+    {
+        var (_, service, _) = await SeedRegisterAsync();
+        var all = await service.ListAsync(new DelegationListQueryDto { View = "all", PageSize = 100 });
+        Assert.DoesNotContain(all.Items, x => x.Title == "Should never appear");
+    }
+
+    // ----------------------------------------------------------------
+    // FILTER COMPOSITION
+    // ----------------------------------------------------------------
+
+    [Fact]
+    public async Task Filters_SearchAndAssignedTo_ComposeTogether()
+    {
+        var (_, service, _) = await SeedRegisterAsync();
+        // "Alice" (emp-1) owns "Prepare board deck" and "Follow up notes"; searching "board"
+        // must narrow to just the one that also matches the search term.
+        var result = await service.ListAsync(new DelegationListQueryDto { AssignedToId = "emp-1", Search = "board" });
+        Assert.Single(result.Items);
+        Assert.Equal("emp-1", result.Items[0].AssignedToId);
+    }
+
+    [Fact]
+    public async Task Filters_PriorityAndSourceModule_ComposeTogether()
+    {
+        var (_, service, source) = await SeedRegisterAsync();
+        var result = await service.ListAsync(new DelegationListQueryDto { Priority = "High", SourceBusinessModuleId = source.Id });
+        Assert.Single(result.Items);
+        Assert.Equal("High", result.Items[0].Priority);
+        Assert.Equal(source.Id, result.Items[0].SourceBusinessModuleId);
+    }
+
+    [Fact]
+    public async Task Filters_ViewOverdueAndPriority_ComposeTogether()
+    {
+        var (_, service, _) = await SeedRegisterAsync();
+        var matching = await service.ListAsync(new DelegationListQueryDto { View = "overdue", Priority = "Low" });
+        Assert.Single(matching.Items); // "Chase travel booking": InProgress, -2 days, Low
+
+        var nonMatching = await service.ListAsync(new DelegationListQueryDto { View = "overdue", Priority = "High" });
+        Assert.Empty(nonMatching.Items);
+    }
+
+    [Fact]
+    public async Task Filters_ViewInProgressAndAssignedTo_ComposeTogether()
+    {
+        var (_, service, _) = await SeedRegisterAsync();
+        var matching = await service.ListAsync(new DelegationListQueryDto { View = "inProgress", AssignedToId = "emp-2" });
+        Assert.Single(matching.Items);
+
+        var nonMatching = await service.ListAsync(new DelegationListQueryDto { View = "inProgress", AssignedToId = "emp-1" });
+        Assert.Empty(nonMatching.Items);
+    }
+
+    // ----------------------------------------------------------------
+    // KPI SUMMARY
+    // ----------------------------------------------------------------
+
+    [Fact]
+    public async Task Summary_CountsMatchExactly_AndExcludesSoftDeleted()
+    {
+        var (_, service, _) = await SeedRegisterAsync();
+        var summary = await service.GetSummaryAsync();
+
+        // Seed: a=Pending(due today), b=InProgress(due -2), c=Completed(due -10, would be
+        // overdue by date alone), plus one soft-deleted record that must never be counted.
+        Assert.Equal(3, summary.Total);
+        Assert.Equal(1, summary.Pending);
+        Assert.Equal(1, summary.InProgress);
+        Assert.Equal(1, summary.Completed);
+        Assert.Equal(1, summary.DueToday); // "a" only
+        Assert.Equal(1, summary.Overdue);  // "b" only — "c" is Completed, excluded despite due -10
+    }
+
+    [Fact]
+    public async Task Summary_CompletedPastDueItem_DoesNotCountAsOverdue()
+    {
+        var db = MakeDb();
+        var module = await AddModuleAsync(db, ModuleName);
+        var source = await AddModuleAsync(db, "Meeting");
+        var (numbers, eaTasks) = MakeCreateMocks(db, module.Id);
+        var (service, _) = MakeService(db, numbers, eaTasks);
+
+        var created = await service.CreateAsync(new DelegationCreateRequestDto
+        {
+            Title = "Old completed item", AssignedToId = "emp-1",
+            DueDate = IndiaBusinessCalendar.Today.AddDays(-30),
+            SourceBusinessModuleId = source.Id, SourceEntityId = "1"
+        });
+        var entity = await db.Delegations.SingleAsync(d => d.Id == created.DelegationId);
+        entity.Status = "Completed";
+        await db.SaveChangesAsync();
+
+        var summary = await service.GetSummaryAsync();
+        Assert.Equal(0, summary.Overdue);
+        Assert.Equal(1, summary.Completed);
+    }
+
+    [Fact]
+    public async Task Summary_CompletedDueTodayItem_DoesNotCountAsDueToday()
+    {
+        var db = MakeDb();
+        var module = await AddModuleAsync(db, ModuleName);
+        var source = await AddModuleAsync(db, "Meeting");
+        var (numbers, eaTasks) = MakeCreateMocks(db, module.Id);
+        var (service, _) = MakeService(db, numbers, eaTasks);
+
+        var created = await service.CreateAsync(new DelegationCreateRequestDto
+        {
+            Title = "Completed today", AssignedToId = "emp-1",
+            DueDate = IndiaBusinessCalendar.Today,
+            SourceBusinessModuleId = source.Id, SourceEntityId = "1"
+        });
+        var entity = await db.Delegations.SingleAsync(d => d.Id == created.DelegationId);
+        entity.Status = "Completed";
+        await db.SaveChangesAsync();
+
+        var summary = await service.GetSummaryAsync();
+        Assert.Equal(0, summary.DueToday);
+        Assert.Equal(1, summary.Completed);
+    }
+
+    [Fact]
+    public async Task Summary_NoDelegations_ReturnsAllZeros()
+    {
+        var db = MakeDb();
+        var (service, _) = MakeService(db);
+        var summary = await service.GetSummaryAsync();
+
+        Assert.Equal(0, summary.Total);
+        Assert.Equal(0, summary.Pending);
+        Assert.Equal(0, summary.InProgress);
+        Assert.Equal(0, summary.Completed);
+        Assert.Equal(0, summary.DueToday);
+        Assert.Equal(0, summary.Overdue);
+    }
+
+    // ----------------------------------------------------------------
+    // LIFECYCLE — START (Step 4)
+    // ----------------------------------------------------------------
+
+    private static async Task<(EaFmsDbContext db, DelegationService service, DelegationResponseDto created, Mock<IAuditService> auditSpy)>
+        SeedPendingDelegationAsync()
+    {
+        var db = MakeDb();
+        var module = await AddModuleAsync(db, ModuleName);
+        var source = await AddModuleAsync(db, "Meeting");
+        await AddPriorityAsync(db, "High", 3);
+        var (numbers, eaTasks) = MakeCreateMocks(db, module.Id);
+        var (service, auditSpy) = MakeService(db, numbers, eaTasks);
+        var created = await service.CreateAsync(MakeCreateDto(source.Id));
+        return (db, service, created, auditSpy);
+    }
+
+    [Fact]
+    public async Task Start_FromPending_Succeeds_AndSynchronizesEaTaskAtomically()
+    {
+        var (db, service, created, auditSpy) = await SeedPendingDelegationAsync();
+
+        var result = await service.StartAsync(created.DelegationId);
+
+        Assert.Equal("InProgress", result.Status);
+        Assert.NotNull(result.StartedAt);
+        Assert.Null(result.CompletedAt);
+
+        var task = await db.Tasks.SingleAsync(t => t.Id == created.EaTaskId);
+        Assert.Equal(EaTaskExecutionStatus.InProgress, task.ExecutionStatus);
+        Assert.NotNull(task.StartedAt);
+        Assert.Equal(result.StartedAt, task.StartedAt); // same authoritative `now`, not two separate timestamps
+        Assert.Null(task.CompletedAt);
+
+        // Delegation has no TAT and no WorkflowInstance — Start must not fabricate either.
+        Assert.Null(task.TatRuleId);
+        Assert.Null(task.AllottedTatMinutes);
+        Assert.Null(task.TatUsedMinutes);
+        Assert.Null(task.WorkflowInstanceId);
+
+        auditSpy.Verify(a => a.AddAudit("DELEGATION_START", "Delegation", nameof(Jarvis5.Entities.EaFms.Delegation),
+            created.DelegationId.ToString(), It.IsAny<object?>(), It.IsAny<object?>(), It.IsAny<string?>()), Times.Once);
+        Assert.Contains(await db.AuditLogs.ToListAsync(), a => a.ActionType == "DELEGATION_START");
+    }
+
+    [Fact]
+    public async Task Start_DoesNotChangeAssignmentOrSource()
+    {
+        var (db, service, created, _) = await SeedPendingDelegationAsync();
+        await service.StartAsync(created.DelegationId);
+
+        var reloaded = await service.GetByIdAsync(created.DelegationId);
+        Assert.Equal(created.AssignedToId, reloaded.AssignedToId);
+        Assert.Equal(created.AssignedToName, reloaded.AssignedToName);
+        Assert.Equal(created.AssignedById, reloaded.AssignedById);
+        Assert.Equal(created.SourceBusinessModuleId, reloaded.SourceBusinessModuleId);
+        Assert.Equal(created.SourceEntityId, reloaded.SourceEntityId);
+        Assert.Equal(created.SourceReference, reloaded.SourceReference);
+        _ = db;
+    }
+
+    [Fact]
+    public async Task Start_WhenAlreadyInProgress_ThrowsConflict_AndDoesNotResetStartedAt()
+    {
+        var (db, service, created, _) = await SeedPendingDelegationAsync();
+        var firstStart = await service.StartAsync(created.DelegationId);
+
+        var ex = await Assert.ThrowsAsync<BusinessRuleException>(() => service.StartAsync(created.DelegationId));
+        Assert.Contains("cannot be started", ex.Message);
+
+        var reloaded = await service.GetByIdAsync(created.DelegationId);
+        Assert.Equal(firstStart.StartedAt, reloaded.StartedAt);
+        Assert.Equal(1, (await db.AuditLogs.ToListAsync()).Count(a => a.ActionType == "DELEGATION_START"));
+    }
+
+    [Fact]
+    public async Task Start_WhenAlreadyCompleted_ThrowsConflict()
+    {
+        var (db, service, created, _) = await SeedPendingDelegationAsync();
+        await service.StartAsync(created.DelegationId);
+        await service.CompleteAsync(created.DelegationId);
+
+        await Assert.ThrowsAsync<BusinessRuleException>(() => service.StartAsync(created.DelegationId));
+        _ = db;
+    }
+
+    [Fact]
+    public async Task Start_UnknownId_ThrowsNotFound()
+    {
+        var db = MakeDb();
+        var (service, _) = MakeService(db);
+        await Assert.ThrowsAsync<NotFoundException>(() => service.StartAsync(999));
+    }
+
+    // ----------------------------------------------------------------
+    // LIFECYCLE — COMPLETE (Step 4)
+    // ----------------------------------------------------------------
+
+    [Fact]
+    public async Task Complete_FromInProgress_Succeeds_AndSynchronizesEaTaskAtomically()
+    {
+        var (db, service, created, auditSpy) = await SeedPendingDelegationAsync();
+        var started = await service.StartAsync(created.DelegationId);
+
+        var result = await service.CompleteAsync(created.DelegationId);
+
+        Assert.Equal("Completed", result.Status);
+        Assert.Equal(started.StartedAt, result.StartedAt); // original start preserved
+        Assert.NotNull(result.CompletedAt);
+        Assert.Equal("manager-1", result.CompletedById); // Actor(), same convention as AssignedById
+        Assert.NotNull(result.CompletedByName);
+
+        var task = await db.Tasks.SingleAsync(t => t.Id == created.EaTaskId);
+        Assert.Equal(EaTaskExecutionStatus.Completed, task.ExecutionStatus);
+        Assert.Equal(started.StartedAt, task.StartedAt);
+        Assert.Equal(result.CompletedAt, task.CompletedAt); // same authoritative `now`
+        Assert.Null(task.TatRuleId);
+        Assert.Null(task.AllottedTatMinutes);
+        Assert.Null(task.TatUsedMinutes);
+        Assert.Null(task.WorkflowInstanceId);
+
+        auditSpy.Verify(a => a.AddAudit("DELEGATION_COMPLETE", "Delegation", nameof(Jarvis5.Entities.EaFms.Delegation),
+            created.DelegationId.ToString(), It.IsAny<object?>(), It.IsAny<object?>(), It.IsAny<string?>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task Complete_WhilePending_ThrowsConflict()
+    {
+        var (db, service, created, _) = await SeedPendingDelegationAsync();
+        var ex = await Assert.ThrowsAsync<BusinessRuleException>(() => service.CompleteAsync(created.DelegationId));
+        Assert.Contains("cannot be completed", ex.Message);
+        _ = db;
+    }
+
+    [Fact]
+    public async Task Complete_WhenAlreadyCompleted_ThrowsConflict_AndDoesNotCreateSecondCompletionEvent()
+    {
+        var (db, service, created, _) = await SeedPendingDelegationAsync();
+        await service.StartAsync(created.DelegationId);
+        await service.CompleteAsync(created.DelegationId);
+
+        await Assert.ThrowsAsync<BusinessRuleException>(() => service.CompleteAsync(created.DelegationId));
+        Assert.Equal(1, (await db.AuditLogs.ToListAsync()).Count(a => a.ActionType == "DELEGATION_COMPLETE"));
+    }
+
+    [Fact]
+    public async Task Complete_UnknownId_ThrowsNotFound()
+    {
+        var db = MakeDb();
+        var (service, _) = MakeService(db);
+        await Assert.ThrowsAsync<NotFoundException>(() => service.CompleteAsync(999));
+    }
+
+    // ----------------------------------------------------------------
+    // LIFECYCLE EFFECT ON KPI / DERIVED VIEWS (Step 4)
+    // ----------------------------------------------------------------
+
+    [Fact]
+    public async Task Lifecycle_MovesItemBetweenPendingInProgressCompletedViews_AndSummaryCounts()
+    {
+        var (db, service, created, _) = await SeedPendingDelegationAsync();
+
+        var beforeStart = await service.GetSummaryAsync();
+        Assert.Equal(1, beforeStart.Pending);
+        Assert.Equal(0, beforeStart.InProgress);
+        Assert.Single((await service.ListAsync(new DelegationListQueryDto { View = "pending" })).Items);
+        Assert.Empty((await service.ListAsync(new DelegationListQueryDto { View = "inProgress" })).Items);
+
+        await service.StartAsync(created.DelegationId);
+
+        var afterStart = await service.GetSummaryAsync();
+        Assert.Equal(0, afterStart.Pending);
+        Assert.Equal(1, afterStart.InProgress);
+        Assert.Empty((await service.ListAsync(new DelegationListQueryDto { View = "pending" })).Items);
+        Assert.Single((await service.ListAsync(new DelegationListQueryDto { View = "inProgress" })).Items);
+
+        await service.CompleteAsync(created.DelegationId);
+
+        var afterComplete = await service.GetSummaryAsync();
+        Assert.Equal(0, afterComplete.InProgress);
+        Assert.Equal(1, afterComplete.Completed);
+        Assert.Empty((await service.ListAsync(new DelegationListQueryDto { View = "inProgress" })).Items);
+        Assert.Single((await service.ListAsync(new DelegationListQueryDto { View = "completed" })).Items);
+        _ = db;
+    }
+
+    [Fact]
+    public async Task Complete_PastDueItem_LeavesOverdueView_AndIsOverdueBecomesFalse()
+    {
+        var db = MakeDb();
+        var module = await AddModuleAsync(db, ModuleName);
+        var source = await AddModuleAsync(db, "Meeting");
+        var (numbers, eaTasks) = MakeCreateMocks(db, module.Id);
+        var (service, _) = MakeService(db, numbers, eaTasks);
+        var created = await service.CreateAsync(new DelegationCreateRequestDto
+        {
+            Title = "Overdue then completed", AssignedToId = "emp-1",
+            DueDate = IndiaBusinessCalendar.Today.AddDays(-5),
+            SourceBusinessModuleId = source.Id, SourceEntityId = "1"
+        });
+        await service.StartAsync(created.DelegationId);
+
+        var beforeComplete = await service.GetByIdAsync(created.DelegationId);
+        Assert.True(beforeComplete.IsOverdue);
+        Assert.Single((await service.ListAsync(new DelegationListQueryDto { View = "overdue" })).Items);
+
+        var completed = await service.CompleteAsync(created.DelegationId);
+
+        Assert.False(completed.IsOverdue);
+        Assert.Empty((await service.ListAsync(new DelegationListQueryDto { View = "overdue" })).Items);
+        Assert.Equal(0, (await service.GetSummaryAsync()).Overdue);
+    }
+
+    [Fact]
+    public async Task Complete_DueTodayItem_LeavesDueTodayView_AndIsDueTodayBecomesFalse()
+    {
+        var db = MakeDb();
+        var module = await AddModuleAsync(db, ModuleName);
+        var source = await AddModuleAsync(db, "Meeting");
+        var (numbers, eaTasks) = MakeCreateMocks(db, module.Id);
+        var (service, _) = MakeService(db, numbers, eaTasks);
+        var created = await service.CreateAsync(new DelegationCreateRequestDto
+        {
+            Title = "Due today then completed", AssignedToId = "emp-1",
+            DueDate = IndiaBusinessCalendar.Today,
+            SourceBusinessModuleId = source.Id, SourceEntityId = "1"
+        });
+        await service.StartAsync(created.DelegationId);
+
+        Assert.Single((await service.ListAsync(new DelegationListQueryDto { View = "dueToday" })).Items);
+
+        var completed = await service.CompleteAsync(created.DelegationId);
+
+        Assert.False(completed.IsDueToday);
+        Assert.Empty((await service.ListAsync(new DelegationListQueryDto { View = "dueToday" })).Items);
+        Assert.Equal(0, (await service.GetSummaryAsync()).DueToday);
+    }
+}

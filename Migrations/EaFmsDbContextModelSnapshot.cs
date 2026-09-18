@@ -24,6 +24,8 @@ namespace Studio5JarvisMasterApi.Migrations
 
             modelBuilder.HasSequence("ea_approval_no_seq");
 
+            modelBuilder.HasSequence("ea_delegation_no_seq");
+
             modelBuilder.HasSequence("ea_travel_no_seq");
 
             modelBuilder.Entity("Jarvis5.Entities.EaFms.ApprovalCycle", b =>
@@ -403,6 +405,133 @@ namespace Studio5JarvisMasterApi.Migrations
                     b.ToTable("ea_business_modules", "public");
                 });
 
+            modelBuilder.Entity("Jarvis5.Entities.EaFms.Delegation", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<string>("AdditionalNotes")
+                        .HasMaxLength(4000)
+                        .HasColumnType("character varying(4000)");
+
+                    b.Property<string>("AssignedById")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("AssignedByNameSnapshot")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("AssignedToId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("AssignedToNameSnapshot")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<DateTime?>("CompletedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("CompletedById")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("CompletedByNameSnapshot")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<DateTime>("CreatedDate")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Description")
+                        .HasColumnType("text");
+
+                    b.Property<DateTime?>("DueDate")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<long>("EaTaskId")
+                        .HasColumnType("bigint");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("ModifiedBy")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<DateTime?>("ModifiedDate")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Priority")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("ReferenceNo")
+                        .IsRequired()
+                        .HasColumnType("varchar(40)");
+
+                    b.Property<long>("SourceBusinessModuleId")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("SourceEntityId")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("SourceReference")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<DateTime?>("StartedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)")
+                        .HasDefaultValue("Pending");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AssignedToId");
+
+                    b.HasIndex("DueDate");
+
+                    b.HasIndex("EaTaskId")
+                        .IsUnique();
+
+                    b.HasIndex("ReferenceNo")
+                        .IsUnique();
+
+                    b.HasIndex("SourceBusinessModuleId");
+
+                    b.HasIndex("SourceEntityId");
+
+                    b.HasIndex("Status");
+
+                    b.ToTable("ea_delegations", "public", t =>
+                        {
+                            t.HasCheckConstraint("CK_ea_delegations_Status", "\"Status\" IN ('Pending', 'InProgress', 'Completed')");
+                        });
+                });
+
             modelBuilder.Entity("Jarvis5.Entities.EaFms.EaTask", b =>
                 {
                     b.Property<long>("Id")
@@ -422,6 +551,9 @@ namespace Studio5JarvisMasterApi.Migrations
                         .HasMaxLength(200)
                         .HasColumnType("character varying(200)");
 
+                    b.Property<DateTime?>("CompletedAt")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<string>("CreatedBy")
                         .IsRequired()
                         .HasMaxLength(100)
@@ -432,6 +564,11 @@ namespace Studio5JarvisMasterApi.Migrations
 
                     b.Property<string>("Description")
                         .HasColumnType("text");
+
+                    b.Property<string>("ExecutionStatus")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
 
                     b.Property<bool>("IsActive")
                         .HasColumnType("boolean");
@@ -446,10 +583,32 @@ namespace Studio5JarvisMasterApi.Migrations
                     b.Property<DateTime?>("ModifiedDate")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<string>("ModuleName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<DateTime?>("StartedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Subtype")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
                     b.Property<string>("Task")
                         .IsRequired()
                         .HasMaxLength(500)
                         .HasColumnType("character varying(500)");
+
+                    b.Property<long?>("TatRuleId")
+                        .HasColumnType("bigint");
+
+                    b.Property<int?>("TatUsedMinutes")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Type")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
 
                     b.Property<long?>("WorkflowInstanceId")
                         .HasColumnType("bigint");
@@ -460,6 +619,10 @@ namespace Studio5JarvisMasterApi.Migrations
 
                     b.HasIndex("BusinessRecordId");
 
+                    b.HasIndex("ExecutionStatus");
+
+                    b.HasIndex("TatRuleId");
+
                     b.HasIndex("WorkflowInstanceId");
 
                     b.HasIndex("BusinessModuleId", "BusinessRecordId");
@@ -467,6 +630,10 @@ namespace Studio5JarvisMasterApi.Migrations
                     b.ToTable("ea_tasks", "public", t =>
                         {
                             t.HasCheckConstraint("CK_ea_tasks_AllottedTatMinutes_Positive", "\"AllottedTatMinutes\" > 0");
+
+                            t.HasCheckConstraint("CK_ea_tasks_ExecutionStatus_Valid", "\"ExecutionStatus\" IN ('NotStarted', 'InProgress', 'Completed', 'Cancelled')");
+
+                            t.HasCheckConstraint("CK_ea_tasks_TatUsedMinutes_NonNegative", "\"TatUsedMinutes\" IS NULL OR \"TatUsedMinutes\" >= 0");
                         });
                 });
 
@@ -1113,6 +1280,10 @@ namespace Studio5JarvisMasterApi.Migrations
                         .HasMaxLength(200)
                         .HasColumnType("character varying(200)");
 
+                    b.Property<string>("AssignedToId")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
                     b.Property<DateTime?>("CompletedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -1693,6 +1864,360 @@ namespace Studio5JarvisMasterApi.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Jarvis5.Entities.EaFms.TravelBooking", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<string>("ArrivalDetails")
+                        .HasColumnType("text");
+
+                    b.Property<DateTime?>("BookingDate")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("BookingReference")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("BookingStatus")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.Property<string>("BookingType")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.Property<decimal?>("Cost")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<DateTime>("CreatedDate")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Currency")
+                        .HasMaxLength(10)
+                        .HasColumnType("character varying(10)");
+
+                    b.Property<string>("DepartureDetails")
+                        .HasColumnType("text");
+
+                    b.Property<string>("HotelDetails")
+                        .HasColumnType("text");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("ModifiedBy")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<DateTime?>("ModifiedDate")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Notes")
+                        .HasColumnType("text");
+
+                    b.Property<string>("Provider")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<long>("TravelRequestId")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("VehicleDetails")
+                        .HasColumnType("text");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("BookingStatus");
+
+                    b.HasIndex("TravelRequestId");
+
+                    b.ToTable("ea_travel_bookings", "public", t =>
+                        {
+                            t.HasCheckConstraint("CK_ea_travel_bookings_Cost", "\"Cost\" IS NULL OR \"Cost\" >= 0");
+                        });
+                });
+
+            modelBuilder.Entity("Jarvis5.Entities.EaFms.TravelExpense", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<decimal>("Amount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)");
+
+                    b.Property<DateTime?>("ApprovedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("ApprovedBy")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("Category")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<DateTime>("CreatedDate")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Currency")
+                        .HasMaxLength(10)
+                        .HasColumnType("character varying(10)");
+
+                    b.Property<string>("Description")
+                        .HasColumnType("text");
+
+                    b.Property<DateTime?>("ExpenseDate")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("ModifiedBy")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<DateTime?>("ModifiedDate")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<long?>("ReceiptAttachmentId")
+                        .HasColumnType("bigint");
+
+                    b.Property<DateTime?>("RejectedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("RejectedBy")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("RejectionReason")
+                        .HasColumnType("text");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.Property<DateTime?>("SubmittedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("SubmittedBy")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<long>("TravelRequestId")
+                        .HasColumnType("bigint");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ReceiptAttachmentId");
+
+                    b.HasIndex("TravelRequestId");
+
+                    b.ToTable("ea_travel_expenses", "public", t =>
+                        {
+                            t.HasCheckConstraint("CK_ea_travel_expenses_Amount", "\"Amount\" >= 0");
+                        });
+                });
+
+            modelBuilder.Entity("Jarvis5.Entities.EaFms.TravelHospitality", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<decimal?>("ActualCost")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)");
+
+                    b.Property<string>("ClientGuestDetails")
+                        .HasColumnType("text");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<DateTime>("CreatedDate")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Currency")
+                        .HasMaxLength(10)
+                        .HasColumnType("character varying(10)");
+
+                    b.Property<decimal?>("EstimatedCost")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)");
+
+                    b.Property<string>("HospitalityRequirement")
+                        .HasColumnType("text");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("Location")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<string>("MeetingEventPurpose")
+                        .HasColumnType("text");
+
+                    b.Property<string>("ModifiedBy")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<DateTime?>("ModifiedDate")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Notes")
+                        .HasColumnType("text");
+
+                    b.Property<int?>("NumberOfGuests")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Provider")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<DateTime?>("ScheduledAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("SpecialArrangements")
+                        .HasColumnType("text");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.Property<long>("TravelRequestId")
+                        .HasColumnType("bigint");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TravelRequestId");
+
+                    b.ToTable("ea_travel_hospitality_arrangements", "public", t =>
+                        {
+                            t.HasCheckConstraint("CK_ea_travel_hospitality_arrangements_ActualCost", "\"ActualCost\" IS NULL OR \"ActualCost\" >= 0");
+
+                            t.HasCheckConstraint("CK_ea_travel_hospitality_arrangements_EstimatedCost", "\"EstimatedCost\" IS NULL OR \"EstimatedCost\" >= 0");
+
+                            t.HasCheckConstraint("CK_ea_travel_hospitality_arrangements_NumberOfGuests", "\"NumberOfGuests\" IS NULL OR \"NumberOfGuests\" >= 0");
+                        });
+                });
+
+            modelBuilder.Entity("Jarvis5.Entities.EaFms.TravelLocalTransport", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<decimal?>("ActualCost")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)");
+
+                    b.Property<string>("BookingReference")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<DateTime>("CreatedDate")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Currency")
+                        .HasMaxLength(10)
+                        .HasColumnType("character varying(10)");
+
+                    b.Property<string>("DropLocation")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<decimal?>("EstimatedCost")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("ModifiedBy")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<DateTime?>("ModifiedDate")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Notes")
+                        .HasColumnType("text");
+
+                    b.Property<string>("PickupLocation")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<string>("Provider")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<DateTime?>("ScheduledAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("TransportStatus")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.Property<string>("TransportType")
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.Property<long>("TravelRequestId")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("VehiclePreference")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TravelRequestId");
+
+                    b.ToTable("ea_travel_local_transports", "public", t =>
+                        {
+                            t.HasCheckConstraint("CK_ea_travel_local_transports_ActualCost", "\"ActualCost\" IS NULL OR \"ActualCost\" >= 0");
+
+                            t.HasCheckConstraint("CK_ea_travel_local_transports_EstimatedCost", "\"EstimatedCost\" IS NULL OR \"EstimatedCost\" >= 0");
+                        });
+                });
+
             modelBuilder.Entity("Jarvis5.Entities.EaFms.TravelRequest", b =>
                 {
                     b.Property<long>("Id")
@@ -1896,6 +2421,9 @@ namespace Studio5JarvisMasterApi.Migrations
                         .HasMaxLength(4000)
                         .HasColumnType("character varying(4000)");
 
+                    b.Property<DateTime?>("StartedAt")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<DateTime?>("SubmittedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -1945,7 +2473,7 @@ namespace Studio5JarvisMasterApi.Migrations
 
                     b.ToTable("ea_travel_requests", "public", t =>
                         {
-                            t.HasCheckConstraint("CK_ea_travel_requests_ApprovalState", "\"ApprovalState\" IN ('NotRequired', 'Pending', 'ChangesRequested', 'Approved', 'Rejected')");
+                            t.HasCheckConstraint("CK_ea_travel_requests_ApprovalState", "\"ApprovalState\" IN ('NotRequired', 'NotSubmitted', 'Pending', 'ChangesRequested', 'Approved', 'Rejected')");
 
                             t.HasCheckConstraint("CK_ea_travel_requests_BusinessState", "\"BusinessState\" IN ('Draft', 'Upcoming', 'Active', 'Completed', 'Cancelled')");
 
@@ -2500,6 +3028,25 @@ namespace Studio5JarvisMasterApi.Migrations
                     b.Navigation("EaTask");
                 });
 
+            modelBuilder.Entity("Jarvis5.Entities.EaFms.Delegation", b =>
+                {
+                    b.HasOne("Jarvis5.Entities.EaFms.EaTask", "EaTask")
+                        .WithMany()
+                        .HasForeignKey("EaTaskId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Jarvis5.Entities.EaFms.BusinessModule", "SourceBusinessModule")
+                        .WithMany()
+                        .HasForeignKey("SourceBusinessModuleId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("EaTask");
+
+                    b.Navigation("SourceBusinessModule");
+                });
+
             modelBuilder.Entity("Jarvis5.Entities.EaFms.EaTask", b =>
                 {
                     b.HasOne("Jarvis5.Entities.EaFms.BusinessModule", "BusinessModule")
@@ -2508,12 +3055,19 @@ namespace Studio5JarvisMasterApi.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
+                    b.HasOne("Jarvis5.Entities.EaFms.TatRule", "TatRule")
+                        .WithMany()
+                        .HasForeignKey("TatRuleId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.HasOne("Jarvis5.Entities.EaFms.WorkflowInstance", "WorkflowInstance")
                         .WithMany()
                         .HasForeignKey("WorkflowInstanceId")
                         .OnDelete(DeleteBehavior.Restrict);
 
                     b.Navigation("BusinessModule");
+
+                    b.Navigation("TatRule");
 
                     b.Navigation("WorkflowInstance");
                 });
@@ -2688,6 +3242,57 @@ namespace Studio5JarvisMasterApi.Migrations
                         .IsRequired();
 
                     b.Navigation("BusinessModule");
+                });
+
+            modelBuilder.Entity("Jarvis5.Entities.EaFms.TravelBooking", b =>
+                {
+                    b.HasOne("Jarvis5.Entities.EaFms.TravelRequest", "TravelRequest")
+                        .WithMany()
+                        .HasForeignKey("TravelRequestId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("TravelRequest");
+                });
+
+            modelBuilder.Entity("Jarvis5.Entities.EaFms.TravelExpense", b =>
+                {
+                    b.HasOne("Jarvis5.Entities.EaFms.Attachment", "ReceiptAttachment")
+                        .WithMany()
+                        .HasForeignKey("ReceiptAttachmentId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("Jarvis5.Entities.EaFms.TravelRequest", "TravelRequest")
+                        .WithMany()
+                        .HasForeignKey("TravelRequestId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("ReceiptAttachment");
+
+                    b.Navigation("TravelRequest");
+                });
+
+            modelBuilder.Entity("Jarvis5.Entities.EaFms.TravelHospitality", b =>
+                {
+                    b.HasOne("Jarvis5.Entities.EaFms.TravelRequest", "TravelRequest")
+                        .WithMany()
+                        .HasForeignKey("TravelRequestId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("TravelRequest");
+                });
+
+            modelBuilder.Entity("Jarvis5.Entities.EaFms.TravelLocalTransport", b =>
+                {
+                    b.HasOne("Jarvis5.Entities.EaFms.TravelRequest", "TravelRequest")
+                        .WithMany()
+                        .HasForeignKey("TravelRequestId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("TravelRequest");
                 });
 
             modelBuilder.Entity("Jarvis5.Entities.EaFms.TravelRequest", b =>

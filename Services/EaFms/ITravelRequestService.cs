@@ -4,27 +4,19 @@ using Jarvis5.Dtos.EaFms;
 namespace Jarvis5.Services.EaFms;
 
 /// <summary>
-/// Travel Request CRUD/read operations.
-/// Submit, approve, reject, rework and lifecycle actions are NOT in this interface
-/// (those belong to Step 4+).
+/// Travel CRUD and submission/approval operations. Operational execution is deferred.
 /// </summary>
 public interface ITravelRequestService
 {
     /// <summary>
     /// Create a new Travel Draft.
     ///
-    /// ⚠ BLOCKED — TRAVEL EATASK/TAT CREATION POLICY REQUIRES DECISION
-    ///
-    /// The current EaTaskService enforces: "Task creation without TAT is only supported
-    /// for EA Approval." Travel has no TAT rule configured and is not EA Approval,
-    /// so neither CreateAsync nor CreateWithoutTatAsync can legally be called.
-    ///
-    /// This method generates a ReferenceNo and persists the TravelRequest with a
-    /// placeholder EaTaskId = 0 to satisfy the non-nullable FK at the EF model level.
-    /// The actual EaTask MUST be created after the TAT/task-creation policy for Travel
-    /// is approved and implemented.
-    ///
-    /// The response clearly signals this state via the returned dto.
+    /// Resolves the active "Travel &amp; Hospitality" BusinessModule, then creates a
+    /// TravelRequest and its required central EaTask atomically in one transaction.
+    /// Travel has no approved TAT classification yet, so the EaTask is created via the
+    /// backend-only no-TAT path (AllottedTatMinutes = NULL) — this is fixed module
+    /// policy, never a frontend-selectable flag. No EaTaskId = 0 placeholder is ever
+    /// persisted.
     /// </summary>
     Task<TravelRequestCreatedDto> CreateDraftAsync(CreateTravelRequestDto dto, CancellationToken ct = default);
 
@@ -34,9 +26,28 @@ public interface ITravelRequestService
     Task<TravelRequestDetailDto> GetByIdAsync(long travelRequestId, CancellationToken ct = default);
 
     /// <summary>
-    /// Update a Travel Draft. Only allowed while BusinessState == "Draft".
+    /// Edit an unsubmitted draft, or ChangesRequested rework with the current expected cycle.
     /// </summary>
-    Task<TravelRequestDetailDto> UpdateDraftAsync(long travelRequestId, UpdateTravelDraftDto dto, CancellationToken ct = default);
+    Task<TravelRequestDetailDto> UpdateDraftAsync(long travelRequestId, UpdateTravelDraftDto dto, CancellationToken ct = default, int? expectedCycleNo = null);
+
+    Task<TravelActionResponseDto> SubmitAsync(long travelRequestId, CancellationToken ct = default);
+    Task<TravelActionResponseDto> ApproveAsync(long travelRequestId, ApproveTravelRequestDto dto, CancellationToken ct = default);
+    Task<TravelActionResponseDto> RejectAsync(long travelRequestId, RejectTravelRequestDto dto, CancellationToken ct = default);
+    Task<TravelActionResponseDto> RequestChangesAsync(long travelRequestId, RequestTravelChangesDto dto, CancellationToken ct = default);
+    Task<TravelActionResponseDto> ResubmitAsync(long travelRequestId, ResubmitTravelRequestDto dto, CancellationToken ct = default);
+
+    /// <summary>Upcoming -&gt; Active. Requires ApprovalState Approved (if ApprovalRequired) or NotRequired.</summary>
+    Task<TravelActionResponseDto> StartAsync(long travelRequestId, CancellationToken ct = default);
+    /// <summary>Active -&gt; Completed. Sets CompletedAt once; never overwrites it.</summary>
+    Task<TravelActionResponseDto> CompleteAsync(long travelRequestId, CancellationToken ct = default);
+    /// <summary>Any state except Completed/Cancelled -&gt; Cancelled. Does not touch ApprovalState or child records.</summary>
+    Task<TravelActionResponseDto> CancelAsync(long travelRequestId, CancellationToken ct = default);
+
+    /// <summary>
+    /// Complete chronological Travel timeline (oldest to newest), read from the shared
+    /// ea_audit_logs infrastructure. Reading history never writes a new audit record.
+    /// </summary>
+    Task<List<TravelHistoryEventDto>> GetHistoryAsync(long travelRequestId, CancellationToken ct = default);
 
     /// <summary>
     /// List/search/filter Travel Requests with pagination.
