@@ -3,6 +3,7 @@ using System;
 using Jarvis5.Data.EaFms;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Studio5JarvisMasterApi.Migrations
 {
     [DbContext(typeof(EaFmsDbContext))]
-    partial class EaFmsDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260918105835_SupportMultipleTravelTravellerNames")]
+    partial class SupportMultipleTravelTravellerNames
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -2281,6 +2284,10 @@ namespace Studio5JarvisMasterApi.Migrations
                     b.Property<DateTime?>("CompletedAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<string>("ContactInformation")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
                     b.Property<string>("CreatedBy")
                         .IsRequired()
                         .HasMaxLength(100)
@@ -2298,6 +2305,10 @@ namespace Studio5JarvisMasterApi.Migrations
                         .HasColumnType("integer")
                         .HasDefaultValue(0);
 
+                    b.Property<string>("Department")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
                     b.Property<DateTime?>("DepartureDate")
                         .HasColumnType("timestamp with time zone");
 
@@ -2307,6 +2318,10 @@ namespace Studio5JarvisMasterApi.Migrations
 
                     b.Property<long>("EaTaskId")
                         .HasColumnType("bigint");
+
+                    b.Property<string>("EmployeePersonId")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
 
                     b.Property<decimal?>("EstimatedHospitalityCost")
                         .HasColumnType("numeric(18,2)");
@@ -2426,6 +2441,13 @@ namespace Studio5JarvisMasterApi.Migrations
                     b.Property<string>("TravelType")
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)");
+
+                    b.Property<string>("TravellerName")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string[]>("TravellerNames")
+                        .HasColumnType("text[]");
 
                     b.Property<string>("VehiclePreference")
                         .HasMaxLength(500)
@@ -2558,44 +2580,6 @@ namespace Studio5JarvisMasterApi.Migrations
 
                             t.HasCheckConstraint("CK_ea_travel_request_cycles_DecisionState", "\"DecisionState\" IS NULL OR \"DecisionState\" IN ('Pending', 'ChangesRequested', 'Approved', 'Rejected')");
                         });
-                });
-
-            modelBuilder.Entity("Jarvis5.Entities.EaFms.TravelTraveller", b =>
-                {
-                    b.Property<long>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("bigint");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
-
-                    b.Property<string>("ContactInformation")
-                        .HasMaxLength(500)
-                        .HasColumnType("character varying(500)");
-
-                    b.Property<string>("Department")
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)");
-
-                    b.Property<string>("EmployeePersonId")
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)");
-
-                    b.Property<int>("SortOrder")
-                        .HasColumnType("integer");
-
-                    b.Property<long>("TravelRequestId")
-                        .HasColumnType("bigint");
-
-                    b.Property<string>("TravellerName")
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("TravelRequestId", "SortOrder")
-                        .HasDatabaseName("IX_ea_travel_travellers_TravelRequestId_SortOrder");
-
-                    b.ToTable("ea_travel_travellers", "public");
                 });
 
             modelBuilder.Entity("Jarvis5.Entities.EaFms.WorkAssignment", b =>
@@ -3338,17 +3322,6 @@ namespace Studio5JarvisMasterApi.Migrations
                     b.Navigation("TravelRequest");
                 });
 
-            modelBuilder.Entity("Jarvis5.Entities.EaFms.TravelTraveller", b =>
-                {
-                    b.HasOne("Jarvis5.Entities.EaFms.TravelRequest", "TravelRequest")
-                        .WithMany("Travellers")
-                        .HasForeignKey("TravelRequestId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("TravelRequest");
-                });
-
             modelBuilder.Entity("Jarvis5.Entities.EaFms.WorkAssignment", b =>
                 {
                     b.HasOne("Jarvis5.Entities.EaFms.Followup", "Followup")
@@ -3445,8 +3418,6 @@ namespace Studio5JarvisMasterApi.Migrations
             modelBuilder.Entity("Jarvis5.Entities.EaFms.TravelRequest", b =>
                 {
                     b.Navigation("Cycles");
-
-                    b.Navigation("Travellers");
                 });
 
             modelBuilder.Entity("Jarvis5.Entities.EaFms.WorkflowInstance", b =>

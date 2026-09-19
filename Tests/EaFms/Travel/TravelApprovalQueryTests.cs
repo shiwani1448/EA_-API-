@@ -24,16 +24,17 @@ public class TravelApprovalQueryTests
     {
         var audit = Mock.Of<IAuditService>();
         var user = Mock.Of<ICurrentUserService>();
+        var actorResolver = Mock.Of<IEaActorResolver>();
         var requests = new TravelRequestService(db, audit, user,
-            Mock.Of<ITravelNumberRepository>(), Mock.Of<IEaTaskService>());
-        return new(db, requests, new TravelDocumentService(db, user, audit, Mock.Of<IWebHostEnvironment>()));
+            Mock.Of<ITravelNumberRepository>(), Mock.Of<IEaTaskService>(), actorResolver);
+        return new(db, requests, new TravelDocumentService(db, user, audit, Mock.Of<IWebHostEnvironment>(), actorResolver));
     }
 
     private static TravelRequest Request(long id = 1, string state = "Pending") => new()
     {
         Id = id, ReferenceNo = $"TRV-2026-{id:D6}", EaTaskId = 100 + id,
         BusinessState = "Draft", ApprovalState = state, CurrentCycleNo = 1,
-        ApprovalRequired = true, TravellerName = "Ada", Department = "Engineering",
+        ApprovalRequired = true, Travellers = new List<TravelTraveller> { new() { TravellerName = "Ada", Department = "Engineering" } },
         Purpose = "Client visit", FromLocation = "Pune", ToLocation = "Delhi",
         DepartureDate = new DateTime(2026, 10, 1), ReturnDate = new DateTime(2026, 10, 3),
         RequiredDate = new DateTime(2026, 9, 29), Priority = "High", Currency = "INR",
@@ -75,8 +76,8 @@ public class TravelApprovalQueryTests
         Assert.Equal(1, result.TotalCount);
         Assert.Equal(1, item.TravelRequestId);
         Assert.Equal("TRV-2026-000001", item.ReferenceNo);
-        Assert.Equal("Ada", item.TravellerName);
-        Assert.Equal("Engineering", item.Department);
+        Assert.Equal("Ada", Assert.Single(item.Travellers).TravellerName);
+        Assert.Equal("Engineering", item.Travellers[0].Department);
         Assert.Equal("Client visit", item.Purpose);
         Assert.Equal("Pune", item.FromLocation);
         Assert.Equal("Delhi", item.ToLocation);
@@ -184,7 +185,7 @@ public class TravelApprovalQueryTests
         Assert.Equal("Upcoming", result.BusinessState);
         Assert.Equal("Approved", result.ApprovalState);
         Assert.Equal(request.ApprovedAt, result.ApprovedAt);
-        Assert.Equal("Ada", result.Traveller.TravellerName);
+        Assert.Equal("Ada", Assert.Single(result.Travellers).TravellerName);
         Assert.Equal("Client visit", result.Trip.Purpose);
         Assert.Equal("Air", result.Transportation.TransportType);
         Assert.Equal("Hotel A", result.Hotel.Hotel);

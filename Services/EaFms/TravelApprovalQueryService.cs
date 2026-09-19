@@ -19,16 +19,22 @@ public class TravelApprovalQueryService(
     {
         // TravelRequest has no IsActive field. Nondeleted + current Pending cycle
         // defines an active approval. Historical pending cycles cannot qualify a row.
+        var term = string.IsNullOrWhiteSpace(query.Search) ? null : query.Search.Trim().ToLower();
         var pending = from request in db.TravelRequests.AsNoTracking()
                       join cycle in db.TravelRequestCycles.AsNoTracking()
                       on new { RequestId = request.Id, CycleNo = request.CurrentCycleNo }
                       equals new { RequestId = cycle.TravelRequestId, cycle.CycleNo }
                       where !request.IsDeleted && request.ApprovalState == "Pending"
                           && request.CurrentCycleNo > 0 && cycle.DecisionState == "Pending"
+                          && (term == null
+                              || request.ReferenceNo.ToLower().Contains(term)
+                              || request.Travellers.Any(t => t.TravellerName != null && t.TravellerName.ToLower().Contains(term))
+                              || (request.FromLocation != null && request.FromLocation.ToLower().Contains(term))
+                              || (request.ToLocation != null && request.ToLocation.ToLower().Contains(term))
+                              || (request.Purpose != null && request.Purpose.ToLower().Contains(term)))
                       select new TravelPendingApprovalDto
                       {
                           TravelRequestId = request.Id, ReferenceNo = request.ReferenceNo,
-                          TravellerName = request.TravellerName, Department = request.Department,
                           Purpose = request.Purpose, FromLocation = request.FromLocation,
                           ToLocation = request.ToLocation, DepartureDate = request.DepartureDate,
                           ReturnDate = request.ReturnDate, RequiredDate = request.RequiredDate,
@@ -42,17 +48,9 @@ public class TravelApprovalQueryService(
                               + (request.EstimatedHospitalityCost ?? 0m),
                           Currency = request.Currency
                       };
-        if (!string.IsNullOrWhiteSpace(query.Search))
-        {
-            var term = query.Search.Trim().ToLower();
-            pending = pending.Where(x => x.ReferenceNo.ToLower().Contains(term)
-                || (x.TravellerName != null && x.TravellerName.ToLower().Contains(term))
-                || (x.FromLocation != null && x.FromLocation.ToLower().Contains(term))
-                || (x.ToLocation != null && x.ToLocation.ToLower().Contains(term))
-                || (x.Purpose != null && x.Purpose.ToLower().Contains(term)));
-        }
         var page = Math.Max(1, query.Page);
         var pageSize = query.PageSize < 1 ? 50 : Math.Min(200, query.PageSize);
+
         var count = await pending.CountAsync(ct);
         var offset = ((long)page - 1) * pageSize;
         var items = offset >= count ? new List<TravelPendingApprovalDto>()
@@ -60,6 +58,17 @@ public class TravelApprovalQueryService(
                 .Skip((int)offset).Take(pageSize).ToListAsync(ct);
         if (items.Count > 0)
         {
+            var requestIds = items.Select(x => x.TravelRequestId).ToArray();
+            var travellers = (await db.TravelTravellers.AsNoTracking()
+                .Where(t => requestIds.Contains(t.TravelRequestId))
+                .OrderBy(t => t.SortOrder).ThenBy(t => t.Id)
+                .ToListAsync(ct)).ToLookup(t => t.TravelRequestId);
+            foreach (var item in items)
+                item.Travellers = travellers[item.TravelRequestId].Select(t => new TravelTravellerDto
+                {
+                    TravellerName = t.TravellerName, EmployeePersonId = t.EmployeePersonId,
+                    Department = t.Department, ContactInformation = t.ContactInformation
+                }).ToList();
             var ids = items.Select(x => x.TravelRequestId.ToString(CultureInfo.InvariantCulture)).ToArray();
             var counts = await db.Attachments.AsNoTracking()
                 .Where(a => a.RelatedModule == "Travel" && a.RelatedEntity == "TravelRequest"
@@ -91,7 +100,7 @@ public class TravelApprovalQueryService(
             BusinessState = request.BusinessState, ApprovalState = request.ApprovalState,
             CurrentCycleNo = request.CurrentCycleNo, SubmittedAt = request.SubmittedAt,
             ApprovedAt = request.ApprovedAt, RejectedAt = request.RejectedAt,
-            Traveller = request.Traveller, Trip = request.Trip, Transportation = request.Transportation,
+            Travellers = request.Travellers, Trip = request.Trip, Transportation = request.Transportation,
             Hotel = request.Hotel, LocalTransport = request.LocalTransport, Hospitality = request.Hospitality,
             Itinerary = request.Itinerary, Budget = request.Budget, Approval = request.Approval,
             CurrentCycle = history.SingleOrDefault(c => c.CycleNo == request.CurrentCycleNo),

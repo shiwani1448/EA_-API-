@@ -29,7 +29,8 @@ public class TravelHistoryTests
         Mock.Of<ICurrentUserService>(u => u.UserName == name && u.UserId == id);
 
     private static TravelRequestService MakeTravelService(EaFmsDbContext db, ICurrentUserService user, IAuditService audit) =>
-        new(db, audit, user, new Mock<ITravelNumberRepository>(MockBehavior.Strict).Object, new Mock<IEaTaskService>(MockBehavior.Strict).Object);
+        new(db, audit, user, new Mock<ITravelNumberRepository>(MockBehavior.Strict).Object, new Mock<IEaTaskService>(MockBehavior.Strict).Object,
+            new Mock<IEaActorResolver>(MockBehavior.Strict).Object);
 
     private static TravelRequest SeedParent(EaFmsDbContext db, long id = 1, bool approval = true, string approverId = "mgr-1")
     {
@@ -367,10 +368,12 @@ public class TravelHistoryTests
         try
         {
             var env = Mock.Of<IWebHostEnvironment>(e => e.ContentRootPath == temp);
-            var docSvc = new TravelDocumentService(db, user, audit, env);
+            var actorResolver = Mock.Of<IEaActorResolver>(r =>
+                r.ResolveDisplayNameAsync(It.IsAny<int?>(), It.IsAny<string>(), It.IsAny<CancellationToken>()) == Task.FromResult("reviewer"));
+            var docSvc = new TravelDocumentService(db, user, audit, env, actorResolver);
             var ms = new Microsoft.AspNetCore.Http.FormFile(new MemoryStream(new byte[] { 1, 2, 3 }), 0, 3, "file", "itinerary.pdf")
             { Headers = new Microsoft.AspNetCore.Http.HeaderDictionary(), ContentType = "application/pdf" };
-            var doc = await docSvc.UploadAsync(1, ms, "Itinerary");
+            var doc = await docSvc.UploadAsync(1, ms, "Itinerary", userId: 1);
             await docSvc.DeleteAsync(doc.Id);
 
             var history = await travelSvc.GetHistoryAsync(1);

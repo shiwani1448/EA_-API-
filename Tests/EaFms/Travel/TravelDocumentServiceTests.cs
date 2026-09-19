@@ -43,8 +43,14 @@ public class TravelDocumentServiceTests : IDisposable
         return new FormFile(ms, 0, ms.Length, "file", fileName) { Headers = new HeaderDictionary(), ContentType = contentType };
     }
 
+    // EA APIs run without JWT; UploadAsync resolves the actor via IEaActorResolver rather
+    // than ICurrentUserService. These tests are about document upload/list/download/delete
+    // behavior, not actor-identity resolution (that's TravelActorIdentityTests' job), so
+    // any userId value (including the omitted/null default) resolves to a fixed name.
     private static TravelDocumentService MakeService(EaFmsDbContext db, IWebHostEnvironment env, string actor = "tester") =>
-        new(db, Mock.Of<ICurrentUserService>(u => u.UserName == actor && u.UserId == 1), Mock.Of<IAuditService>(), env);
+        new(db, Mock.Of<ICurrentUserService>(u => u.UserName == actor && u.UserId == 1), Mock.Of<IAuditService>(), env,
+            Mock.Of<IEaActorResolver>(r =>
+                r.ResolveDisplayNameAsync(It.IsAny<int?>(), It.IsAny<string>(), It.IsAny<CancellationToken>()) == Task.FromResult(actor)));
 
     private static TravelRequest AddTravel(
         EaFmsDbContext db, long id, long eaTaskId, string referenceNo,
@@ -374,7 +380,9 @@ public class TravelDocumentServiceTests : IDisposable
         using var db = CreateContext();
         var travel = AddTravel(db, 1, 100, "TRV-1", "Draft", "ChangesRequested", 1);
         var user = Mock.Of<ICurrentUserService>(u => u.UserName == "tester" && u.UserId == 1);
-        var svc = new TravelDocumentService(db, user, new AuditService(db, user), MakeEnv());
+        var actorResolver = Mock.Of<IEaActorResolver>(r =>
+            r.ResolveDisplayNameAsync(It.IsAny<int?>(), It.IsAny<string>(), It.IsAny<CancellationToken>()) == Task.FromResult("tester"));
+        var svc = new TravelDocumentService(db, user, new AuditService(db, user), MakeEnv(), actorResolver);
         var doc = await svc.UploadAsync(1, CreateFormFile(new byte[] { 1 }, "a.pdf", "application/pdf"), "Other");
         Assert.Equal(1, doc.CycleNo);
         await svc.DeleteAsync(doc.Id);

@@ -12,11 +12,11 @@ public class TravelRequest
     public EaTask EaTask { get; set; } = null!;
     public int CurrentCycleNo { get; set; }
 
-    public string? TravellerName { get; set; }
-    // User/employee identity is owned by the separate HRMS context; no cross-context FK is safe.
-    public string? EmployeePersonId { get; set; }
-    public string? Department { get; set; }
-    public string? ContactInformation { get; set; }
+    // Traveller rows (name, employee/person id, department, contact information per
+    // traveller) live in ea_travel_travellers. The legacy scalar columns
+    // (TravellerName, TravellerNames, EmployeePersonId, Department, ContactInformation)
+    // remain physically in ea_travel_requests for safety but are no longer mapped or written.
+    public ICollection<TravelTraveller> Travellers { get; set; } = new List<TravelTraveller>();
 
     public string? Purpose { get; set; }
     public string? TravelType { get; set; }

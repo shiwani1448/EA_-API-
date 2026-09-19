@@ -11,8 +11,7 @@ public class TravelPendingApprovalDto
 {
     public long TravelRequestId { get; set; }
     public string ReferenceNo { get; set; } = string.Empty;
-    public string? TravellerName { get; set; }
-    public string? Department { get; set; }
+    public List<TravelTravellerDto> Travellers { get; set; } = new();
     public string? Purpose { get; set; }
     public string? FromLocation { get; set; }
     public string? ToLocation { get; set; }
@@ -42,7 +41,7 @@ public class TravelApprovalDetailDto
     public DateTime? SubmittedAt { get; set; }
     public DateTime? ApprovedAt { get; set; }
     public DateTime? RejectedAt { get; set; }
-    public TravelTravellerDto Traveller { get; set; } = new();
+    public List<TravelTravellerDto> Travellers { get; set; } = new();
     public TravelTripDto Trip { get; set; } = new();
     public TravelTransportationDto Transportation { get; set; } = new();
     public TravelHotelDto Hotel { get; set; } = new();

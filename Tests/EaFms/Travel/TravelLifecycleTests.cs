@@ -25,6 +25,7 @@ public class TravelLifecycleTests
         public Mock<IAuditService> Audit { get; } = new();
         public Mock<ITravelNumberRepository> Numbers { get; } = new(MockBehavior.Strict);
         public Mock<IEaTaskService> Tasks { get; } = new(MockBehavior.Strict);
+        public Mock<IEaActorResolver> ActorResolver { get; } = new(MockBehavior.Strict);
         public TravelRequestService Service { get; }
         public TravelRequest Parent { get; }
         public Fixture(bool approval = true)
@@ -37,7 +38,7 @@ public class TravelLifecycleTests
                 It.IsAny<string>(), It.IsAny<object>(), It.IsAny<object>(), It.IsAny<string>()))
                 .Callback<string, string, string, string, object?, object?, string?>(
                     (a, m, e, id, old, next, d) => realAudit.AddAudit(a, m, e, id, old, next, d));
-            Service = new(Db, Audit.Object, user.Object, Numbers.Object, Tasks.Object);
+            Service = new(Db, Audit.Object, user.Object, Numbers.Object, Tasks.Object, ActorResolver.Object);
             Db.Tasks.Add(new EaTask { Id = 19, BusinessModuleId = 6, ModuleName = "Travel & Hospitality", BusinessRecordId = "1",
                 Task = "TRV-TEST", Description = "Original purpose", ExecutionStatus = "NotStarted", IsActive = true,
                 CreatedBy = "creator", CreatedDate = DateTime.UtcNow });

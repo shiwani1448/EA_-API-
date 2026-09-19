@@ -18,31 +18,54 @@ using Xunit;
 namespace Jarvis5.Tests.EaFms.Travel;
 
 /// <summary>
-/// Focused tests for the Travel actor-identity fix.
+/// Focused tests for Travel actor attribution under the CURRENT non-JWT EA architecture.
 ///
-/// Root cause: TravelRequestService.CreateDraftAsync and TravelDocumentService.UploadAsync
-/// use _currentUser.UserName ?? _currentUser.UserId.ToString() to resolve the actor.
-/// When no Bearer token is sent, UserName == null and UserId == 0, producing actor = "0"
-/// which is then persisted to TravelRequest.CreatedBy and Attachment.UploadedBy.
+/// EA APIs do not use JWT authentication, so ICurrentUserService is never populated for
+/// EA requests (UserId is always 0, UserName is always null) — a prior guard that treated
+/// that as "unauthenticated, reject" made TravelRequestService.CreateDraftAsync and
+/// TravelDocumentService.UploadAsync permanently unusable (every EA request always looked
+/// anonymous). The fix: the frontend instead supplies its logged-in user's stable HRMS
+/// User.Id (CreateTravelRequestDto.UserId / the upload form's userId field — the same id
+/// GET /api/Users already returns), and IEaActorResolver resolves it against the existing
+/// hrms_api.Data.AppDbContext Users table to the real FirstName+LastName, which becomes
+/// TravelRequest.CreatedBy / Attachment.UploadedBy. The frontend can never submit a
+/// display name directly — neither DTO exposes a name field, only the id. (The field was
+/// originally named ActorUserId/actorUserId; renamed to the simpler UserId/userId — the
+/// underlying resolution logic and IEaActorResolver are unchanged.)
 ///
-/// Fix: both services now guard against the anonymous (UserId==0 && UserName==null) case
-/// and throw BusinessRuleException rather than silently persisting "0".
+/// IEaActorResolver's queries run against hrms_api.Data.AppDbContext, which maps at least
+/// one entity through Npgsql's native JsonDocument/jsonb support — a real-provider feature
+/// EF InMemory cannot emulate (model finalization throws "No suitable constructor was
+/// found for entity type 'JsonDocument'"). So, like DelegationCreateCoreTransactionTests
+/// and MeetingToDelegationTests before it, the HRMS side of these tests connects to the
+/// same local dev Postgres instance every `dotnet ef` command in this project already
+/// requires — read-only (no rows are inserted/deleted here), against real, already-existing
+/// Users rows, so HR data is never touched or polluted. Travel/EaFmsDbContext-side state
+/// still uses EF InMemory as before (CreateDraftAsync/UploadAsync do not use raw SQL there).
 ///
-/// These tests verify the contract from all 10 angles specified in the task:
-///   1-2:  authenticated creation → correct creator identity and display name
-///   3-4:  authenticated upload  → correct uploader identity and display name
-///   5-6:  payload cannot spoof creator or uploader
-///   7-8:  user A ≠ user B (identity isolation)
-///   9:    anonymous behavior is explicitly rejected (not silently mapped to a real person)
-///   10:   existing Travel tests remain unaffected (verified by the full suite run)
+/// These tests verify the contract from all angles specified in the task:
+///   1-2:  valid user id creates Travel → CreatedBy = backend-resolved FullName
+///   3-4:  valid user id uploads        → UploadedBy = backend-resolved FullName
+///   5-6:  neither DTO/contract exposes a settable display-name field (spoofing is structurally impossible)
+///   7-8:  user A's id ≠ user B's resolved name (identity isolation)
+///   9:    missing/zero user id is explicitly rejected, not silently persisted as "0"
+///   10:   unknown user id is rejected, not silently accepted
+///   11-12: existing Travel/document behavior for other flows is unaffected (verified by
+///          the full TravelRequestServiceTests/TravelDocumentServiceTests suites, unchanged)
 /// </summary>
 public class TravelActorIdentityTests : IDisposable
 {
     private readonly List<string> _tempDirs = new();
 
-    // ──────────────────────────────────────────────────────────────
-    // InMemory DB factory
-    // ──────────────────────────────────────────────────────────────
+    // Real, pre-existing HRMS user rows (verified live via GET /api/Users before writing
+    // these tests) — never inserted or deleted by this test file.
+    private const int UserAId = 1;
+    private const string UserAFullName = "Anurag Gupta";
+    private const int UserBId = 2;
+    private const string UserBFullName = "Anurag Test";
+    private const int UnknownUserId = 999999;
+
+    private const string HrmsConnectionString = "Host=localhost;Port=5432;Database=DB_Studio5Jarvis;Username=postgres;Password=123456";
 
     private static EaFmsDbContext MakeDb() =>
         new(new DbContextOptionsBuilder<EaFmsDbContext>()
@@ -50,17 +73,22 @@ public class TravelActorIdentityTests : IDisposable
             .ConfigureWarnings(w => w.Ignore(InMemoryEventId.TransactionIgnoredWarning))
             .Options);
 
+    private static hrms_api.Data.AppDbContext MakeHrmsDb() =>
+        new(new DbContextOptionsBuilder<hrms_api.Data.AppDbContext>()
+            .UseNpgsql(HrmsConnectionString)
+            .Options);
+
     // ──────────────────────────────────────────────────────────────
-    // TravelRequestService factory (mirrors TravelRequestServiceTests pattern)
+    // TravelRequestService factory
     // ──────────────────────────────────────────────────────────────
 
-    private static TravelRequestService MakeTravelService(
-        EaFmsDbContext db, string? userName, long userId)
+    private static TravelRequestService MakeTravelService(EaFmsDbContext db, hrms_api.Data.AppDbContext hrmsDb)
     {
-        var user = new Mock<ICurrentUserService>();
-        user.SetupGet(u => u.UserName).Returns(userName);
-        user.SetupGet(u => u.UserId).Returns(userId);
-
+        // ICurrentUserService is still injected (unrelated constructor dependency, and
+        // still used by other, untouched methods on this service such as Update's
+        // ModifiedBy) but is deliberately never populated here — proving the resolution
+        // path no longer depends on it at all for Create.
+        var user = Mock.Of<ICurrentUserService>(u => u.UserName == null && u.UserId == 0);
         var audit = Mock.Of<IAuditService>();
 
         var numbers = new Mock<ITravelNumberRepository>();
@@ -100,7 +128,8 @@ public class TravelActorIdentityTests : IDisposable
                 };
             });
 
-        return new TravelRequestService(db, audit, user.Object, numbers.Object, eaTasks.Object);
+        var actorResolver = new EaActorResolver(hrmsDb);
+        return new TravelRequestService(db, audit, user, numbers.Object, eaTasks.Object, actorResolver);
     }
 
     private static async Task<BusinessModule> SeedTravelModuleAsync(EaFmsDbContext db)
@@ -118,15 +147,16 @@ public class TravelActorIdentityTests : IDisposable
         return module;
     }
 
-    private static CreateTravelRequestDto MinimalCreateDto() => new()
+    private static CreateTravelRequestDto MinimalCreateDto(int? userId) => new()
     {
-        TravellerName = "Alice",
+        UserId = userId,
+        Travellers = new List<TravelTravellerDto> { new() { TravellerName = "Alice" } },
         Purpose = "Test trip",
         ApprovalRequired = false
     };
 
     // ──────────────────────────────────────────────────────────────
-    // TravelDocumentService factory (mirrors TravelDocumentServiceTests pattern)
+    // TravelDocumentService factory
     // ──────────────────────────────────────────────────────────────
 
     private IWebHostEnvironment MakeEnv()
@@ -138,12 +168,11 @@ public class TravelActorIdentityTests : IDisposable
     }
 
     private static TravelDocumentService MakeDocService(
-        EaFmsDbContext db, IWebHostEnvironment env, string? userName, long userId)
+        EaFmsDbContext db, IWebHostEnvironment env, hrms_api.Data.AppDbContext hrmsDb)
     {
-        var user = new Mock<ICurrentUserService>();
-        user.SetupGet(u => u.UserName).Returns(userName);
-        user.SetupGet(u => u.UserId).Returns(userId);
-        return new TravelDocumentService(db, user.Object, Mock.Of<IAuditService>(), env);
+        var user = Mock.Of<ICurrentUserService>(u => u.UserName == null && u.UserId == 0);
+        var actorResolver = new EaActorResolver(hrmsDb);
+        return new TravelDocumentService(db, user, Mock.Of<IAuditService>(), env, actorResolver);
     }
 
     private static TravelRequest SeedTravel(EaFmsDbContext db, long id = 1)
@@ -179,238 +208,284 @@ public class TravelActorIdentityTests : IDisposable
     }
 
     // ──────────────────────────────────────────────────────────────
-    // 1. Authenticated user creates Travel → CreatedBy = user's name
+    // 1. Valid existing user id creates Travel → CreatedBy = resolved FullName
     // ──────────────────────────────────────────────────────────────
 
     [Fact]
-    public async Task CreateDraft_AuthenticatedUser_CreatedByEqualsUserName()
+    public async Task CreateDraft_ValidUserId_CreatedByEqualsResolvedFullName()
     {
         await using var db = MakeDb();
+        await using var hrmsDb = MakeHrmsDb();
         await SeedTravelModuleAsync(db);
-        var svc = MakeTravelService(db, userName: "Shivani Singh", userId: 7);
+        var svc = MakeTravelService(db, hrmsDb);
 
-        var result = await svc.CreateDraftAsync(MinimalCreateDto(), default);
+        var result = await svc.CreateDraftAsync(MinimalCreateDto(userId: UserAId), default);
 
         var persisted = await db.TravelRequests.FindAsync(result.TravelRequestId);
-        Assert.Equal("Shivani Singh", persisted!.CreatedBy);
+        Assert.Equal(UserAFullName, persisted!.CreatedBy);
     }
 
     // ──────────────────────────────────────────────────────────────
-    // 2. Travel detail exposes the correct creator display name
-    //    (CreatedBy string = the full name when authenticated)
+    // 2. Travel detail exposes the resolved creator display name
     // ──────────────────────────────────────────────────────────────
 
     [Fact]
-    public async Task GetById_AfterAuthenticatedCreate_DetailReturnsCreatorName()
+    public async Task GetById_AfterCreate_DetailReturnsResolvedCreatorName()
     {
         await using var db = MakeDb();
+        await using var hrmsDb = MakeHrmsDb();
         await SeedTravelModuleAsync(db);
-        var svc = MakeTravelService(db, userName: "Shivani Singh", userId: 7);
+        var svc = MakeTravelService(db, hrmsDb);
 
-        var created = await svc.CreateDraftAsync(MinimalCreateDto(), default);
+        var created = await svc.CreateDraftAsync(MinimalCreateDto(userId: UserAId), default);
         var detail = await svc.GetByIdAsync(created.TravelRequestId, default);
 
-        Assert.Equal("Shivani Singh", detail.CreatedBy);
+        Assert.Equal(UserAFullName, detail.CreatedBy);
     }
 
     // ──────────────────────────────────────────────────────────────
-    // 3. Authenticated user uploads document → UploadedBy = user's name
+    // 3. Valid existing user id uploads document → UploadedBy = resolved FullName
     // ──────────────────────────────────────────────────────────────
 
     [Fact]
-    public async Task Upload_AuthenticatedUser_UploadedByEqualsUserName()
+    public async Task Upload_ValidUserId_UploadedByEqualsResolvedFullName()
     {
         await using var db = MakeDb();
+        await using var hrmsDb = MakeHrmsDb();
         SeedTravel(db, id: 1);
         var env = MakeEnv();
-        var svc = MakeDocService(db, env, userName: "Shivani Singh", userId: 7);
+        var svc = MakeDocService(db, env, hrmsDb);
 
-        var result = await svc.UploadAsync(1, SmallPdf(), null, default);
+        var result = await svc.UploadAsync(1, SmallPdf(), null, userId: UserAId, default);
 
-        Assert.Equal("Shivani Singh", result.UploadedBy);
+        Assert.Equal(UserAFullName, result.UploadedBy);
         var persisted = await db.Set<Attachment>().FindAsync(result.Id);
-        Assert.Equal("Shivani Singh", persisted!.UploadedBy);
-        Assert.Equal("Shivani Singh", persisted.CreatedBy);
+        Assert.Equal(UserAFullName, persisted!.UploadedBy);
+        Assert.Equal(UserAFullName, persisted.CreatedBy);
     }
 
     // ──────────────────────────────────────────────────────────────
-    // 4. Document response exposes correct uploader display name
+    // 4. Document response exposes the resolved uploader display name
     // ──────────────────────────────────────────────────────────────
 
     [Fact]
-    public async Task Upload_AuthenticatedUser_ResponseUploaderNameMatchesToken()
+    public async Task Upload_ValidUserId_ResponseUploaderNameMatchesResolvedUser()
     {
         await using var db = MakeDb();
+        await using var hrmsDb = MakeHrmsDb();
         SeedTravel(db, id: 2);
         var env = MakeEnv();
-        var svc = MakeDocService(db, env, userName: "Ahmed Al-Rashid", userId: 5);
+        var svc = MakeDocService(db, env, hrmsDb);
 
-        var result = await svc.UploadAsync(2, SmallPdf(), "Itinerary", default);
+        var result = await svc.UploadAsync(2, SmallPdf(), "Itinerary", userId: UserBId, default);
 
-        Assert.Equal("Ahmed Al-Rashid", result.UploadedBy);
+        Assert.Equal(UserBFullName, result.UploadedBy);
     }
 
     // ──────────────────────────────────────────────────────────────
-    // 5. Client cannot spoof CreatedBy through request payload
-    //    (CreateTravelRequestDto has no CreatedBy field; actor is server-only)
+    // 5. Frontend cannot supply an arbitrary CreatedBy name
+    //    (CreateTravelRequestDto exposes only UserId, never a name field)
     // ──────────────────────────────────────────────────────────────
 
     [Fact]
-    public async Task CreateDraft_PayloadHasNoCreatedByField_ServerActorAlwaysApplied()
+    public async Task CreateDraft_DtoExposesOnlyUserId_NeverAWritableDisplayName()
     {
         await using var db = MakeDb();
+        await using var hrmsDb = MakeHrmsDb();
         await SeedTravelModuleAsync(db);
-        // Authenticate as "Real EA"; no way to inject a different name through the DTO.
-        var svc = MakeTravelService(db, userName: "Real EA", userId: 10);
+        var svc = MakeTravelService(db, hrmsDb);
 
-        var dto = MinimalCreateDto();
-        // The DTO type has no CreatedBy property — confirmed by schema inspection.
-        // This test documents the invariant: whatever the DTO contains, CreatedBy
-        // must equal the authenticated actor, not a client-supplied value.
-        var result = await svc.CreateDraftAsync(dto, default);
+        var result = await svc.CreateDraftAsync(MinimalCreateDto(userId: UserAId), default);
         var persisted = await db.TravelRequests.FindAsync(result.TravelRequestId);
 
-        Assert.Equal("Real EA", persisted!.CreatedBy);
-        // Confirm the DTO type does not expose a settable CreatedBy that could be abused.
+        Assert.Equal(UserAFullName, persisted!.CreatedBy);
         var dtoType = typeof(CreateTravelRequestDto);
         Assert.Null(dtoType.GetProperty("CreatedBy"));
+        Assert.Null(dtoType.GetProperty("CreatedByName"));
+        // The only actor-related property is the stable id, never a name.
+        Assert.NotNull(dtoType.GetProperty("UserId"));
+        Assert.Equal(typeof(int?), dtoType.GetProperty("UserId")!.PropertyType);
     }
 
     // ──────────────────────────────────────────────────────────────
-    // 6. Client cannot spoof UploadedBy through upload payload
-    //    (UploadedBy is server-owned from ICurrentUserService, never from form fields)
+    // 6. Frontend cannot supply an arbitrary UploadedBy name
+    //    (UploadAsync's contract takes only userId, never a name)
     // ──────────────────────────────────────────────────────────────
 
     [Fact]
-    public async Task Upload_PayloadHasNoUploadedByField_ServerActorAlwaysApplied()
+    public async Task Upload_ServiceContractExposesOnlyUserId_NeverAWritableDisplayName()
     {
         await using var db = MakeDb();
+        await using var hrmsDb = MakeHrmsDb();
         SeedTravel(db, id: 3);
         var env = MakeEnv();
-        var svc = MakeDocService(db, env, userName: "Real EA", userId: 10);
+        var svc = MakeDocService(db, env, hrmsDb);
 
-        // The controller accepts only (travelRequestId, IFormFile, documentCategory) —
-        // no UploadedBy in the form fields. UploadedBy comes exclusively from the
-        // server-side ICurrentUserService.
-        var result = await svc.UploadAsync(3, SmallPdf(), null, default);
+        var result = await svc.UploadAsync(3, SmallPdf(), null, userId: UserAId, default);
 
-        Assert.Equal("Real EA", result.UploadedBy);
+        Assert.Equal(UserAFullName, result.UploadedBy);
+        var uploadMethod = typeof(ITravelDocumentService).GetMethod(nameof(ITravelDocumentService.UploadAsync))!;
+        var paramNames = uploadMethod.GetParameters().Select(p => p.Name).ToArray();
+        Assert.DoesNotContain("uploadedBy", paramNames);
+        Assert.Contains("userId", paramNames);
     }
 
     // ──────────────────────────────────────────────────────────────
-    // 7. User A creates Travel → CreatedBy is NOT User B's name
+    // 7. User A's id creates Travel → CreatedBy is NOT User B's name
     // ──────────────────────────────────────────────────────────────
 
     [Fact]
     public async Task CreateDraft_UserA_ResponseDoesNotClaimUserB()
     {
         await using var db = MakeDb();
+        await using var hrmsDb = MakeHrmsDb();
         await SeedTravelModuleAsync(db);
-        var svcA = MakeTravelService(db, userName: "Alice Smith", userId: 1);
+        var svcA = MakeTravelService(db, hrmsDb);
 
-        var result = await svcA.CreateDraftAsync(MinimalCreateDto(), default);
+        var result = await svcA.CreateDraftAsync(MinimalCreateDto(userId: UserAId), default);
 
         var detail = await svcA.GetByIdAsync(result.TravelRequestId, default);
-        Assert.Equal("Alice Smith", detail.CreatedBy);
-        Assert.NotEqual("Bob Jones", detail.CreatedBy);
+        Assert.Equal(UserAFullName, detail.CreatedBy);
+        Assert.NotEqual(UserBFullName, detail.CreatedBy);
     }
 
     // ──────────────────────────────────────────────────────────────
-    // 8. User A uploads document → UploadedBy is NOT User B's name
+    // 8. User A's id uploads → UploadedBy is NOT User B's name
     // ──────────────────────────────────────────────────────────────
 
     [Fact]
     public async Task Upload_UserA_ResponseDoesNotClaimUserB()
     {
         await using var db = MakeDb();
+        await using var hrmsDb = MakeHrmsDb();
         SeedTravel(db, id: 4);
         var env = MakeEnv();
-        var svcA = MakeDocService(db, env, userName: "Alice Smith", userId: 1);
+        var svcA = MakeDocService(db, env, hrmsDb);
 
-        var result = await svcA.UploadAsync(4, SmallPdf(), null, default);
+        var result = await svcA.UploadAsync(4, SmallPdf(), null, userId: UserAId, default);
 
-        Assert.Equal("Alice Smith", result.UploadedBy);
-        Assert.NotEqual("Bob Jones", result.UploadedBy);
+        Assert.Equal(UserAFullName, result.UploadedBy);
+        Assert.NotEqual(UserBFullName, result.UploadedBy);
     }
 
     // ──────────────────────────────────────────────────────────────
-    // 9a. Anonymous Travel create (UserId=0, UserName=null) is rejected —
-    //     not silently mapped to "0" or any fabricated name
+    // 9a. Missing user id (null) is rejected — not silently persisted as "0"
     // ──────────────────────────────────────────────────────────────
 
     [Fact]
-    public async Task CreateDraft_AnonymousRequest_ThrowsBusinessRuleException_NotSilent()
+    public async Task CreateDraft_MissingUserId_ThrowsBusinessRuleException_NoPartialCommit()
     {
         await using var db = MakeDb();
+        await using var hrmsDb = MakeHrmsDb();
         await SeedTravelModuleAsync(db);
-        // UserId=0 and UserName=null simulate an unauthenticated HTTP request.
-        var svc = MakeTravelService(db, userName: null, userId: 0);
+        var svc = MakeTravelService(db, hrmsDb);
 
         var ex = await Assert.ThrowsAsync<BusinessRuleException>(
-            () => svc.CreateDraftAsync(MinimalCreateDto(), default));
+            () => svc.CreateDraftAsync(MinimalCreateDto(userId: null), default));
 
-        Assert.Contains("Authenticated user identity", ex.Message);
-
-        // No TravelRequest was committed.
+        Assert.Contains("userId", ex.Message);
         Assert.Equal(0, await db.TravelRequests.CountAsync());
     }
 
     // ──────────────────────────────────────────────────────────────
-    // 9b. Anonymous document upload (UserId=0, UserName=null) is rejected
+    // 9b. User id 0 is rejected
     // ──────────────────────────────────────────────────────────────
 
     [Fact]
-    public async Task Upload_AnonymousRequest_ThrowsBusinessRuleException_NotSilent()
+    public async Task CreateDraft_UserIdZero_ThrowsBusinessRuleException()
     {
         await using var db = MakeDb();
+        await using var hrmsDb = MakeHrmsDb();
+        await SeedTravelModuleAsync(db);
+        var svc = MakeTravelService(db, hrmsDb);
+
+        await Assert.ThrowsAsync<BusinessRuleException>(
+            () => svc.CreateDraftAsync(MinimalCreateDto(userId: 0), default));
+        Assert.Equal(0, await db.TravelRequests.CountAsync());
+    }
+
+    // ──────────────────────────────────────────────────────────────
+    // 9c. Missing user id for upload is rejected
+    // ──────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task Upload_MissingUserId_ThrowsBusinessRuleException_NoPartialCommit()
+    {
+        await using var db = MakeDb();
+        await using var hrmsDb = MakeHrmsDb();
         SeedTravel(db, id: 5);
         var env = MakeEnv();
-        var svc = MakeDocService(db, env, userName: null, userId: 0);
+        var svc = MakeDocService(db, env, hrmsDb);
 
         var ex = await Assert.ThrowsAsync<BusinessRuleException>(
-            () => svc.UploadAsync(5, SmallPdf(), null, default));
+            () => svc.UploadAsync(5, SmallPdf(), null, userId: null, default));
 
-        Assert.Contains("Authenticated user identity", ex.Message);
-
-        // No Attachment was committed.
+        Assert.Contains("userId", ex.Message);
         Assert.Equal(0, await db.Set<Attachment>().CountAsync());
     }
 
     // ──────────────────────────────────────────────────────────────
-    // 9c. Non-zero UserId with no UserName falls back to ID string (not "0")
-    //     — preserves behavior for any future system/service account with an ID
-    //     but no display name.
+    // 10a. Unknown user id is rejected (does not exist in the Users source)
     // ──────────────────────────────────────────────────────────────
 
     [Fact]
-    public async Task CreateDraft_AuthenticatedByIdOnlyNoUserName_UsesIdAsActor()
+    public async Task CreateDraft_UnknownUserId_ThrowsBusinessRuleException_NoPartialCommit()
     {
         await using var db = MakeDb();
+        await using var hrmsDb = MakeHrmsDb();
         await SeedTravelModuleAsync(db);
-        // UserId != 0 but no UserName — treated as authenticated (system account).
-        var svc = MakeTravelService(db, userName: null, userId: 99);
+        var svc = MakeTravelService(db, hrmsDb);
 
-        var result = await svc.CreateDraftAsync(MinimalCreateDto(), default);
+        var ex = await Assert.ThrowsAsync<BusinessRuleException>(
+            () => svc.CreateDraftAsync(MinimalCreateDto(userId: UnknownUserId), default));
 
-        var persisted = await db.TravelRequests.FindAsync(result.TravelRequestId);
-        // Falls back to UserId.ToString() — "99", not "0", not a fabricated name.
-        Assert.Equal("99", persisted!.CreatedBy);
+        Assert.Contains(UnknownUserId.ToString(), ex.Message);
+        Assert.Contains("does not exist", ex.Message);
+        Assert.Equal(0, await db.TravelRequests.CountAsync());
     }
 
     // ──────────────────────────────────────────────────────────────
-    // 9d. Non-zero UserId with no UserName for upload falls back to ID
+    // 10b. Unknown user id for upload is rejected
     // ──────────────────────────────────────────────────────────────
 
     [Fact]
-    public async Task Upload_AuthenticatedByIdOnlyNoUserName_UsesIdAsActor()
+    public async Task Upload_UnknownUserId_ThrowsBusinessRuleException_NoPartialCommit_NoFileLeftOnDisk()
     {
         await using var db = MakeDb();
+        await using var hrmsDb = MakeHrmsDb();
         SeedTravel(db, id: 6);
         var env = MakeEnv();
-        var svc = MakeDocService(db, env, userName: null, userId: 99);
+        var svc = MakeDocService(db, env, hrmsDb);
 
-        var result = await svc.UploadAsync(6, SmallPdf(), null, default);
+        var ex = await Assert.ThrowsAsync<BusinessRuleException>(
+            () => svc.UploadAsync(6, SmallPdf(), null, userId: UnknownUserId, default));
 
-        Assert.Equal("99", result.UploadedBy);
+        Assert.Contains(UnknownUserId.ToString(), ex.Message);
+        Assert.Equal(0, await db.Set<Attachment>().CountAsync());
+        // The user is resolved before any file write, so nothing was written to disk either.
+        var travelDir = Path.Combine(env.ContentRootPath, "Content", "Travel", "6");
+        Assert.False(Directory.Exists(travelDir));
+    }
+
+    // ──────────────────────────────────────────────────────────────
+    // 11. No fake person is ever stored for an invalid user id
+    // ──────────────────────────────────────────────────────────────
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData(0)]
+    [InlineData(UnknownUserId)]
+    public async Task CreateDraft_InvalidUserId_NeverStoresAFakePerson(int? userId)
+    {
+        await using var db = MakeDb();
+        await using var hrmsDb = MakeHrmsDb();
+        await SeedTravelModuleAsync(db);
+        var svc = MakeTravelService(db, hrmsDb);
+
+        await Assert.ThrowsAsync<BusinessRuleException>(
+            () => svc.CreateDraftAsync(MinimalCreateDto(userId), default));
+
+        var all = await db.TravelRequests.ToListAsync();
+        Assert.DoesNotContain(all, t => t.CreatedBy is "0" or "Unknown" or "EA" or "Admin" or "System");
     }
 }

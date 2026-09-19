@@ -25,7 +25,7 @@ public class TravelExpenseTests
     {
         var user = Mock.Of<ICurrentUserService>(u => u.UserName == actor && u.UserId == 42);
         var audit = new AuditService(db, user);
-        return new(db, user, audit, new TravelDocumentService(db, user, audit, Mock.Of<IWebHostEnvironment>()));
+        return new(db, user, audit, new TravelDocumentService(db, user, audit, Mock.Of<IWebHostEnvironment>(), Mock.Of<IEaActorResolver>()));
     }
     private static TravelRequest Parent(long id = 1, bool required = true, string state = "Approved", string business = "Upcoming") => new()
     {

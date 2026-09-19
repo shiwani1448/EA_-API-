@@ -27,19 +27,22 @@ public partial class TravelRequestService : ITravelRequestService
     private readonly ICurrentUserService _currentUser;
     private readonly ITravelNumberRepository _travelNumbers;
     private readonly IEaTaskService _eaTaskService;
+    private readonly IEaActorResolver _actorResolver;
 
     public TravelRequestService(
         EaFmsDbContext db,
         IAuditService audit,
         ICurrentUserService currentUser,
         ITravelNumberRepository travelNumbers,
-        IEaTaskService eaTaskService)
+        IEaTaskService eaTaskService,
+        IEaActorResolver actorResolver)
     {
         _db = db;
         _audit = audit;
         _currentUser = currentUser;
         _travelNumbers = travelNumbers;
         _eaTaskService = eaTaskService;
+        _actorResolver = actorResolver;
     }
 
     // ============================================================
@@ -61,9 +64,11 @@ public partial class TravelRequestService : ITravelRequestService
                 $"Insert an active '{TravelBusinessModuleName}' record into ea_business_modules.");
         }
 
-        var actor = _currentUser.UserName ?? _currentUser.UserId.ToString(CultureInfo.InvariantCulture);
-        if (_currentUser.UserId == 0 && _currentUser.UserName is null)
-            throw new BusinessRuleException("Authenticated user identity is required to create a Travel request.");
+        // EA APIs run without JWT, so ICurrentUserService is never populated here — the
+        // frontend instead supplies its logged-in user's stable HRMS User.Id, and the
+        // backend resolves the real display name itself (never trusts a frontend-supplied
+        // name). See IEaActorResolver.
+        var actor = await _actorResolver.ResolveDisplayNameAsync(dto.UserId, "create a Travel request", ct);
         var now = Clock.UtcNowTz;
         var referenceNo = await _travelNumbers.GenerateNextReferenceNoAsync(ct);
 
@@ -92,10 +97,7 @@ public partial class TravelRequestService : ITravelRequestService
             EaTaskId = eaTaskDto.EaTaskId,
             CurrentCycleNo = 0,
 
-            TravellerName = dto.TravellerName?.Trim(),
-            EmployeePersonId = dto.EmployeePersonId?.Trim(),
-            Department = dto.Department?.Trim(),
-            ContactInformation = dto.ContactInformation?.Trim(),
+            Travellers = NormalizeTravellers(dto.Travellers),
 
             Purpose = dto.Purpose?.Trim(),
             TravelType = dto.TravelType?.Trim(),
@@ -190,6 +192,7 @@ public partial class TravelRequestService : ITravelRequestService
     {
         var entity = await _db.TravelRequests
             .AsNoTracking()
+            .Include(x => x.Travellers)
             .FirstOrDefaultAsync(x => x.Id == travelRequestId && !x.IsDeleted, ct)
             ?? throw new NotFoundException($"Travel request {travelRequestId} not found.");
 
@@ -227,19 +230,23 @@ public partial class TravelRequestService : ITravelRequestService
                 throw new BusinessRuleException("An unsubmitted draft has no approval cycle.");
         }
 
+        await _db.Entry(entity).Collection(x => x.Travellers).LoadAsync(ct);
+        var previousTravellerNames = TravellerNamesOf(entity.Travellers);
+
         // Snapshot for audit
         var snapshot = new
         {
-            entity.TravellerName, entity.Purpose, entity.FromLocation, entity.ToLocation,
+            TravellerNames = previousTravellerNames, entity.Purpose, entity.FromLocation, entity.ToLocation,
             entity.DepartureDate, entity.ReturnDate, entity.Priority, entity.BusinessState,
             entity.ApprovalState, entity.ApprovalRequired, entity.ApproverId
         };
 
         // Apply all frontend-editable fields
-        entity.TravellerName = dto.TravellerName?.Trim();
-        entity.EmployeePersonId = dto.EmployeePersonId?.Trim();
-        entity.Department = dto.Department?.Trim();
-        entity.ContactInformation = dto.ContactInformation?.Trim();
+        // Traveller rows are replaced as a whole (same contract as create).
+        _db.TravelTravellers.RemoveRange(entity.Travellers.ToList());
+        entity.Travellers.Clear();
+        foreach (var traveller in NormalizeTravellers(dto.Travellers))
+            entity.Travellers.Add(traveller);
         entity.Purpose = dto.Purpose?.Trim();
         entity.TravelType = dto.TravelType?.Trim();
         entity.FromLocation = dto.FromLocation?.Trim();
@@ -302,7 +309,7 @@ public partial class TravelRequestService : ITravelRequestService
             nameof(TravelRequest),
             entity.Id.ToString(CultureInfo.InvariantCulture),
             snapshot,
-            new { entity.TravellerName, entity.Purpose, entity.FromLocation, entity.ToLocation,
+            new { TravellerNames = TravellerNamesOf(entity.Travellers), entity.Purpose, entity.FromLocation, entity.ToLocation,
                   entity.DepartureDate, entity.ReturnDate, entity.Priority,
                   entity.ApprovalRequired, entity.ApproverId, entity.ApprovalState },
             "Travel request draft updated");
@@ -344,16 +351,28 @@ public partial class TravelRequestService : ITravelRequestService
             q = q.Where(x => x.Priority != null && x.Priority.Trim().ToLower() == pri);
         }
 
+        // Traveller filters run DB-side against the traveller rows (any traveller matches).
         if (!string.IsNullOrWhiteSpace(query.TravellerName))
         {
             var tn = query.TravellerName.Trim().ToLower();
-            q = q.Where(x => x.TravellerName != null && x.TravellerName.ToLower().Contains(tn));
+            q = q.Where(x => x.Travellers.Any(t => t.TravellerName != null && t.TravellerName.ToLower().Contains(tn)));
         }
 
         if (!string.IsNullOrWhiteSpace(query.Department))
         {
             var dept = query.Department.Trim().ToLower();
-            q = q.Where(x => x.Department != null && x.Department.ToLower().Contains(dept));
+            q = q.Where(x => x.Travellers.Any(t => t.Department != null && t.Department.ToLower().Contains(dept)));
+        }
+
+        if (!string.IsNullOrWhiteSpace(query.Search))
+        {
+            var term = query.Search.Trim().ToLower();
+            q = q.Where(x =>
+                x.ReferenceNo.ToLower().Contains(term) ||
+                x.Travellers.Any(t => t.TravellerName != null && t.TravellerName.ToLower().Contains(term)) ||
+                (x.FromLocation != null && x.FromLocation.ToLower().Contains(term)) ||
+                (x.ToLocation != null && x.ToLocation.ToLower().Contains(term)) ||
+                (x.Purpose != null && x.Purpose.ToLower().Contains(term)));
         }
 
         if (!string.IsNullOrWhiteSpace(query.CreatedBy))
@@ -400,28 +419,14 @@ public partial class TravelRequestService : ITravelRequestService
             q = q.Where(x => x.DepartureDate.HasValue && x.DepartureDate < to);
         }
 
-        // ---- Search (case-insensitive, multi-field) ----
-        // Matches ReferenceNo, TravellerName, FromLocation, ToLocation, Purpose.
-        // Uses EF-compatible ToLower(); does not require full-text infrastructure.
-        if (!string.IsNullOrWhiteSpace(query.Search))
-        {
-            var term = query.Search.Trim().ToLower();
-            q = q.Where(x =>
-                x.ReferenceNo.ToLower().Contains(term) ||
-                (x.TravellerName != null && x.TravellerName.ToLower().Contains(term)) ||
-                (x.FromLocation != null && x.FromLocation.ToLower().Contains(term)) ||
-                (x.ToLocation != null && x.ToLocation.ToLower().Contains(term)) ||
-                (x.Purpose != null && x.Purpose.ToLower().Contains(term)));
-        }
-
         // ---- Pagination ----
         var page = query.Page < 1 ? 1 : query.Page;
         var pageSize = query.PageSize < 1 ? 50 : query.PageSize > 200 ? 200 : query.PageSize;
 
         var totalCount = await q.CountAsync(ct);
-
         var items = await q
-            .OrderByDescending(x => x.CreatedDate)
+            .Include(x => x.Travellers)
+            .OrderByDescending(x => x.CreatedDate).ThenByDescending(x => x.Id)
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
             .ToListAsync(ct);
@@ -446,6 +451,50 @@ public partial class TravelRequestService : ITravelRequestService
     public static string ResolveDraftApprovalState(bool approvalRequired) =>
         approvalRequired ? "NotSubmitted" : "NotRequired";
 
+    /// <summary>
+    /// Converts submitted traveller rows to entities: trims every value, stores blank values
+    /// as null, drops null / fully blank rows, and records the submitted order.
+    /// </summary>
+    internal static List<TravelTraveller> NormalizeTravellers(List<TravelTravellerDto>? rows)
+    {
+        var result = new List<TravelTraveller>();
+        if (rows is null) return result;
+        foreach (var row in rows)
+        {
+            if (row is null) continue;
+            var name = NullIfBlank(row.TravellerName);
+            var employee = NullIfBlank(row.EmployeePersonId);
+            var department = NullIfBlank(row.Department);
+            var contact = NullIfBlank(row.ContactInformation);
+            if (name is null && employee is null && department is null && contact is null) continue;
+            result.Add(new TravelTraveller
+            {
+                SortOrder = result.Count,
+                TravellerName = name,
+                EmployeePersonId = employee,
+                Department = department,
+                ContactInformation = contact
+            });
+        }
+        return result;
+    }
+
+    private static string? NullIfBlank(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
+    private static List<string> TravellerNamesOf(IEnumerable<TravelTraveller> travellers) =>
+        travellers.OrderBy(t => t.SortOrder).Where(t => t.TravellerName != null)
+            .Select(t => t.TravellerName!).ToList();
+
+    private static List<TravelTravellerDto> ToTravellerDtos(IEnumerable<TravelTraveller> travellers) =>
+        travellers.OrderBy(t => t.SortOrder).ThenBy(t => t.Id).Select(t => new TravelTravellerDto
+        {
+            TravellerName = t.TravellerName,
+            EmployeePersonId = t.EmployeePersonId,
+            Department = t.Department,
+            ContactInformation = t.ContactInformation
+        }).ToList();
+
     private static TravelRequestDetailDto ToDetailDto(TravelRequest e, TravelRequestCycle? cycle = null)
     {
         return new TravelRequestDetailDto
@@ -458,13 +507,7 @@ public partial class TravelRequestService : ITravelRequestService
             BusinessState = e.BusinessState,
             ApprovalState = e.ApprovalState,
 
-            Traveller = new TravelTravellerDto
-            {
-                TravellerName = e.TravellerName,
-                EmployeePersonId = e.EmployeePersonId,
-                Department = e.Department,
-                ContactInformation = e.ContactInformation
-            },
+            Travellers = ToTravellerDtos(e.Travellers),
 
             Trip = new TravelTripDto
             {
@@ -562,9 +605,7 @@ public partial class TravelRequestService : ITravelRequestService
             RejectedAt = e.RejectedAt,
             Id = e.Id,
             ReferenceNo = e.ReferenceNo,
-            TravellerName = e.TravellerName,
-            EmployeePersonId = e.EmployeePersonId,
-            Department = e.Department,
+            Travellers = ToTravellerDtos(e.Travellers),
             FromLocation = e.FromLocation,
             ToLocation = e.ToLocation,
             Purpose = e.Purpose,

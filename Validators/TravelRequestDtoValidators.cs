@@ -4,6 +4,21 @@ using Jarvis5.Dtos.EaFms;
 namespace Jarvis5.Validators;
 
 /// <summary>
+/// Technical length guards for one traveller row (shared by create and update).
+/// DO NOT add frontend-mandatory field checks here.
+/// </summary>
+public class TravelTravellerDtoValidator : AbstractValidator<TravelTravellerDto>
+{
+    public TravelTravellerDtoValidator()
+    {
+        RuleFor(x => x.TravellerName).MaximumLength(200);
+        RuleFor(x => x.EmployeePersonId).MaximumLength(100);
+        RuleFor(x => x.Department).MaximumLength(200);
+        RuleFor(x => x.ContactInformation).MaximumLength(500);
+    }
+}
+
+/// <summary>
 /// Technical/data-integrity validation for creating a Travel Draft.
 /// DO NOT add frontend-mandatory field checks here.
 /// DO NOT add submission-completeness rules here.
@@ -13,10 +28,8 @@ public class CreateTravelRequestDtoValidator : AbstractValidator<CreateTravelReq
     public CreateTravelRequestDtoValidator()
     {
         // ---- String length guards (db limits) ----
-        RuleFor(x => x.TravellerName).MaximumLength(200);
-        RuleFor(x => x.EmployeePersonId).MaximumLength(100);
-        RuleFor(x => x.Department).MaximumLength(200);
-        RuleFor(x => x.ContactInformation).MaximumLength(500);
+        // Per-traveller length guards; no traveller field is backend-mandatory.
+        RuleForEach(x => x.Travellers).SetValidator(new TravelTravellerDtoValidator()).When(x => x.Travellers != null);
         RuleFor(x => x.Purpose).MaximumLength(1000);
         RuleFor(x => x.TravelType).MaximumLength(100);
         RuleFor(x => x.FromLocation).MaximumLength(500);
@@ -120,10 +133,8 @@ public class UpdateTravelDraftDtoValidator : AbstractValidator<UpdateTravelDraft
     public UpdateTravelDraftDtoValidator()
     {
         // ---- String length guards (db limits) ----
-        RuleFor(x => x.TravellerName).MaximumLength(200);
-        RuleFor(x => x.EmployeePersonId).MaximumLength(100);
-        RuleFor(x => x.Department).MaximumLength(200);
-        RuleFor(x => x.ContactInformation).MaximumLength(500);
+        // Per-traveller length guards; no traveller field is backend-mandatory.
+        RuleForEach(x => x.Travellers).SetValidator(new TravelTravellerDtoValidator()).When(x => x.Travellers != null);
         RuleFor(x => x.Purpose).MaximumLength(1000);
         RuleFor(x => x.TravelType).MaximumLength(100);
         RuleFor(x => x.FromLocation).MaximumLength(500);

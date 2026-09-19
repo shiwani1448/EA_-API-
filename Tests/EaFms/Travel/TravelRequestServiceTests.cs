@@ -38,12 +38,25 @@ public class TravelRequestServiceTests
     }
 
     /// <summary>
+    /// EA APIs run without JWT, so CreateDraftAsync no longer resolves the actor from
+    /// ICurrentUserService — it resolves CreateTravelRequestDto.UserId against the
+    /// existing HRMS Users source via IEaActorResolver. Tests that exercise
+    /// CreateDraftAsync but aren't specifically about actor-identity resolution (that's
+    /// TravelActorIdentityTests' job) use this fixed, always-valid resolver so they keep
+    /// testing what they already test.
+    /// </summary>
+    private static IEaActorResolver MakeActorResolver(string name = "Test EA User") =>
+        Mock.Of<IEaActorResolver>(r =>
+            r.ResolveDisplayNameAsync(It.IsAny<int?>(), It.IsAny<string>(), It.IsAny<CancellationToken>()) == Task.FromResult(name));
+
+    /// <summary>
     /// Builds a service with unconfigured number/EaTask dependencies for tests that never
     /// call CreateDraftAsync (Moq returns default completed tasks for un-setup members).
     /// </summary>
     private static TravelRequestService MakeService(
         EaFmsDbContext db, Mock<IAuditService> audit, Mock<ICurrentUserService> user) =>
-        new(db, audit.Object, user.Object, new Mock<ITravelNumberRepository>().Object, new Mock<IEaTaskService>().Object);
+        new(db, audit.Object, user.Object, new Mock<ITravelNumberRepository>().Object, new Mock<IEaTaskService>().Object,
+            new Mock<IEaActorResolver>().Object);
 
     /// <summary>
     /// Mocks matching the Approval test convention: reference numbers are generated
@@ -228,14 +241,14 @@ public class TravelRequestServiceTests
 
         var dto = new UpdateTravelDraftDto
         {
-            TravellerName = "John Doe",
+            Travellers = new List<TravelTravellerDto> { new() { TravellerName = "John Doe" } },
             Purpose = "Client visit",
             ApprovalRequired = false
         };
 
         var result = await service.UpdateDraftAsync(entity.Id, dto);
 
-        Assert.Equal("John Doe", result.Traveller.TravellerName);
+        Assert.Equal("John Doe", Assert.Single(result.Travellers).TravellerName);
         Assert.Equal("Client visit", result.Trip.Purpose);
         Assert.Equal("Draft", result.BusinessState);
     }
@@ -295,7 +308,7 @@ public class TravelRequestServiceTests
 
         var service = MakeService(db, audit, user);
 
-        var dto = new UpdateTravelDraftDto { TravellerName = "Alice", ApprovalRequired = false };
+        var dto = new UpdateTravelDraftDto { Travellers = new List<TravelTravellerDto> { new() { TravellerName = "Alice" } }, ApprovalRequired = false };
         var result = await service.UpdateDraftAsync(entity.Id, dto);
 
         // Reload from DB to confirm nothing changed at persistence level
@@ -393,11 +406,12 @@ public class TravelRequestServiceTests
         var module = await AddTravelModuleAsync(db);
         var (numbers, eaTasks) = MakeCreateMocks(db, module.Id);
 
-        var service = new TravelRequestService(db, audit.Object, user.Object, numbers.Object, eaTasks.Object);
+        var service = new TravelRequestService(db, audit.Object, user.Object, numbers.Object, eaTasks.Object, MakeActorResolver());
 
         var result = await service.CreateDraftAsync(new CreateTravelRequestDto
         {
-            TravellerName = "Sam",
+            UserId = 1,
+            Travellers = new List<TravelTravellerDto> { new() { TravellerName = "Sam" } },
             Purpose = "Client visit",
             ApprovalRequired = false
         });
@@ -442,10 +456,10 @@ public class TravelRequestServiceTests
         var (audit, user) = MakeMocks();
         var module = await AddTravelModuleAsync(db);
         var (numbers, eaTasks) = MakeCreateMocks(db, module.Id);
-        var service = new TravelRequestService(db, audit.Object, user.Object, numbers.Object, eaTasks.Object);
+        var service = new TravelRequestService(db, audit.Object, user.Object, numbers.Object, eaTasks.Object, MakeActorResolver());
 
         var result = await service.CreateDraftAsync(
-            new CreateTravelRequestDto { ApprovalRequired = true, ApproverId = "mgr-1" });
+            new CreateTravelRequestDto { UserId = 1, ApprovalRequired = true, ApproverId = "mgr-1" });
 
         Assert.Equal("NotSubmitted", result.ApprovalState);
         Assert.NotEqual("Pending", result.ApprovalState);
@@ -458,9 +472,9 @@ public class TravelRequestServiceTests
         var (audit, user) = MakeMocks();
         var module = await AddTravelModuleAsync(db);
         var (numbers, eaTasks) = MakeCreateMocks(db, module.Id);
-        var service = new TravelRequestService(db, audit.Object, user.Object, numbers.Object, eaTasks.Object);
+        var service = new TravelRequestService(db, audit.Object, user.Object, numbers.Object, eaTasks.Object, MakeActorResolver());
 
-        var result = await service.CreateDraftAsync(new CreateTravelRequestDto());
+        var result = await service.CreateDraftAsync(new CreateTravelRequestDto { UserId = 1 });
 
         Assert.Matches(@"^TRV-\d{4}-\d{6}$", result.ReferenceNo);
     }
@@ -540,14 +554,14 @@ public class TravelRequestServiceTests
             new TravelRequest
             {
                 ReferenceNo = "TRV-2026-000010", EaTaskId = 1,
-                TravellerName = "Alice Smith", BusinessState = "Draft",
+                Travellers = new List<TravelTraveller> { new() { TravellerName = "Alice Smith" } }, BusinessState = "Draft",
                 ApprovalState = "NotRequired", ApprovalRequired = false,
                 CreatedBy = "testuser", CreatedDate = DateTime.UtcNow
             },
             new TravelRequest
             {
                 ReferenceNo = "TRV-2026-000011", EaTaskId = 2,
-                TravellerName = "Bob Jones", BusinessState = "Draft",
+                Travellers = new List<TravelTraveller> { new() { TravellerName = "Bob Jones" } }, BusinessState = "Draft",
                 ApprovalState = "NotRequired", ApprovalRequired = false,
                 CreatedBy = "testuser", CreatedDate = DateTime.UtcNow
             }
@@ -558,7 +572,7 @@ public class TravelRequestServiceTests
         var result = await service.ListAsync(new TravelRequestListQueryDto { Search = "alice" });
 
         Assert.Single(result.Items);
-        Assert.Equal("Alice Smith", result.Items[0].TravellerName);
+        Assert.Equal("Alice Smith", Assert.Single(result.Items[0].Travellers).TravellerName);
     }
 
     [Fact]

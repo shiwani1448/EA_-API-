@@ -16,14 +16,14 @@ public class TravelRequestDtoValidatorsTests
 {
     private static CreateTravelRequestDto MinimalCreateDto(int? numberOfTravellers = null, int? numberOfRooms = null) => new()
     {
-        TravellerName = "Test Traveller",
+        Travellers = new List<TravelTravellerDto> { new() { TravellerName = "Test Traveller" } },
         NumberOfTravellers = numberOfTravellers,
         NumberOfRooms = numberOfRooms
     };
 
     private static UpdateTravelDraftDto MinimalUpdateDto(int? numberOfTravellers = null, int? numberOfRooms = null) => new()
     {
-        TravellerName = "Test Traveller",
+        Travellers = new List<TravelTravellerDto> { new() { TravellerName = "Test Traveller" } },
         NumberOfTravellers = numberOfTravellers,
         NumberOfRooms = numberOfRooms
     };

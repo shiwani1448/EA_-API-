@@ -12,11 +12,22 @@ namespace Jarvis5.Dtos.EaFms;
 /// </summary>
 public class CreateTravelRequestDto
 {
-    // --- Traveller ---
-    public string? TravellerName { get; set; }
-    public string? EmployeePersonId { get; set; }
-    public string? Department { get; set; }
-    public string? ContactInformation { get; set; }
+    /// <summary>
+    /// Stable identity of the logged-in EA frontend user creating this request — the
+    /// same User.Id already returned by GET /api/Users. EA APIs do not use JWT, so this
+    /// is operational attribution (resolved server-side to a display name for
+    /// TravelRequest.CreatedBy), never authentication. The frontend must never send a
+    /// display name directly.
+    /// </summary>
+    public int? UserId { get; set; }
+
+    // --- Travellers ---
+    /// <summary>
+    /// One object per frontend traveller row; name, employee/person id, department and
+    /// contact information stay grouped per traveller. Null or empty list is accepted
+    /// (frontend-owned requiredness). Rows with all four values blank are ignored.
+    /// </summary>
+    public List<TravelTravellerDto>? Travellers { get; set; }
 
     // --- Trip ---
     public string? Purpose { get; set; }
@@ -90,11 +101,12 @@ public class CreateTravelRequestDto
 /// </summary>
 public class UpdateTravelDraftDto
 {
-    // --- Traveller ---
-    public string? TravellerName { get; set; }
-    public string? EmployeePersonId { get; set; }
-    public string? Department { get; set; }
-    public string? ContactInformation { get; set; }
+    // --- Travellers ---
+    /// <summary>
+    /// Full replacement of the traveller rows; same structure as on create.
+    /// Null or empty list is accepted (frontend-owned requiredness).
+    /// </summary>
+    public List<TravelTravellerDto>? Travellers { get; set; }
 
     // --- Trip ---
     public string? Purpose { get; set; }
@@ -156,6 +168,7 @@ public class UpdateTravelDraftDto
 // RESPONSE SUB-OBJECTS
 // ============================================================
 
+/// <summary>One traveller row — used unchanged for create, update and read.</summary>
 public class TravelTravellerDto
 {
     public string? TravellerName { get; set; }
@@ -258,7 +271,7 @@ public class TravelRequestDetailDto
     public string BusinessState { get; set; } = string.Empty;
     public string ApprovalState { get; set; } = string.Empty;
 
-    public TravelTravellerDto Traveller { get; set; } = new();
+    public List<TravelTravellerDto> Travellers { get; set; } = new();
     public TravelTripDto Trip { get; set; } = new();
     public TravelTransportationDto Transportation { get; set; } = new();
     public TravelHotelDto Hotel { get; set; } = new();
@@ -305,9 +318,7 @@ public class TravelRequestListItemDto
     public DateTime? RejectedAt { get; set; }
     public long Id { get; set; }
     public string ReferenceNo { get; set; } = string.Empty;
-    public string? TravellerName { get; set; }
-    public string? EmployeePersonId { get; set; }
-    public string? Department { get; set; }
+    public List<TravelTravellerDto> Travellers { get; set; } = new();
     public string? FromLocation { get; set; }
     public string? ToLocation { get; set; }
     public string? Purpose { get; set; }
@@ -333,7 +344,7 @@ public class TravelRequestListItemDto
 
 public class TravelRequestListQueryDto
 {
-    /// <summary>Full-text search across ReferenceNo, TravellerName, FromLocation, ToLocation, Purpose.</summary>
+    /// <summary>Full-text search across ReferenceNo, Travellers[*].TravellerName, FromLocation, ToLocation, Purpose.</summary>
     public string? Search { get; set; }
 
     // Explicit state filters (do not use a single ambiguous "status")
@@ -341,6 +352,7 @@ public class TravelRequestListQueryDto
     public string? ApprovalState { get; set; }
 
     public string? Priority { get; set; }
+    /// <summary>Filter by traveller name — matches if any traveller's TravellerName contains this substring (case-insensitive).</summary>
     public string? TravellerName { get; set; }
     public string? Department { get; set; }
     public string? CreatedBy { get; set; }

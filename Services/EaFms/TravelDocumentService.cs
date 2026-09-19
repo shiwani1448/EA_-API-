@@ -34,17 +34,19 @@ public class TravelDocumentService : ITravelDocumentService
     private readonly ICurrentUserService _user;
     private readonly IAuditService _audit;
     private readonly IWebHostEnvironment _env;
+    private readonly IEaActorResolver _actorResolver;
 
-    public TravelDocumentService(EaFmsDbContext db, ICurrentUserService user, IAuditService audit, IWebHostEnvironment env)
+    public TravelDocumentService(EaFmsDbContext db, ICurrentUserService user, IAuditService audit, IWebHostEnvironment env, IEaActorResolver actorResolver)
     {
         _db = db;
         _user = user;
         _audit = audit;
         _env = env;
+        _actorResolver = actorResolver;
     }
 
     public async Task<TravelDocumentResponseDto> UploadAsync(
-        long travelRequestId, IFormFile file, string? documentCategory, CancellationToken ct = default)
+        long travelRequestId, IFormFile file, string? documentCategory, int? userId = null, CancellationToken ct = default)
     {
         if (file is null) throw new BusinessRuleException("File must be provided.");
         if (file.Length == 0) throw new BusinessRuleException("File must not be empty.");
@@ -67,9 +69,12 @@ public class TravelDocumentService : ITravelDocumentService
             .AnyAsync(t => t.Id == travelRequestId && !t.IsDeleted, ct);
         if (!travelExists) throw new NotFoundException($"Travel request {travelRequestId} not found.");
 
-        // Actor must be an authenticated user; anonymous uploads ("0") are not permitted.
-        if (_user.UserId == 0 && _user.UserName is null)
-            throw new BusinessRuleException("Authenticated user identity is required to upload a Travel document.");
+        // EA APIs run without JWT, so ICurrentUserService is never populated here — the
+        // frontend instead supplies its logged-in user's stable HRMS User.Id, and the
+        // backend resolves the real display name itself (never trusts a frontend-supplied
+        // name). See IEaActorResolver. Resolved before any file I/O so an invalid actor
+        // fails fast without writing anything to disk.
+        var actorDisplayName = await _actorResolver.ResolveDisplayNameAsync(userId, "upload a Travel document", ct);
 
         // Prepare storage key (same layout convention as Approval documents).
         var generated = $"{Guid.NewGuid():N}{ext}";
@@ -118,12 +123,12 @@ public class TravelDocumentService : ITravelDocumentService
                 ContentType = file.ContentType,
                 Size = file.Length,
                 AccessUrl = null, // Downloads use the ownership-checked Travel route.
-                UploadedBy = _user.UserName ?? _user.UserId.ToString(CultureInfo.InvariantCulture),
+                UploadedBy = actorDisplayName,
                 UploadedAt = now,
                 Metadata = metadata,
                 IsActive = true,
                 IsDeleted = false,
-                CreatedBy = _user.UserName ?? _user.UserId.ToString(CultureInfo.InvariantCulture),
+                CreatedBy = actorDisplayName,
                 CreatedDate = now
             };
 

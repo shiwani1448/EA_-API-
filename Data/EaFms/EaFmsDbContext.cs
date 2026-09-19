@@ -47,6 +47,7 @@ public class EaFmsDbContext : DbContext
     public DbSet<TravelBooking> TravelBookings { get; set; } = null!;
     public DbSet<TravelRequest> TravelRequests { get; set; } = null!;
     public DbSet<TravelRequestCycle> TravelRequestCycles { get; set; } = null!;
+    public DbSet<TravelTraveller> TravelTravellers { get; set; } = null!;
 
     // Delegation (EA-specific) — Step 1 foundation
     public DbSet<Delegation> Delegations { get; set; } = null!;
@@ -227,10 +228,6 @@ public class EaFmsDbContext : DbContext
             entity.Property(e => e.ReferenceNo).HasColumnType("varchar(40)").IsRequired();
             entity.Property(e => e.EaTaskId).HasColumnType("bigint");
             entity.Property(e => e.CurrentCycleNo).HasDefaultValue(0);
-            entity.Property(e => e.TravellerName).HasMaxLength(200);
-            entity.Property(e => e.EmployeePersonId).HasMaxLength(100);
-            entity.Property(e => e.Department).HasMaxLength(200);
-            entity.Property(e => e.ContactInformation).HasMaxLength(500);
             entity.Property(e => e.Purpose).HasMaxLength(1000);
             entity.Property(e => e.TravelType).HasMaxLength(100);
             entity.Property(e => e.FromLocation).HasMaxLength(500);
@@ -275,6 +272,20 @@ public class EaFmsDbContext : DbContext
             entity.HasIndex(e => e.CreatedBy);
             entity.HasIndex(e => e.DepartureDate);
             entity.HasIndex(e => e.ModifiedDate);
+        });
+
+        modelBuilder.Entity<TravelTraveller>(entity =>
+        {
+            entity.ToTable("ea_travel_travellers", "public");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).UseIdentityByDefaultColumn();
+            entity.Property(e => e.TravellerName).HasMaxLength(200);
+            entity.Property(e => e.EmployeePersonId).HasMaxLength(100);
+            entity.Property(e => e.Department).HasMaxLength(200);
+            entity.Property(e => e.ContactInformation).HasMaxLength(500);
+            entity.HasOne(e => e.TravelRequest).WithMany(r => r.Travellers)
+                .HasForeignKey(e => e.TravelRequestId).OnDelete(DeleteBehavior.Cascade);
+            entity.HasIndex(e => new { e.TravelRequestId, e.SortOrder }).HasDatabaseName("IX_ea_travel_travellers_TravelRequestId_SortOrder");
         });
 
         modelBuilder.Entity<TravelRequestCycle>(entity =>

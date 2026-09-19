@@ -362,6 +362,9 @@ builder.Services.AddScoped<Jarvis5.Services.EaFms.ApprovalQueryService>();
 // Ensure ITatRuleService is available for ApprovalService TAT resolution (already registered above)
 
 // Travel services
+// Resolves a frontend-supplied HRMS User.Id to a display name for CreatedBy/UploadedBy
+// attribution, since EA APIs run without JWT (ICurrentUserService is never populated).
+builder.Services.AddScoped<Jarvis5.Services.EaFms.IEaActorResolver, Jarvis5.Services.EaFms.EaActorResolver>();
 builder.Services.AddScoped<Jarvis5.Repositories.EaFms.ITravelNumberRepository, Jarvis5.Repositories.EaFms.TravelRepository>();
 builder.Services.AddScoped<Jarvis5.Services.EaFms.ITravelRequestService, Jarvis5.Services.EaFms.TravelRequestService>();
 builder.Services.AddScoped<Jarvis5.Services.EaFms.ITravelDocumentService, Jarvis5.Services.EaFms.TravelDocumentService>();
