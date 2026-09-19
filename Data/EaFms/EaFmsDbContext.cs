@@ -101,6 +101,10 @@ public class EaFmsDbContext : DbContext
 
         modelBuilder.Entity<BusinessModule>(entity =>
         {
+            entity.Property(e => e.CreatedByEmployeeId).HasMaxLength(100);
+            entity.Property(e => e.CreatedByEmployeeName).HasMaxLength(100);
+            entity.Property(e => e.ModifiedByEmployeeId).HasMaxLength(100);
+            entity.Property(e => e.ModifiedByEmployeeName).HasMaxLength(100);
             entity.ToTable("ea_business_modules", "public");
             entity.HasKey(e => e.Id);
 
@@ -958,6 +962,10 @@ public class EaFmsDbContext : DbContext
 
         modelBuilder.Entity<TatRule>(entity =>
         {
+            entity.Property(e => e.CreatedByEmployeeId).HasMaxLength(100);
+            entity.Property(e => e.CreatedByEmployeeName).HasMaxLength(100);
+            entity.Property(e => e.ModifiedByEmployeeId).HasMaxLength(100);
+            entity.Property(e => e.ModifiedByEmployeeName).HasMaxLength(100);
             entity.ToTable("ea_tat_rules", "public", t =>
                 t.HasCheckConstraint("CK_ea_tat_rules_TatMinutes_Positive", "\"TatMinutes\" > 0"));
             entity.HasKey(e => e.Id);
@@ -1182,6 +1190,8 @@ public class EaFmsDbContext : DbContext
 
         modelBuilder.Entity<FollowupCycle>(entity =>
         {
+            entity.Property(e => e.FollowedUpByEmployeeId).HasMaxLength(100);
+            entity.Property(e => e.FollowedUpByEmployeeName).HasMaxLength(100);
             entity.ToTable("ea_followup_cycles", "public");
             entity.HasKey(e => e.Id);
             entity.Property(e => e.Id).UseIdentityByDefaultColumn();
@@ -1200,6 +1210,10 @@ public class EaFmsDbContext : DbContext
         // Followups
         modelBuilder.Entity<Followup>(entity =>
         {
+            entity.Property(e => e.CreatedByEmployeeId).HasMaxLength(100);
+            entity.Property(e => e.CreatedByEmployeeName).HasMaxLength(100);
+            entity.Property(e => e.ModifiedByEmployeeId).HasMaxLength(100);
+            entity.Property(e => e.ModifiedByEmployeeName).HasMaxLength(100);
             entity.ToTable("ea_followups", "public");
             entity.HasKey(e => e.Id);
 
@@ -1219,6 +1233,13 @@ public class EaFmsDbContext : DbContext
 
             entity.Property(e => e.PriorityLevelId);
             entity.Property(e => e.ReminderAt);
+            entity.Property(e => e.ReminderSendEmail).HasDefaultValue(false);
+            entity.Property(e => e.ReminderSendWhatsApp).HasDefaultValue(false);
+            entity.Property(e => e.ReminderRecipientUserId);
+            entity.Property(e => e.ReminderWhatsAppNumber).HasMaxLength(50);
+            entity.Property(e => e.ReminderRecipientEmployeeId).HasMaxLength(100);
+            entity.Property(e => e.ReminderRecipientName).HasMaxLength(200);
+            entity.Property(e => e.ReminderRecipientEmail).HasMaxLength(300);
             entity.Property(e => e.NextFollowupAt);
 
             entity.Property(e => e.WaitingOnId).HasMaxLength(100);
@@ -1243,6 +1264,20 @@ public class EaFmsDbContext : DbContext
             entity.HasIndex(e => e.IntakeRequestId);
             entity.HasIndex(e => e.BusinessModuleId);
             entity.HasIndex(e => e.DueAt);
+        });
+
+        // Escalation levels (catalog). Mapped explicitly to the existing EA table; without this
+        // EF convention would query the non-existent "EscalationLevels" table.
+        modelBuilder.Entity<EscalationLevel>(entity =>
+        {
+            entity.ToTable("ea_escalation_levels", "public");
+            entity.HasKey(e => e.Id).HasName("PK_escalation_levels");
+            entity.Property(e => e.Id).UseIdentityByDefaultColumn();
+            entity.Property(e => e.Code).IsRequired();
+            entity.Property(e => e.Name).IsRequired();
+            entity.Property(e => e.CreatedBy).IsRequired();
+            entity.HasIndex(e => e.Code).HasDatabaseName("IX_escalation_levels_Code");
+            entity.HasIndex(e => e.Level).HasDatabaseName("IX_escalation_levels_Level");
         });
 
         // Escalations

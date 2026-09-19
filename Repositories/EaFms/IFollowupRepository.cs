@@ -11,6 +11,7 @@ public interface IFollowupRepository
     Task<List<Followup>> GetByIntakeRequestIdAsync(long intakeRequestId, CancellationToken ct = default);
     Task<List<Followup>> GetOpenFollowupsAsync(CancellationToken ct = default);
     Task<PagedResult<Followup>> GetPagedAsync(FollowupListQueryDto query, DateTime now, CancellationToken ct = default);
+    Task<FollowupSummaryResponseDto> GetSummaryAsync(FollowupListQueryDto query, DateTime now, DateTime indiaToday, CancellationToken ct = default);
     Task<List<Followup>> GetBySourceAsync(long moduleId, string recordId, CancellationToken ct = default);
     void Update(Followup followup);
 }

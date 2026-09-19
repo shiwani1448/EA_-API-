@@ -46,11 +46,12 @@ public class TatRuleService(EaFmsDbContext db, ITatRuleRepository repository,
             && x.IsActive && !x.IsDeleted && (!id.HasValue || x.Id != id.Value), ct))
             throw new BusinessRuleException("An active TAT rule already exists for this module/type/subtype combination.");
 
-        var actor = user.UserId.ToString(CultureInfo.InvariantCulture);
+        var actor = EaActorSnapshot.From(dto.EmployeeId, dto.EmployeeName);
+        var actorDisplay = actor.DisplayName ?? user.UserId.ToString(CultureInfo.InvariantCulture);
         var now = Clock.UtcNowTz;
         var rule = id.HasValue
             ? await repository.GetForUpdateAsync(id.Value, ct) ?? throw new NotFoundException($"TAT rule {id} not found.")
-            : new TatRule { CreatedBy = actor, CreatedDate = now };
+            : new TatRule { CreatedBy = actorDisplay, CreatedByEmployeeId = actor.EmployeeId, CreatedByEmployeeName = actor.EmployeeName, CreatedDate = now };
         var previous = id.HasValue ? new { rule.BusinessModuleId, rule.Type, rule.Subtype, rule.TatMinutes, rule.IsActive } : null;
         rule.BusinessModuleId = dto.ModuleId;
         rule.ModuleName = module.Name;
@@ -58,14 +59,18 @@ public class TatRuleService(EaFmsDbContext db, ITatRuleRepository repository,
         rule.Subtype = subtype;
         rule.TatMinutes = dto.TatMinutes;
         rule.IsActive = dto.IsActive!.Value;
-        if (id.HasValue) { rule.ModifiedBy = actor; rule.ModifiedDate = now; }
+        if (id.HasValue)
+        {
+            rule.ModifiedBy = actorDisplay; rule.ModifiedByEmployeeId = actor.EmployeeId;
+            rule.ModifiedByEmployeeName = actor.EmployeeName; rule.ModifiedDate = now;
+        }
         else await repository.AddAsync(rule, ct);
         try
         {
             await db.SaveChangesAsync(ct);
             audit.AddAudit(id.HasValue ? "TAT_RULE_UPDATE" : "TAT_RULE_CREATE", "TatRule", nameof(TatRule),
                 rule.Id.ToString(CultureInfo.InvariantCulture), previous,
-                new { rule.BusinessModuleId, rule.Type, rule.Subtype, rule.TatMinutes, rule.IsActive });
+                new { rule.BusinessModuleId, rule.Type, rule.Subtype, rule.TatMinutes, rule.IsActive, Actor = actor });
             await db.SaveChangesAsync(ct);
             await transaction.CommitAsync(ct);
         }
@@ -83,6 +88,9 @@ public class TatRuleService(EaFmsDbContext db, ITatRuleRepository repository,
         Id = rule.Id, ModuleId = rule.BusinessModuleId, ModuleName = rule.ModuleName,
         Type = rule.Type, Subtype = rule.Subtype,
         TatMinutes = rule.TatMinutes, IsActive = rule.IsActive,
-        CreatedDate = rule.CreatedDate, ModifiedDate = rule.ModifiedDate
+        CreatedBy = rule.CreatedBy, CreatedByEmployeeId = rule.CreatedByEmployeeId, CreatedByEmployeeName = rule.CreatedByEmployeeName,
+        CreatedDate = rule.CreatedDate,
+        ModifiedBy = rule.ModifiedBy, ModifiedByEmployeeId = rule.ModifiedByEmployeeId, ModifiedByEmployeeName = rule.ModifiedByEmployeeName,
+        ModifiedDate = rule.ModifiedDate
     };
 }

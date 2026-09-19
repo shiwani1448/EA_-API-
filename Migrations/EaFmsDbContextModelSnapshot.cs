@@ -372,6 +372,14 @@ namespace Studio5JarvisMasterApi.Migrations
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)");
 
+                    b.Property<string>("CreatedByEmployeeId")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("CreatedByEmployeeName")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
                     b.Property<DateTime>("CreatedDate")
                         .HasColumnType("timestamp with time zone");
 
@@ -387,6 +395,14 @@ namespace Studio5JarvisMasterApi.Migrations
 
                     b.Property<string>("ModifiedBy")
                         .HasColumnType("text");
+
+                    b.Property<string>("ModifiedByEmployeeId")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("ModifiedByEmployeeName")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
 
                     b.Property<DateTime?>("ModifiedDate")
                         .HasColumnType("timestamp with time zone");
@@ -781,9 +797,16 @@ namespace Studio5JarvisMasterApi.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
-                    b.HasKey("Id");
+                    b.HasKey("Id")
+                        .HasName("PK_escalation_levels");
 
-                    b.ToTable("EscalationLevels");
+                    b.HasIndex("Code")
+                        .HasDatabaseName("IX_escalation_levels_Code");
+
+                    b.HasIndex("Level")
+                        .HasDatabaseName("IX_escalation_levels_Level");
+
+                    b.ToTable("ea_escalation_levels", "public");
                 });
 
             modelBuilder.Entity("Jarvis5.Entities.EaFms.Followup", b =>
@@ -829,6 +852,14 @@ namespace Studio5JarvisMasterApi.Migrations
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)");
 
+                    b.Property<string>("CreatedByEmployeeId")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("CreatedByEmployeeName")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
                     b.Property<DateTime>("CreatedDate")
                         .HasColumnType("timestamp with time zone");
 
@@ -850,6 +881,14 @@ namespace Studio5JarvisMasterApi.Migrations
                     b.Property<string>("ModifiedBy")
                         .HasColumnType("text");
 
+                    b.Property<string>("ModifiedByEmployeeId")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("ModifiedByEmployeeName")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
                     b.Property<DateTime?>("ModifiedDate")
                         .HasColumnType("timestamp with time zone");
 
@@ -869,6 +908,35 @@ namespace Studio5JarvisMasterApi.Migrations
 
                     b.Property<DateTime?>("ReminderAt")
                         .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("ReminderRecipientEmail")
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)");
+
+                    b.Property<string>("ReminderRecipientEmployeeId")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("ReminderRecipientName")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<int?>("ReminderRecipientUserId")
+                        .HasColumnType("integer");
+
+                    b.Property<bool>("ReminderSendEmail")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false);
+
+                    b.Property<bool>("ReminderSendWhatsApp")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false);
+
+                    b.Property<string>("ReminderWhatsAppNumber")
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
 
                     b.Property<string>("ResponseOwnerId")
                         .HasMaxLength(100)
@@ -938,6 +1006,14 @@ namespace Studio5JarvisMasterApi.Migrations
 
                     b.Property<DateTime>("FollowedUpAt")
                         .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("FollowedUpByEmployeeId")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("FollowedUpByEmployeeName")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
 
                     b.Property<long>("FollowupId")
                         .HasColumnType("bigint");
@@ -1822,6 +1898,14 @@ namespace Studio5JarvisMasterApi.Migrations
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)");
 
+                    b.Property<string>("CreatedByEmployeeId")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("CreatedByEmployeeName")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
                     b.Property<DateTime>("CreatedDate")
                         .HasColumnType("timestamp with time zone");
 
@@ -1832,6 +1916,14 @@ namespace Studio5JarvisMasterApi.Migrations
                         .HasColumnType("boolean");
 
                     b.Property<string>("ModifiedBy")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("ModifiedByEmployeeId")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("ModifiedByEmployeeName")
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)");
 

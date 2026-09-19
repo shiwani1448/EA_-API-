@@ -47,12 +47,14 @@ public sealed class BusinessModuleServiceTests
     }
 
     [Fact]
-    public async Task Update_ProtectsCanonicalName_ButAllowsStatusAndDescription()
+    public async Task Update_ProtectsCanonicalNameAndActiveState_ButAllowsDescription()
     {
-        await using var db = Db(nameof(Update_ProtectsCanonicalName_ButAllowsStatusAndDescription));
+        await using var db = Db(nameof(Update_ProtectsCanonicalNameAndActiveState_ButAllowsDescription));
         var meeting = new BusinessModule { Name = "Meeting", IsActive = true, CreatedBy = "seed", CreatedDate = DateTime.UtcNow }; db.BusinessModules.Add(meeting); await db.SaveChangesAsync();
         await Assert.ThrowsAsync<BusinessRuleException>(() => Service(db).UpdateAsync(meeting.Id, new SaveBusinessModuleDto { Name = "Meetings", IsActive = true }, default));
-        var result = await Service(db).UpdateAsync(meeting.Id, new SaveBusinessModuleDto { Name = "Meeting", Description = "updated", IsActive = false }, default);
-        Assert.False(result.IsActive); Assert.Equal("updated", result.Description);
+        // Deactivation is protected on PUT exactly as on DELETE.
+        await Assert.ThrowsAsync<BusinessRuleException>(() => Service(db).UpdateAsync(meeting.Id, new SaveBusinessModuleDto { Name = "Meeting", IsActive = false }, default));
+        var result = await Service(db).UpdateAsync(meeting.Id, new SaveBusinessModuleDto { Name = "Meeting", Description = "updated", IsActive = true }, default);
+        Assert.True(result.IsActive); Assert.Equal("updated", result.Description);
     }
 }

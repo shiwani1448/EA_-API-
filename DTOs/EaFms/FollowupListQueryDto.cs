@@ -14,6 +14,15 @@ public class FollowupListQueryDto
     public DateTime? DueFrom { get; set; }
     public DateTime? DueTo { get; set; }
     public string? Search { get; set; }
+    public string? Stage { get; set; }
+    public bool? IsPaused { get; set; }
+    public string? ReminderRecipientEmployeeId { get; set; }
+    public bool? ReminderSendWhatsApp { get; set; }
+    public bool? ReminderSendEmail { get; set; }
+    public DateTime? ReminderFrom { get; set; }
+    public DateTime? ReminderTo { get; set; }
+    public bool? IsEscalated { get; set; }
+    public int? EscalationLevelId { get; set; }
     public int Page { get; set; } = 1;
     public int PageSize { get; set; } = 50;
 }

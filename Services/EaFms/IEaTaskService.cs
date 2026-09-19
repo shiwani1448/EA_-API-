@@ -6,6 +6,9 @@ public interface IEaTaskService
 {
     Task<List<EaTaskResponseDto>> QueryAsync(long? moduleId, string? recordId, CancellationToken ct);
     Task<EaTaskResponseDto> GetAsync(long id, CancellationToken ct);
+    /// <summary>Paged, database-filtered central task workspace across all EA modules.
+    /// Read-only; never creates Followup rows.</summary>
+    Task<Jarvis5.Common.PagedResult<EaTaskResponseDto>> QueryWorkspaceAsync(EaTaskWorkspaceQueryDto query, CancellationToken ct);
     Task<EaTaskResponseDto> CreateAsync(CreateEaTaskDto dto, CancellationToken ct);
     Task<EaTaskResponseDto> CreateWithoutTatAsync(CreateEaTaskDto dto, CancellationToken ct);
     /// <summary>Central execution timeline (Created/Started/Paused/Resumed/Completed/Cancelled)

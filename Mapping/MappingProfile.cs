@@ -36,10 +36,19 @@ public class MappingProfile : Profile
             .ForMember(d => d.BusinessRecordId, opt => opt.MapFrom(s => s.BusinessRecordId));
         CreateMap<Jarvis5.Entities.EaFms.WorkflowHistory, Jarvis5.Dtos.EaFms.WorkflowHistoryResponseDto>();
         CreateMap<Jarvis5.Entities.EaFms.Followup, Jarvis5.Dtos.EaFms.FollowupResponseDto>()
+            .ForMember(d => d.Remark, opt => opt.MapFrom(s => s.Note))
+            .ForMember(d => d.EaTaskId, opt => opt.Ignore())
+            .ForMember(d => d.ModuleName, opt => opt.Ignore())
+            .ForMember(d => d.Task, opt => opt.Ignore())
+            .ForMember(d => d.Stage, opt => opt.Ignore())
+            .ForMember(d => d.IsPaused, opt => opt.Ignore())
             .ForMember(d => d.BusinessModuleCode, opt => opt.Ignore())
             .ForMember(d => d.BusinessModuleName, opt => opt.Ignore())
             .ForMember(d => d.BusinessRecordTitle, opt => opt.Ignore())
             .ForMember(d => d.PriorityLevelName, opt => opt.Ignore())
+            .ForMember(d => d.Recipient, opt => opt.Ignore())
+            .ForMember(d => d.WhatsApp, opt => opt.Ignore())
+            .ForMember(d => d.Escalation, opt => opt.Ignore())
             .ForMember(d => d.IsCompleted, opt => opt.Ignore())
             .ForMember(d => d.IsOverdue, opt => opt.Ignore());
         CreateMap<Jarvis5.Entities.EaFms.Escalation, Jarvis5.Dtos.EaFms.EscalationResponseDto>()

@@ -11,7 +11,14 @@ public class FollowupCyclesController : ControllerBase
     private readonly IFollowupCycleService _service;
     public FollowupCyclesController(IFollowupCycleService service) => _service = service;
 
+    /// <summary>
+    /// History-only: appends a follow-up history row WITHOUT updating the Followup's current snapshot.
+    /// To record "EA performed another follow-up" call POST /api/ea/followups/{id}/record-followup instead,
+    /// which writes this same history row and the snapshot; never call both for one event.
+    /// </summary>
     [HttpPost]
+    [EndpointSummary("Append a history-only follow-up cycle")]
+    [EndpointDescription("Adds a history row without updating the Followup's current snapshot. To record that EA performed another follow-up, call POST /api/ea/followups/{id}/record-followup instead (it writes this same history row plus the snapshot). Never call both for one event.")]
     public async Task<ActionResult<FollowupCycleResponseDto>> Create(long followupId, [FromBody] CreateFollowupCycleRequestDto? dto, CancellationToken ct)
     {
         dto ??= new CreateFollowupCycleRequestDto();

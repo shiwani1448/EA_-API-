@@ -32,6 +32,52 @@ public class EaTaskService(EaFmsDbContext db, IEaTaskRepository repository, ITat
         return tasks.Select(t => ToDto(t, pausesByWorkflow, now)).ToList();
     }
 
+    public async Task<PagedResult<EaTaskResponseDto>> QueryWorkspaceAsync(EaTaskWorkspaceQueryDto query, CancellationToken ct)
+    {
+        // Same visibility rule as every other central-task read (repository: not deleted).
+        var q = repository.Query();
+        if (query.BusinessModuleId.HasValue) q = q.Where(x => x.BusinessModuleId == query.BusinessModuleId.Value);
+        if (!string.IsNullOrWhiteSpace(query.BusinessRecordId))
+        {
+            var recordId = query.BusinessRecordId.Trim();
+            q = q.Where(x => x.BusinessRecordId == recordId);
+        }
+        if (!string.IsNullOrWhiteSpace(query.ExecutionStatus))
+        {
+            var status = EaTaskExecutionStatus.Canonicalize(query.ExecutionStatus)
+                ?? throw new BadRequestException(
+                    $"ExecutionStatus must be one of: {string.Join(", ", EaTaskExecutionStatus.Values)}.");
+            q = q.Where(x => x.ExecutionStatus == status);
+        }
+        if (!string.IsNullOrWhiteSpace(query.Search))
+        {
+            var term = query.Search.Trim().ToLower();
+            q = q.Where(x => x.Task.ToLower().Contains(term)
+                || (x.Description != null && x.Description.ToLower().Contains(term))
+                || x.ModuleName.ToLower().Contains(term)
+                || x.BusinessRecordId.ToLower().Contains(term));
+        }
+
+        var page = query.Page < 1 ? 1 : query.Page;
+        var pageSize = query.PageSize < 1 ? 50 : query.PageSize > 200 ? 200 : query.PageSize;
+
+        var offset = ((long)page - 1) * pageSize;
+        if (offset > int.MaxValue) throw new BadRequestException("Page offset is too large.");
+
+        var totalCount = await q.CountAsync(ct);
+        // Newest central task first; Id breaks ties so paging is stable.
+        var tasks = await q.OrderByDescending(x => x.CreatedDate).ThenByDescending(x => x.Id)
+            .Skip((int)offset).Take(pageSize).ToListAsync(ct);
+        // One pause query for the whole page (no per-task lookups).
+        var pausesByWorkflow = await LoadPausesAsync(tasks, ct);
+        var now = Clock.UtcNowTz;
+        return new PagedResult<EaTaskResponseDto>
+        {
+            Items = tasks.Select(t => ToDto(t, pausesByWorkflow, now)).ToList(),
+            PageNumber = page, PageSize = pageSize, TotalCount = totalCount
+        };
+    }
+
     public async Task<EaTaskResponseDto> GetAsync(long id, CancellationToken ct)
     {
         var task = await repository.Query().FirstOrDefaultAsync(x => x.Id == id, ct)

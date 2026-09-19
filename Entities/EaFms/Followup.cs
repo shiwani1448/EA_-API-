@@ -44,6 +44,17 @@ public class Followup
 
     // Reminder and scheduling
     public DateTime? ReminderAt { get; set; }
+    // Reminder delivery configuration (one per Followup). Configuration only: nothing is sent yet.
+    public bool ReminderSendEmail { get; set; }
+    public bool ReminderSendWhatsApp { get; set; }
+    // Users.Id of the reminder recipient; the Email is resolved from Users.Email, never stored here.
+    public int? ReminderRecipientUserId { get; set; }
+    // Raw mobile snapshot selected by the frontend from the external Employee API; backend does not normalize it.
+    public string? ReminderWhatsAppNumber { get; set; }
+    // Snapshot from the externally-owned Employee API selection, independent from legacy Users.Id.
+    public string? ReminderRecipientEmployeeId { get; set; }
+    public string? ReminderRecipientName { get; set; }
+    public string? ReminderRecipientEmail { get; set; }
     public DateTime? NextFollowupAt { get; set; }
 
     // Waiting/on and completion outcome
@@ -69,5 +80,10 @@ public class Followup
     public string CreatedBy { get; set; } = string.Empty;
     public DateTime CreatedDate { get; set; }
     public string? ModifiedBy { get; set; }
+    // Frontend-supplied actor snapshots (not verified by EA); CreatedBy/ModifiedBy keep the display value.
+    public string? CreatedByEmployeeId { get; set; }
+    public string? CreatedByEmployeeName { get; set; }
+    public string? ModifiedByEmployeeId { get; set; }
+    public string? ModifiedByEmployeeName { get; set; }
     public DateTime? ModifiedDate { get; set; }
 }

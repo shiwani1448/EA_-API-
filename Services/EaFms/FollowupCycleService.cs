@@ -39,6 +39,7 @@ public class FollowupCycleService : IFollowupCycleService
         if (parent.CompletedAt.HasValue) throw new BusinessRuleException("Cannot create a cycle for a completed follow-up.");
         var maximum = await _repo.GetMaximumSequenceAsync(followupId, ct);
         if (maximum == int.MaxValue) throw new BadRequestException("Follow-up cycle sequence limit reached.");
+        var actor = EaActorSnapshot.From(dto.EmployeeId, dto.EmployeeName);
         var now = Clock.UtcNowTz;
         var cycle = new FollowupCycle
         {
@@ -49,7 +50,9 @@ public class FollowupCycleService : IFollowupCycleService
             NextFollowupAt = ToUtc(dto.NextFollowupAt),
             ExpectedResponseAt = ToUtc(dto.ExpectedResponseAt),
             OutcomeCode = dto.OutcomeCode?.Trim(),
-            CreatedBy = _user.UserName ?? _user.UserId.ToString(CultureInfo.InvariantCulture),
+            FollowedUpByEmployeeId = actor.EmployeeId,
+            FollowedUpByEmployeeName = actor.EmployeeName,
+            CreatedBy = actor.DisplayName ?? _user.UserName ?? _user.UserId.ToString(CultureInfo.InvariantCulture),
             CreatedDate = now
         };
         await _repo.AddAsync(cycle, ct);
@@ -82,6 +85,7 @@ public class FollowupCycleService : IFollowupCycleService
     private static FollowupCycleResponseDto ToResponse(FollowupCycle cycle) => new()
     {
         Id = cycle.Id, FollowupId = cycle.FollowupId, SequenceNumber = cycle.SequenceNumber,
+        FollowedUpByEmployeeId = cycle.FollowedUpByEmployeeId, FollowedUpByEmployeeName = cycle.FollowedUpByEmployeeName,
         FollowedUpAt = cycle.FollowedUpAt, Note = cycle.Note, NextFollowupAt = cycle.NextFollowupAt,
         ExpectedResponseAt = cycle.ExpectedResponseAt, OutcomeCode = cycle.OutcomeCode,
         CreatedBy = cycle.CreatedBy, CreatedDate = cycle.CreatedDate

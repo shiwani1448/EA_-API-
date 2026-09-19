@@ -20,6 +20,10 @@ public class FollowupsController : ControllerBase
     [HttpGet]
     public async Task<IActionResult> GetList([FromQuery] FollowupListQueryDto query, CancellationToken ct)
         => Ok(await _followupService.GetPagedAsync(query, ct));
+    [HttpGet("summary")]
+    [ProducesResponseType(typeof(FollowupSummaryResponseDto), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetSummary([FromQuery] FollowupListQueryDto query, CancellationToken ct)
+        => Ok(await _followupService.GetSummaryAsync(query, ct));
 
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] CreateFollowupRequestDto? dto, CancellationToken ct)
@@ -29,7 +33,16 @@ public class FollowupsController : ControllerBase
         return CreatedAtAction(nameof(GetById), new { id = created.Id }, created);
     }
 
+    /// <summary>
+    /// CANONICAL action for "EA performed another follow-up". In one transaction it updates the Followup's
+    /// current snapshot (note, next/expected dates, last follow-up time, modifier) and appends exactly one
+    /// history row (ea_followup_cycles) with who followed up, when, remark, next dates and outcome.
+    /// Send employeeId/employeeName (the operator). Do not also call POST /cycles for the same event.
+    /// </summary>
     [HttpPost("{id:long}/record-followup")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [EndpointSummary("Record a follow-up (canonical action: snapshot + one history row)")]
+    [EndpointDescription("Use this when EA performed another follow-up. Updates the Followup's current snapshot and appends exactly one ea_followup_cycles history row (employeeId/employeeName = operator). Do not also call POST /cycles for the same event.")]
     public async Task<IActionResult> RecordFollowup(long id, [FromBody] RecordFollowupRequestDto? dto, CancellationToken ct)
     {
         dto ??= new RecordFollowupRequestDto();
@@ -59,6 +72,18 @@ public class FollowupsController : ControllerBase
         return Ok(updated);
     }
 
+    /// <summary>Sends an explicit immediate reminder email using the persisted frontend-supplied recipient snapshot.</summary>
+    [HttpPost("{id:long}/send-email")]
+    public async Task<IActionResult> SendEmail(long id, CancellationToken ct)
+    {
+        await _followupService.SendEmailAsync(id, ct);
+        return NoContent();
+    }
+    /// <summary>Returns a manual WhatsApp handoff using the persisted frontend-supplied phone snapshot; it does not deliver or open WhatsApp.</summary>
+    [HttpPost("{id:long}/send-whatsapp")]
+    [ProducesResponseType(typeof(FollowupWhatsAppActionResponseDto), StatusCodes.Status200OK)]
+    public async Task<IActionResult> SendWhatsApp(long id, CancellationToken ct)
+        => Ok(await _followupService.SendWhatsAppAsync(id, ct));
     [HttpPost("{id:long}/complete")]
     public async Task<IActionResult> Complete(long id, [FromBody] CompleteFollowupRequestDto? dto, CancellationToken ct)
     {
@@ -66,31 +91,8 @@ public class FollowupsController : ControllerBase
         return Ok(await _followupService.CompleteAsync(id, dto, ct));
     }
 
-    // Escalations
-    [HttpPost("/api/ea/escalations")]
-    public async Task<IActionResult> CreateEscalation([FromBody] CreateEscalationRequestDto? dto, CancellationToken ct)
-    {
-        dto ??= new CreateEscalationRequestDto();
-        var created = await _escalationService.CreateAsync(dto, ct);
-        return CreatedAtAction("GetById", "Escalations", new { id = created.Id }, created);
-    }
-    // Followup-scoped escalation creation: POST /api/ea/followups/{id}/escalations
-    [HttpPost("{id:long}/escalations")]
-    public async Task<IActionResult> CreateEscalationForFollowup(long id, [FromBody] CreateEscalationRequestDto? dto, CancellationToken ct)
-    {
-        dto ??= new CreateEscalationRequestDto();
-        // Reconcile route id and dto.FollowupId: prefer route id; if dto provides FollowupId it must match
-        if (dto.FollowupId != 0 && dto.FollowupId != id)
-        {
-            return BadRequest(new { error = "FollowupId in body does not match route id." });
-        }
-
-        dto.FollowupId = id;
-
-        var created = await _escalationService.CreateAsync(dto, ct);
-        return CreatedAtAction("GetById", "Escalations", new { id = created.Id }, created);
-    }
-
+    // Escalation creation is owned by EscalationsController: POST /api/ea/escalations (body carries FollowupId).
+    // Removed here: a duplicate POST /api/ea/escalations (Swagger route conflict) and a second, followup-scoped create route.
     [HttpGet("{followupId:long}/escalations")]
     public async Task<IActionResult> GetEscalationsForFollowup(long followupId, CancellationToken ct)
     {

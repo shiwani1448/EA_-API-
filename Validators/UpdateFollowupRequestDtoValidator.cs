@@ -8,6 +8,7 @@ public class UpdateFollowupRequestDtoValidator : AbstractValidator<UpdateFollowu
     public UpdateFollowupRequestDtoValidator()
     {
         RuleFor(x => x.Note).MaximumLength(2000);
+        RuleFor(x => x.Remark).MaximumLength(2000);
         RuleFor(x => x.Subject).MaximumLength(200);
         RuleFor(x => x.Type).MaximumLength(100);
         RuleFor(x => x.AssignedToId).MaximumLength(100);
@@ -15,6 +16,11 @@ public class UpdateFollowupRequestDtoValidator : AbstractValidator<UpdateFollowu
         RuleFor(x => x.PriorityLevelId).GreaterThan(0).When(x => x.PriorityLevelId.HasValue);
         RuleFor(x => x.ReminderAt).LessThanOrEqualTo(x => x.DueAt).When(x => x.ReminderAt.HasValue && x.DueAt != default);
         RuleFor(x => x.NextFollowupAt).GreaterThanOrEqualTo(x => x.DueAt).When(x => x.NextFollowupAt.HasValue && x.DueAt != default);
+        RuleFor(x => x.ReminderRecipientUserId).GreaterThan(0).When(x => x.ReminderRecipientUserId.HasValue);
+        RuleFor(x => x.ReminderRecipientEmployeeId).MaximumLength(100);
+        RuleFor(x => x.ReminderRecipientName).MaximumLength(200);
+        RuleFor(x => x.ReminderWhatsAppNumber).MaximumLength(50);
+        RuleFor(x => x.ReminderRecipientEmail).MaximumLength(300);
         RuleFor(x => x.WaitingOnId).MaximumLength(100);
         RuleFor(x => x.WaitingOnName).MaximumLength(200);
         RuleFor(x => x.WaitingOnExternal).MaximumLength(200);

@@ -342,6 +342,7 @@ builder.Services.AddScoped<Jarvis5.Services.EaFms.IWorkflowService, Jarvis5.Serv
 builder.Services.AddScoped<Jarvis5.Services.EaFms.IWorkflowExecutionService, Jarvis5.Services.EaFms.WorkflowExecutionService>();
 builder.Services.AddScoped<Jarvis5.Repositories.EaFms.IFollowupRepository, Jarvis5.Repositories.EaFms.FollowupRepository>();
 builder.Services.AddScoped<Jarvis5.Services.EaFms.IFollowupService, Jarvis5.Services.EaFms.FollowupService>();
+builder.Services.AddScoped<Jarvis5.Services.EaFms.IEaReminderEmailSender, Jarvis5.Services.EaFms.EaReminderEmailSender>();
 builder.Services.AddScoped<Jarvis5.Repositories.EaFms.IFollowupCycleRepository, Jarvis5.Repositories.EaFms.FollowupCycleRepository>();
 builder.Services.AddScoped<Jarvis5.Services.EaFms.IFollowupCycleService, Jarvis5.Services.EaFms.FollowupCycleService>();
 builder.Services.AddScoped<Jarvis5.Services.EaFms.IFollowupSourceResolver, Jarvis5.Services.EaFms.FollowupSourceResolver>();

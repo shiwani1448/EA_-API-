@@ -27,4 +27,15 @@ public sealed class BusinessModulesController(IBusinessModuleService service) : 
     [ProducesResponseType(typeof(BusinessModuleDto), StatusCodes.Status200OK)]
     public async Task<IActionResult> Update(long id, [FromBody] SaveBusinessModuleDto? dto, CancellationToken ct) =>
         Ok(await service.UpdateAsync(id, dto ?? new SaveBusinessModuleDto(), ct));
+
+    /// <summary>
+    /// "Delete" is a safe deactivation (IsActive=false): the module and everything that references it are kept,
+    /// and PUT with isActive=true reactivates it. The acting employee comes from the optional JSON body
+    /// ({ "employeeId", "employeeName" }) or the employeeId / employeeName query parameters.
+    /// </summary>
+    [HttpDelete("{id:long}")]
+    [ProducesResponseType(typeof(BusinessModuleDto), StatusCodes.Status200OK)]
+    public async Task<IActionResult> Delete(long id, [FromBody] EaActorRequestDto? actor,
+        [FromQuery] string? employeeId, [FromQuery] string? employeeName, CancellationToken ct) =>
+        Ok(await service.DeactivateAsync(id, actor ?? new EaActorRequestDto { EmployeeId = employeeId, EmployeeName = employeeName }, ct));
 }

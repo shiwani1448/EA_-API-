@@ -17,4 +17,10 @@ public interface IEaActorResolver
     /// <param name="operationDescription">Short phrase completing "... is required to
     /// {operationDescription}.", e.g. "create a Travel request".</param>
     Task<string> ResolveDisplayNameAsync(int? userId, string operationDescription, CancellationToken ct = default);
+
+    /// <summary>Read-only lookup of a User.Id in the existing Users source; null when it does not exist.</summary>
+    Task<EaUserContact?> FindUserContactAsync(int userId, CancellationToken ct = default);
 }
+
+/// <summary>Display name and email of an existing User (same FullName formula as GET /api/Users).</summary>
+public sealed record EaUserContact(int Id, string FullName, string? Email);

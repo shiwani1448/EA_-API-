@@ -14,6 +14,26 @@ public class CreateEaTaskDto
     public long? WorkflowInstanceId { get; set; }
 }
 
+/// <summary>
+/// Query for the Follow-up &amp; Escalation central task workspace
+/// (GET /api/ea/tasks/workspace). Every filter is optional and applied database-side.
+/// </summary>
+public class EaTaskWorkspaceQueryDto
+{
+    /// <summary>Restrict to one business module (database identity, never hardcoded).</summary>
+    public long? BusinessModuleId { get; set; }
+    /// <summary>Exact business record within a module (same semantics as GET /api/ea/tasks).</summary>
+    public string? BusinessRecordId { get; set; }
+    /// <summary>Central execution status: NotStarted | InProgress | Completed | Cancelled (case-insensitive).</summary>
+    public string? ExecutionStatus { get; set; }
+    /// <summary>Case-insensitive contains over Task, Description, ModuleName and BusinessRecordId.</summary>
+    public string? Search { get; set; }
+    /// <summary>1-based page number (default 1).</summary>
+    public int Page { get; set; } = 1;
+    /// <summary>Items per page (default 50, maximum 200).</summary>
+    public int PageSize { get; set; } = 50;
+}
+
 public class EaTaskResponseDto
 {
     public long EaTaskId { get; set; }

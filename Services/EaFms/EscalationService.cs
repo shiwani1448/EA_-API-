@@ -125,6 +125,77 @@ public class EscalationService : IEscalationService
         return dtos;
     }
 
+    public async Task<PagedResult<EscalationResponseDto>> GetPagedAsync(EscalationListQueryDto query, CancellationToken ct = default)
+    {
+        if (query.Page < 1 || query.PageSize < 1) throw new BadRequestException("Page and PageSize must be positive.");
+        query.PageSize = Math.Min(query.PageSize, 100);
+        if (((long)query.Page - 1) * query.PageSize > int.MaxValue) throw new BadRequestException("Page offset is too large.");
+
+        var escalations = _context.Escalations.AsNoTracking().Where(e => !e.IsDeleted);
+        var total = await escalations.CountAsync(ct);
+        var page = await escalations.OrderByDescending(e => e.InitiatedAt).ThenByDescending(e => e.Id)
+            .Skip((query.Page - 1) * query.PageSize).Take(query.PageSize).ToListAsync(ct);
+        return new PagedResult<EscalationResponseDto>
+        {
+            Items = await EnrichGeneralListAsync(page, ct),
+            PageNumber = query.Page,
+            PageSize = query.PageSize,
+            TotalCount = total
+        };
+    }
+
+    private sealed record EscalationTaskContext(long Id, long BusinessModuleId, string BusinessRecordId, string Task);
+
+    private async Task<List<EscalationResponseDto>> EnrichGeneralListAsync(IReadOnlyList<Escalation> escalations, CancellationToken ct)
+    {
+        var dtos = escalations.Select(e => _mapper.Map<EscalationResponseDto>(e)).ToList();
+        if (escalations.Count == 0) return dtos;
+
+        var levelIds = escalations.Select(e => e.EscalationLevelId).Distinct().ToList();
+        var levels = await _context.EscalationLevels.AsNoTracking().Where(l => !l.IsDeleted && levelIds.Contains(l.Id))
+            .ToDictionaryAsync(l => l.Id, ct);
+        var followupIds = escalations.Where(e => e.FollowupId.HasValue).Select(e => e.FollowupId!.Value).Distinct().ToList();
+        var followups = await _context.Followups.AsNoTracking().Where(f => !f.IsDeleted && followupIds.Contains(f.Id))
+            .ToDictionaryAsync(f => f.Id, ct);
+        var moduleIds = followups.Values.Where(f => f.BusinessModuleId.HasValue).Select(f => f.BusinessModuleId!.Value).Distinct().ToList();
+        var modules = moduleIds.Count == 0 ? new Dictionary<long, string>()
+            : await _context.BusinessModules.AsNoTracking().Where(m => !m.IsDeleted && moduleIds.Contains(m.Id))
+                .ToDictionaryAsync(m => m.Id, m => m.Name, ct);
+        var recordIds = followups.Values.Where(f => f.BusinessRecordId != null).Select(f => f.BusinessRecordId!).Distinct().ToList();
+        var taskRows = moduleIds.Count == 0 || recordIds.Count == 0 ? new List<EscalationTaskContext>()
+            : await _context.Tasks.AsNoTracking().Where(t => !t.IsDeleted && moduleIds.Contains(t.BusinessModuleId) && recordIds.Contains(t.BusinessRecordId))
+                .Select(t => new EscalationTaskContext(t.Id, t.BusinessModuleId, t.BusinessRecordId, t.Task)).ToListAsync(ct);
+        var tasks = taskRows.GroupBy(t => (t.BusinessModuleId, t.BusinessRecordId))
+            .ToDictionary(g => g.Key, g => g.OrderByDescending(t => t.Id).First());
+
+        for (var i = 0; i < escalations.Count; i++)
+        {
+            var escalation = escalations[i];
+            var dto = dtos[i];
+            if (levels.TryGetValue(escalation.EscalationLevelId, out var level))
+            {
+                dto.EscalationLevelName = level.Name;
+                dto.EscalationLevelNumber = level.Level;
+            }
+            dto.EscalationState = escalation.ResolvedAt != null ? "Resolved" : escalation.AcknowledgedAt != null ? "Acknowledged" : "Open";
+            dto.IsAcknowledged = escalation.AcknowledgedAt.HasValue;
+            dto.IsResolved = escalation.ResolvedAt.HasValue;
+            if (!escalation.FollowupId.HasValue || !followups.TryGetValue(escalation.FollowupId.Value, out var followup)) continue;
+
+            dto.ReminderAt = followup.ReminderAt;
+            dto.Remark = followup.Note;
+            dto.ReminderRecipientEmployeeId = followup.ReminderRecipientEmployeeId;
+            dto.ReminderRecipientName = followup.ReminderRecipientName;
+            if (!followup.BusinessModuleId.HasValue) continue;
+            dto.ModuleName = modules.GetValueOrDefault(followup.BusinessModuleId.Value);
+            if (followup.BusinessRecordId != null && tasks.TryGetValue((followup.BusinessModuleId.Value, followup.BusinessRecordId), out var task))
+            {
+                dto.EaTaskId = task.Id;
+                dto.Task = task.Task;
+            }
+        }
+        return dtos;
+    }
     public async Task ResolveAsync(long id, ResolveEscalationRequestDto dto, CancellationToken ct = default)
     {
         var e = await _repo.GetByIdAsync(id, ct) ?? throw new Jarvis5.Common.NotFoundException($"Escalation {id} not found.");
@@ -177,9 +248,10 @@ public class EscalationService : IEscalationService
         await _context.SaveChangesAsync(ct);
     }
 
-    public Task<List<EscalationLevelResponseDto>> GetActiveLevelsAsync(CancellationToken ct = default)
+    public async Task<List<EscalationLevelResponseDto>> GetActiveLevelsAsync(CancellationToken ct = default)
     {
-        return _repo.GetActiveLevelsAsync(ct).ContinueWith(task => task.Result
+        var levels = await _repo.GetActiveLevelsAsync(ct);
+        return levels
             .Select(l => new EscalationLevelResponseDto
             {
                 Id = l.Id,
@@ -187,6 +259,6 @@ public class EscalationService : IEscalationService
                 Name = l.Name,
                 Description = l.Description,
                 Level = l.Level
-            }).ToList(), ct);
+            }).ToList();
     }
 }

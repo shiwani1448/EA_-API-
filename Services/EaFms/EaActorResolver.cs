@@ -12,6 +12,15 @@ public class EaActorResolver : IEaActorResolver
         _hrmsDb = hrmsDb;
     }
 
+    public async Task<EaUserContact?> FindUserContactAsync(int userId, CancellationToken ct = default)
+    {
+        var user = await _hrmsDb.Users.AsNoTracking()
+            .Where(u => u.Id == userId)
+            .Select(u => new { u.Id, u.FirstName, u.LastName, u.Email })
+            .FirstOrDefaultAsync(ct);
+        return user is null ? null : new EaUserContact(user.Id, (user.FirstName + " " + user.LastName).Trim(), user.Email);
+    }
+
     public async Task<string> ResolveDisplayNameAsync(int? userId, string operationDescription, CancellationToken ct = default)
     {
         if (!userId.HasValue || userId.Value <= 0)

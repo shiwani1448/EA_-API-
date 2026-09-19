@@ -19,6 +19,19 @@ public class EaTasksController(IEaTaskService service) : ControllerBase
         return Ok(await service.QueryAsync(businessModuleId, businessRecordId, ct));
     }
 
+    /// <summary>
+    /// Follow-up &amp; Escalation central task workspace: EaTasks from every EA module, paged
+    /// and filtered database-side, newest first. Read-only — never creates Followup rows.
+    /// </summary>
+    [HttpGet("workspace")]
+    [ProducesResponseType(typeof(Jarvis5.Common.PagedResult<EaTaskResponseDto>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetWorkspace([FromQuery] EaTaskWorkspaceQueryDto query, CancellationToken ct)
+    {
+        if (query.BusinessModuleId.HasValue && query.BusinessModuleId <= 0)
+            return Problem(statusCode: 400, detail: "BusinessModuleId must be positive.");
+        return Ok(await service.QueryWorkspaceAsync(query, ct));
+    }
+
     [HttpGet("{eaTaskId:long}")]
     public async Task<IActionResult> GetById(long eaTaskId, CancellationToken ct) =>
         Ok(await service.GetAsync(eaTaskId, ct));

@@ -35,4 +35,15 @@ public class EscalationResponseDto
     public DateTime? ModifiedDate { get; set; }
     public string? CreatedBy { get; set; }
     public DateTime CreatedDate { get; set; }
+
+    // Derived Followup/task context for the general escalation register; never persisted on Escalation.
+    public string? ModuleName { get; set; }
+    public long? EaTaskId { get; set; }
+    public string? Task { get; set; }
+    public DateTime? ReminderAt { get; set; }
+    public string? Remark { get; set; }
+    public string? ReminderRecipientEmployeeId { get; set; }
+    public string? ReminderRecipientName { get; set; }
+    public bool IsAcknowledged { get; set; }
+    public bool IsResolved { get; set; }
 }

@@ -20,4 +20,10 @@ public static class EaTaskExecutionStatus
     };
 
     public static bool IsValid(string value) => All.Contains(value);
+
+    public static IReadOnlyCollection<string> Values => All;
+
+    /// <summary>Returns the canonical spelling of a status (case-insensitive), or null if unknown.</summary>
+    public static string? Canonicalize(string value) =>
+        All.FirstOrDefault(s => string.Equals(s, value?.Trim(), StringComparison.OrdinalIgnoreCase));
 }
