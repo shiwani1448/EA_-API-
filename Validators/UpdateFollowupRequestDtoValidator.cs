@@ -11,8 +11,8 @@ public class UpdateFollowupRequestDtoValidator : AbstractValidator<UpdateFollowu
         RuleFor(x => x.Remark).MaximumLength(2000);
         RuleFor(x => x.Subject).MaximumLength(200);
         RuleFor(x => x.Type).MaximumLength(100);
-        RuleFor(x => x.AssignedToId).MaximumLength(100);
-        RuleFor(x => x.AssignedToName).MaximumLength(200);
+        RuleFor(x => x.DoerId).MaximumLength(100);
+        RuleFor(x => x.DoerName).MaximumLength(200);
         RuleFor(x => x.PriorityLevelId).GreaterThan(0).When(x => x.PriorityLevelId.HasValue);
         RuleFor(x => x.ReminderAt).LessThanOrEqualTo(x => x.DueAt).When(x => x.ReminderAt.HasValue && x.DueAt != default);
         RuleFor(x => x.NextFollowupAt).GreaterThanOrEqualTo(x => x.DueAt).When(x => x.NextFollowupAt.HasValue && x.DueAt != default);

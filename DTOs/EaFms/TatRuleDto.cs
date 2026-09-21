@@ -9,7 +9,7 @@ public class SaveTatRuleDto
     public string? ModuleName { get; set; }
     [System.ComponentModel.DataAnnotations.Required]
     public string? Type { get; set; }
-    [System.ComponentModel.DataAnnotations.Required]
+    /// <summary>Required for every module except Delegation, whose only classification is Type (Subtype must be omitted there).</summary>
     public string? Subtype { get; set; }
     public int TatMinutes { get; set; }
     // Nullable so omission cannot silently become false.

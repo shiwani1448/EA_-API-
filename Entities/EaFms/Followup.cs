@@ -36,8 +36,8 @@ public class Followup
     public string? Type { get; set; }
 
     // Assignment
-    public string? AssignedToId { get; set; }
-    public string? AssignedToName { get; set; }
+    public string? DoerId { get; set; }
+    public string? DoerName { get; set; }
 
     // Optional priority specific to followup
     public int? PriorityLevelId { get; set; }

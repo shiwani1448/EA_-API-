@@ -21,8 +21,8 @@ public class Delegation
 
     // Stable/opaque doer identifier supplied by the caller until EmployeeLookup
     // integration exists. NameSnapshot is display-only, never the canonical identity.
-    public string AssignedToId { get; set; } = string.Empty;
-    public string? AssignedToNameSnapshot { get; set; }
+    public string DoerId { get; set; } = string.Empty;
+    public string? DoerNameSnapshot { get; set; }
 
     // Always resolved server-side from ICurrentUserService; never frontend-supplied.
     public string AssignedById { get; set; } = string.Empty;
@@ -32,7 +32,15 @@ public class Delegation
     // stored as the canonical name string rather than a numeric FK.
     public string? Priority { get; set; }
 
+    // Public API name: endDate (planned/business end date). The DueDate column keeps its historical name.
     public DateTime? DueDate { get; set; }
+
+    // Frontend-supplied free-text classification (no enum/catalog). Nullable; trimmed, blank stored as null.
+    public string? DelegationType { get; set; }
+
+    // PLANNED/business start date (public: startDate). Not StartedAt, which is the actual execution
+    // timestamp set by Start, and never gates Start.
+    public DateTime? StartDate { get; set; }
 
     // Persisted execution lifecycle only: Pending | InProgress | Completed.
     // DueToday/Overdue are time-derived read views, never persisted here.

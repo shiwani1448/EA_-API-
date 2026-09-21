@@ -13,11 +13,11 @@ public class MeetingAction
     public string? Description { get; set; }
     // Opaque stable doer identity, supplied by the caller when available. Nullable:
     // EmployeeLookup does not exist yet, so historical and not-yet-updated rows only
-    // ever have OwnerName. Never derived/backfilled from OwnerName — display text is
-    // not an identity. Future Meeting -> Delegation mapping: AssignedToId -> Delegation.
-    // AssignedToId, OwnerName -> Delegation.AssignedToNameSnapshot.
-    public string? AssignedToId { get; set; }
-    public string? OwnerName { get; set; }
+    // ever have DoerName. Never derived/backfilled from DoerName — display text is
+    // not an identity. Future Meeting -> Delegation mapping: DoerId -> Delegation.
+    // DoerId, DoerName -> Delegation.DoerNameSnapshot.
+    public string? DoerId { get; set; }
+    public string? DoerName { get; set; }
     // Frontend-owned business string, stored as submitted — not restricted to
     // PriorityLevel's catalog (PriorityLevel is optional discovery data only).
     public string? Priority { get; set; }

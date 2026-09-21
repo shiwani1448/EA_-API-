@@ -105,7 +105,7 @@ public partial class TravelRequestService
     {
         TravelRequestId = parent.Id, parent.ReferenceNo, parent.EaTaskId,
         parent.BusinessState, parent.ApprovalState, parent.CurrentCycleNo,
-        parent.SubmittedAt, parent.ApprovedAt, parent.RejectedAt
+        parent.SubmittedAt, parent.ApprovedAt, parent.RejectedAt, parent.ApprovedBy, parent.RejectedBy
     };
 
     private void RecordTravelAction(string action, TravelRequest parent,
@@ -141,16 +141,18 @@ public partial class TravelRequestService
     }
 
     public Task<TravelActionResponseDto> ApproveAsync(long id, ApproveTravelRequestDto dto, CancellationToken ct = default) =>
-        DecideTravelAsync(id, dto.ExpectedCycleNo, dto.DecisionComment, "Approved", "TRAVEL_APPROVE", ct);
+        DecideTravelAsync(id, dto.ExpectedCycleNo, dto.DecisionComment, "Approved", "TRAVEL_APPROVE", ct,
+            EaActorSnapshot.From(dto.EmployeeId, dto.EmployeeName));
 
     public Task<TravelActionResponseDto> RejectAsync(long id, RejectTravelRequestDto dto, CancellationToken ct = default) =>
-        DecideTravelAsync(id, dto.ExpectedCycleNo, dto.DecisionComment, "Rejected", "TRAVEL_REJECT", ct);
+        DecideTravelAsync(id, dto.ExpectedCycleNo, dto.DecisionComment, "Rejected", "TRAVEL_REJECT", ct,
+            EaActorSnapshot.From(dto.EmployeeId, dto.EmployeeName));
 
     public Task<TravelActionResponseDto> RequestChangesAsync(long id, RequestTravelChangesDto dto, CancellationToken ct = default) =>
         DecideTravelAsync(id, dto.ExpectedCycleNo, dto.ChangeReason, "ChangesRequested", "TRAVEL_REQUEST_CHANGES", ct);
 
     private async Task<TravelActionResponseDto> DecideTravelAsync(long id, int expectedCycleNo,
-        string? text, string decision, string action, CancellationToken ct)
+        string? text, string decision, string action, CancellationToken ct, EaActorSnapshot? actor = null)
     {
         ValidateTravelAction(expectedCycleNo, text);
         await using var transaction = await _db.Database.BeginTransactionAsync(ct);
@@ -170,8 +172,16 @@ public partial class TravelRequestService
         {
             parent.BusinessState = "Upcoming";
             parent.ApprovedAt = now;
+            // Decision actor: the frontend-supplied operator. A decision cannot be both, so RejectedBy is cleared.
+            parent.RejectedBy = null;
+            if (actor?.DisplayName is { } approver) parent.ApprovedBy = approver;
         }
-        else if (decision == "Rejected") parent.RejectedAt = now;
+        else if (decision == "Rejected")
+        {
+            parent.RejectedAt = now;
+            parent.ApprovedBy = null;
+            if (actor?.DisplayName is { } rejecter) parent.RejectedBy = rejecter;
+        }
         RecordTravelAction(action, parent, cycle, before, now);
         await _db.SaveChangesAsync(ct);
         await transaction.CommitAsync(ct);
@@ -281,6 +291,7 @@ public partial class TravelRequestService
         BusinessState = parent.BusinessState, ApprovalState = parent.ApprovalState,
         CurrentCycleNo = parent.CurrentCycleNo, SubmittedAt = parent.SubmittedAt,
         ApprovedAt = parent.ApprovedAt, RejectedAt = parent.RejectedAt,
+        ApprovedBy = parent.ApprovedBy, RejectedBy = parent.RejectedBy,
         StartedAt = parent.StartedAt, CompletedAt = parent.CompletedAt,
         CurrentCycle = ToCurrentTravelCycle(cycle)
     };

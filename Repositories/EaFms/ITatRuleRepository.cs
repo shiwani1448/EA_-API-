@@ -7,6 +7,8 @@ public interface ITatRuleRepository
     IQueryable<TatRule> Query();
     Task<TatRule?> GetForUpdateAsync(long id, CancellationToken ct);
     Task<List<TatRule>> GetApplicableAsync(long moduleId, string type, string subtype, CancellationToken ct);
+    /// <summary>Exact module + Type match among active rules that have NO subtype (Delegation). No fallback to broader rules.</summary>
+    Task<List<TatRule>> GetApplicableByTypeOnlyAsync(long moduleId, string type, CancellationToken ct);
     Task<List<TatRule>> GetApplicableForApprovalAsync(long moduleId, string? type, string? subtype, CancellationToken ct);
     Task AddAsync(TatRule rule, CancellationToken ct);
 }

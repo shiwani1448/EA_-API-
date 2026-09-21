@@ -69,8 +69,8 @@ public class MappingProfile : Profile
             .ForMember(d => d.ModuleName, opt => opt.Ignore())
             .ForMember(d => d.TatMinutes, opt => opt.Ignore())
             .ForMember(d => d.Priority, opt => opt.Ignore())
-            .ForMember(d => d.AssignedToId, opt => opt.Ignore())
-            .ForMember(d => d.AssignedToName, opt => opt.Ignore())
+            .ForMember(d => d.DoerId, opt => opt.Ignore())
+            .ForMember(d => d.DoerName, opt => opt.Ignore())
             .ForMember(d => d.CreatedDate, opt => opt.MapFrom(s => s.CreatedDate))
             .ForMember(d => d.ModifiedDate, opt => opt.MapFrom(s => s.ModifiedDate));
 

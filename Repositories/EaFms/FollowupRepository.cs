@@ -71,7 +71,7 @@ public class FollowupRepository : IFollowupRepository
         var query = _context.Followups.AsNoTracking().Where(f => !f.IsDeleted);
         if (filter.BusinessModuleId.HasValue) query = query.Where(f => f.BusinessModuleId == filter.BusinessModuleId);
         if (filter.BusinessRecordId != null) query = query.Where(f => f.BusinessRecordId == filter.BusinessRecordId);
-        if (filter.AssignedToId != null) query = query.Where(f => f.AssignedToId == filter.AssignedToId);
+        if (filter.DoerId != null) query = query.Where(f => f.DoerId == filter.DoerId);
         if (filter.WaitingOnId != null) query = query.Where(f => f.WaitingOnId == filter.WaitingOnId);
         if (filter.ResponseOwnerId != null) query = query.Where(f => f.ResponseOwnerId == filter.ResponseOwnerId);
         if (filter.PriorityLevelId.HasValue) query = query.Where(f => f.PriorityLevelId == filter.PriorityLevelId);
@@ -93,7 +93,7 @@ public class FollowupRepository : IFollowupRepository
             var term = filter.Search.Trim().ToLowerInvariant();
             query = query.Where(f => (f.Subject != null && f.Subject.ToLower().Contains(term))
                 || (f.Note != null && f.Note.ToLower().Contains(term))
-                || (f.AssignedToName != null && f.AssignedToName.ToLower().Contains(term))
+                || (f.DoerName != null && f.DoerName.ToLower().Contains(term))
                 || (f.WaitingOnName != null && f.WaitingOnName.ToLower().Contains(term))
                 || (f.WaitingOnExternal != null && f.WaitingOnExternal.ToLower().Contains(term))
                 || (f.ResponseOwnerName != null && f.ResponseOwnerName.ToLower().Contains(term)));

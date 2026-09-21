@@ -35,6 +35,8 @@ public class ApprovalsController : ControllerBase
             RequiredApprovalDate = dto.RequiredApprovalDate,
             ApproverId = dto.ApproverId,
             ApproverName = dto.ApproverName,
+            ApprovedBy = NullIfBlank(dto.ApprovedBy),
+            RejectedBy = NullIfBlank(dto.RejectedBy),
             CreatedBy = dto.CreatedBy
         };
 
@@ -45,7 +47,9 @@ public class ApprovalsController : ControllerBase
             approvalRequestId = created.Id,
             eaTaskId = created.EaTaskId,
             referenceNo = created.ReferenceNo,
-            status = created.WorkflowStatus
+            status = created.WorkflowStatus,
+            approvedBy = created.ApprovedBy,
+            rejectedBy = created.RejectedBy
         });
     }
 
@@ -85,6 +89,8 @@ public class ApprovalsController : ControllerBase
             existing.RequiredApprovalDate = dto.RequiredApprovalDate;
             existing.ApproverId = dto.ApproverId;
             existing.ApproverName = dto.ApproverName;
+            existing.ApprovedBy = NullIfBlank(dto.ApprovedBy);
+            existing.RejectedBy = NullIfBlank(dto.RejectedBy);
         }, cancellationToken);
 
         return Ok(new
@@ -95,4 +101,6 @@ public class ApprovalsController : ControllerBase
             status = updated.WorkflowStatus
         });
     }
+
+    private static string? NullIfBlank(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 }

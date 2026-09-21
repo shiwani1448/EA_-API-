@@ -50,8 +50,8 @@ public class DelegationFoundationTests
             EaTaskId = task.Id,
             Title = "Prepare board deck",
             Description = "Compile Q3 numbers",
-            AssignedToId = "emp-42",
-            AssignedToNameSnapshot = "Doer Name",
+            DoerId = "emp-42",
+            DoerNameSnapshot = "Doer Name",
             AssignedById = "mgr-7",
             AssignedByNameSnapshot = "Manager Name",
             Priority = "High",
@@ -71,7 +71,7 @@ public class DelegationFoundationTests
         Assert.Equal("DLG-2026-000001", reloaded.ReferenceNo);
         Assert.Equal(task.Id, reloaded.EaTaskId);
         Assert.Equal("Pending", reloaded.Status); // CLR default, no service has run yet
-        Assert.Equal("emp-42", reloaded.AssignedToId);
+        Assert.Equal("emp-42", reloaded.DoerId);
         Assert.Equal("mgr-7", reloaded.AssignedById);
         Assert.Equal(sourceModule.Id, reloaded.SourceBusinessModuleId);
         Assert.Equal("51", reloaded.SourceEntityId);
@@ -95,7 +95,7 @@ public class DelegationFoundationTests
             ReferenceNo = "DLG-2026-000002",
             EaTaskId = task.Id,
             Title = "Follow up on travel booking",
-            AssignedToId = "emp-1",
+            DoerId = "emp-1",
             AssignedById = "mgr-1",
             SourceBusinessModuleId = sourceModule.Id,
             SourceEntityId = "999",
@@ -126,7 +126,7 @@ public class DelegationFoundationTests
             ReferenceNo = "DLG-2026-000003",
             EaTaskId = task.Id,
             Title = "Chase approval decision",
-            AssignedToId = "emp-2",
+            DoerId = "emp-2",
             AssignedById = "mgr-2",
             SourceBusinessModuleId = sourceModule.Id,
             SourceEntityId = "APR-2026-000010",

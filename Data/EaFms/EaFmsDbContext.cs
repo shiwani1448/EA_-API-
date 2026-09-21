@@ -261,6 +261,8 @@ public class EaFmsDbContext : DbContext
             entity.Property(e => e.ApprovalRequired).HasDefaultValue(false);
             entity.Property(e => e.ApproverId).HasMaxLength(100);
             entity.Property(e => e.ApproverNameSnapshot).HasMaxLength(200);
+            entity.Property(e => e.ApprovedBy).HasMaxLength(200);
+            entity.Property(e => e.RejectedBy).HasMaxLength(200);
             entity.Property(e => e.BusinessState).HasMaxLength(30).IsRequired().HasDefaultValue("Draft");
             entity.Property(e => e.ApprovalState).HasMaxLength(30).IsRequired().HasDefaultValue("NotRequired");
             entity.Property(e => e.CreatedBy).HasMaxLength(100).IsRequired();
@@ -327,11 +329,12 @@ public class EaFmsDbContext : DbContext
             entity.Property(e => e.EaTaskId).HasColumnType("bigint");
             entity.Property(e => e.Title).HasMaxLength(500).IsRequired();
             entity.Property(e => e.Description).HasColumnType("text");
-            entity.Property(e => e.AssignedToId).HasMaxLength(100).IsRequired();
-            entity.Property(e => e.AssignedToNameSnapshot).HasMaxLength(200);
+            entity.Property(e => e.DoerId).HasMaxLength(100).IsRequired();
+            entity.Property(e => e.DoerNameSnapshot).HasMaxLength(200);
             entity.Property(e => e.AssignedById).HasMaxLength(100).IsRequired();
             entity.Property(e => e.AssignedByNameSnapshot).HasMaxLength(200);
             entity.Property(e => e.Priority).HasMaxLength(100);
+            entity.Property(e => e.DelegationType).HasMaxLength(200);
             entity.Property(e => e.Status).HasMaxLength(30).IsRequired().HasDefaultValue("Pending");
             entity.Property(e => e.SourceEntityId).HasMaxLength(200);
             entity.Property(e => e.SourceReference).HasMaxLength(200);
@@ -346,7 +349,7 @@ public class EaFmsDbContext : DbContext
 
             entity.HasIndex(e => e.ReferenceNo).IsUnique();
             entity.HasIndex(e => e.EaTaskId).IsUnique();
-            entity.HasIndex(e => e.AssignedToId);
+            entity.HasIndex(e => e.DoerId);
             entity.HasIndex(e => e.DueDate);
             entity.HasIndex(e => e.Status);
             entity.HasIndex(e => e.SourceBusinessModuleId);
@@ -372,6 +375,8 @@ public class EaFmsDbContext : DbContext
             entity.Property(e => e.Currency).HasMaxLength(10);
             entity.Property(e => e.ApproverId).HasMaxLength(100);
             entity.Property(e => e.ApproverName).HasMaxLength(200);
+            entity.Property(e => e.ApprovedBy).HasMaxLength(200);
+            entity.Property(e => e.RejectedBy).HasMaxLength(200);
             entity.Property(e => e.WorkflowStatus).HasMaxLength(100);
 
             entity.Property(e => e.Amount).HasColumnType("numeric(18,2)");
@@ -707,11 +712,11 @@ public class EaFmsDbContext : DbContext
             entity.HasIndex(e => e.StatusId);
             entity.HasIndex(e => e.IsActive);
             entity.HasIndex(e => e.StartedAt);
-            entity.Property(e => e.AssignedToId).HasMaxLength(100);
-            entity.Property(e => e.AssignedToName).HasMaxLength(200);
+            entity.Property(e => e.DoerId).HasMaxLength(100);
+            entity.Property(e => e.DoerName).HasMaxLength(200);
             entity.Property(e => e.ArchivedAt);
             entity.Property(e => e.TatStartedAt);
-            entity.HasIndex(e => e.AssignedToId);
+            entity.HasIndex(e => e.DoerId);
             entity.HasIndex(e => e.TatStartedAt);
         });
 
@@ -788,8 +793,8 @@ public class EaFmsDbContext : DbContext
             entity.ToTable("ea_work_assignments", "public");
             entity.HasKey(e => e.Id);
 
-            entity.Property(e => e.AssignedToId).IsRequired().HasMaxLength(100);
-            entity.Property(e => e.AssignedToName).HasMaxLength(200);
+            entity.Property(e => e.DoerId).IsRequired().HasMaxLength(100);
+            entity.Property(e => e.DoerName).HasMaxLength(200);
             entity.Property(e => e.AssignedById).HasMaxLength(100);
             entity.Property(e => e.AssignedByName).HasMaxLength(200);
             entity.Property(e => e.UnassignedById).HasMaxLength(100);
@@ -816,7 +821,7 @@ public class EaFmsDbContext : DbContext
             entity.HasIndex(e => e.WorkflowInstanceId);
             entity.HasIndex(e => e.IntakeRequestId);
             entity.HasIndex(e => e.FollowupId);
-            entity.HasIndex(e => e.AssignedToId);
+            entity.HasIndex(e => e.DoerId);
             entity.HasIndex(e => e.AssignedAt);
         });
 
@@ -936,10 +941,10 @@ public class EaFmsDbContext : DbContext
             entity.Property(e => e.MeetingId);
             entity.Property(e => e.Title).HasMaxLength(500);
             entity.Property(e => e.Description).HasMaxLength(4000);
-            // Opaque stable identity, same sizing convention as Delegation.AssignedToId/
+            // Opaque stable identity, same sizing convention as Delegation.DoerId/
             // AssignedById. Nullable — see the entity's own doc comment for why.
-            entity.Property(e => e.AssignedToId).HasMaxLength(100);
-            entity.Property(e => e.OwnerName).HasMaxLength(200);
+            entity.Property(e => e.DoerId).HasMaxLength(100);
+            entity.Property(e => e.DoerName).HasMaxLength(200);
             entity.Property(e => e.Priority).HasMaxLength(100);
             entity.Property(e => e.DueDate);
             entity.Property(e => e.Status).HasMaxLength(200);
@@ -1075,10 +1080,10 @@ public class EaFmsDbContext : DbContext
 
             entity.Property(e => e.IsConfidential);
 
-            entity.Property(e => e.AssignedToId)
+            entity.Property(e => e.DoerId)
                 .HasMaxLength(100);
 
-            entity.Property(e => e.AssignedToName)
+            entity.Property(e => e.DoerName)
                 .HasMaxLength(200);
 
             entity.Property(e => e.CreatedBy)
@@ -1126,10 +1131,10 @@ public class EaFmsDbContext : DbContext
 
             entity.Property(e => e.CompletedAt);
 
-            entity.Property(e => e.AssignedToId)
+            entity.Property(e => e.DoerId)
                 .HasMaxLength(100);
 
-            entity.Property(e => e.AssignedToName)
+            entity.Property(e => e.DoerName)
                 .HasMaxLength(200);
 
             entity.Property(e => e.BusinessRecordId)
@@ -1141,7 +1146,7 @@ public class EaFmsDbContext : DbContext
 
             // Indexes for efficient queries
             entity.HasIndex(e => e.StatusId);
-            entity.HasIndex(e => e.AssignedToId);
+            entity.HasIndex(e => e.DoerId);
             entity.HasIndex(e => e.StartedAt);
         });
 
@@ -1228,8 +1233,8 @@ public class EaFmsDbContext : DbContext
             entity.Property(e => e.Subject).HasMaxLength(500);
             entity.Property(e => e.Type).HasMaxLength(100);
 
-            entity.Property(e => e.AssignedToId).HasMaxLength(100);
-            entity.Property(e => e.AssignedToName).HasMaxLength(200);
+            entity.Property(e => e.DoerId).HasMaxLength(100);
+            entity.Property(e => e.DoerName).HasMaxLength(200);
 
             entity.Property(e => e.PriorityLevelId);
             entity.Property(e => e.ReminderAt);

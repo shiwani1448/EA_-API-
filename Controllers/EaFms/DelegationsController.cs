@@ -14,9 +14,11 @@ namespace Jarvis5.Controllers.EaFms;
 ///   GET    /api/ea/delegations/{delegationId}
 ///   PUT    /api/ea/delegations/{delegationId}
 ///   POST   /api/ea/delegations/{delegationId}/start
-///   POST   /api/ea/delegations/{delegationId}/complete
+///   POST   /api/ea/delegations/{delegationId}/pause      (optional JSON body: pauseReason)
+///   POST   /api/ea/delegations/{delegationId}/resume     (no body)
+///   POST   /api/ea/delegations/{delegationId}/complete   (multipart/form-data; completionPdf optional)
 ///
-/// NOT implemented yet: /pause, /resume, /cancel, /history, /reminder, /escalation.
+/// NOT implemented yet: /cancel, /history, /reminder, /escalation.
 /// </summary>
 [ApiController]
 [Route("api/ea/delegations")]
@@ -80,11 +82,44 @@ public class DelegationsController : ControllerBase
     public async Task<IActionResult> Start(long delegationId, CancellationToken ct) =>
         Ok(await _service.StartAsync(delegationId, ct));
 
-    /// <summary>Complete an InProgress Delegation (InProgress -> Completed). No request body. 409 if not currently InProgress.</summary>
-    [HttpPost("{delegationId:long}/complete")]
+    /// <summary>
+    /// Pause an InProgress Delegation. Status stays InProgress; one shared WorkPause is opened and the response
+    /// carries the derived <c>isPaused=true</c>. Optional body <c>{ "pauseReason": "..." }</c>.
+    /// 404 unknown id; 409 when not InProgress (Pending/Completed) or already paused.
+    /// </summary>
+    [HttpPost("{delegationId:long}/pause")]
     [ProducesResponseType(typeof(DelegationResponseDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
-    public async Task<IActionResult> Complete(long delegationId, CancellationToken ct) =>
-        Ok(await _service.CompleteAsync(delegationId, ct));
+    public async Task<IActionResult> Pause(long delegationId,
+        [FromBody(EmptyBodyBehavior = Microsoft.AspNetCore.Mvc.ModelBinding.EmptyBodyBehavior.Allow)] DelegationPauseRequestDto? request,
+        CancellationToken ct) =>
+        Ok(await _service.PauseAsync(delegationId, request, ct));
+
+    /// <summary>
+    /// Resume a paused Delegation (closes the open WorkPause; <c>isPaused=false</c>). No request body.
+    /// 404 unknown id; 409 when not InProgress or not currently paused.
+    /// </summary>
+    [HttpPost("{delegationId:long}/resume")]
+    [ProducesResponseType(typeof(DelegationResponseDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> Resume(long delegationId, CancellationToken ct) =>
+        Ok(await _service.ResumeAsync(delegationId, ct));
+
+    /// <summary>
+    /// Complete an InProgress Delegation (InProgress -> Completed). 409 if not currently InProgress or while an open pause exists (resume first).
+    /// multipart/form-data with an optional <c>completionPdf</c> file (same field name as Meeting complete).
+    /// Unlike Meeting the PDF is optional. When supplied it must be a valid PDF (max 25 MiB); it is stored in
+    /// the same transaction as the completion, so a failure leaves the Delegation and its EaTask unchanged.
+    /// </summary>
+    [HttpPost("{delegationId:long}/complete")]
+    [Consumes("multipart/form-data")]
+    [RequestSizeLimit(27 * 1024 * 1024)]
+    [RequestFormLimits(MultipartBodyLengthLimit = 27 * 1024 * 1024)]
+    [ProducesResponseType(typeof(DelegationResponseDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> Complete(long delegationId, [FromForm] DelegationCompleteRequestDto request, CancellationToken ct) =>
+        Ok(await _service.CompleteAsync(delegationId, request.CompletionPdf, ct));
 }

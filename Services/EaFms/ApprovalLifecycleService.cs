@@ -89,6 +89,12 @@ public class ApprovalLifecycleService : IApprovalLifecycleService
         _db.ApprovalCycles.Update(cycle);
 
         req.WorkflowStatus = "Approved";
+        // Server-owned decision timestamp, written in the same transaction as the status change.
+        req.ApprovedAt = decidedAt;
+        req.RejectedAt = null;
+        // Decision actor = frontend-supplied operator (distinct from the designated ApproverName). Cannot be both.
+        req.RejectedBy = null;
+        if (EaActorSnapshot.From(dto.EmployeeId, dto.EmployeeName).DisplayName is { } approver) req.ApprovedBy = approver;
         _db.ApprovalRequests.Update(req);
 
         // Approved/Rejected are business decisions, not execution states (a decision task's
@@ -97,7 +103,7 @@ public class ApprovalLifecycleService : IApprovalLifecycleService
         eaTask.ExecutionStatus = EaTaskExecutionStatus.Completed;
         eaTask.CompletedAt ??= decidedAt;
 
-        _audit.AddAudit("APPROVAL_APPROVE", "Approval", nameof(ApprovalRequest), req.Id.ToString(), null, new { req.ReferenceNo, req.Id, cycle.CycleNo }, "Approval approved");
+        _audit.AddAudit("APPROVAL_APPROVE", "Approval", nameof(ApprovalRequest), req.Id.ToString(), null, new { req.ReferenceNo, req.Id, cycle.CycleNo, req.ApprovedBy }, "Approval approved");
         await _db.SaveChangesAsync(ct);
         await tx.CommitAsync(ct);
         return req;
@@ -122,6 +128,10 @@ public class ApprovalLifecycleService : IApprovalLifecycleService
         _db.ApprovalCycles.Update(cycle);
 
         req.WorkflowStatus = "Rejected";
+        req.RejectedAt = decidedAt;
+        req.ApprovedAt = null;
+        req.ApprovedBy = null;
+        if (EaActorSnapshot.From(dto.EmployeeId, dto.EmployeeName).DisplayName is { } rejecter) req.RejectedBy = rejecter;
         _db.ApprovalRequests.Update(req);
 
         // Approved/Rejected are business decisions, not execution states (a decision task's
@@ -130,7 +140,7 @@ public class ApprovalLifecycleService : IApprovalLifecycleService
         eaTask.ExecutionStatus = EaTaskExecutionStatus.Completed;
         eaTask.CompletedAt ??= decidedAt;
 
-        _audit.AddAudit("APPROVAL_REJECT", "Approval", nameof(ApprovalRequest), req.Id.ToString(), null, new { req.ReferenceNo, req.Id, cycle.CycleNo }, "Approval rejected");
+        _audit.AddAudit("APPROVAL_REJECT", "Approval", nameof(ApprovalRequest), req.Id.ToString(), null, new { req.ReferenceNo, req.Id, cycle.CycleNo, req.RejectedBy }, "Approval rejected");
         await _db.SaveChangesAsync(ct);
         await tx.CommitAsync(ct);
         return req;

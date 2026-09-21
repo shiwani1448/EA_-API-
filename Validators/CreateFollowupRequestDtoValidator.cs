@@ -17,8 +17,8 @@ public class CreateFollowupRequestDtoValidator : AbstractValidator<CreateFollowu
         RuleFor(x => x.Remark).MaximumLength(2000);
         RuleFor(x => x.Subject).MaximumLength(500);
         RuleFor(x => x.Type).MaximumLength(100);
-        RuleFor(x => x.AssignedToId).MaximumLength(100);
-        RuleFor(x => x.AssignedToName).MaximumLength(200);
+        RuleFor(x => x.DoerId).MaximumLength(100);
+        RuleFor(x => x.DoerName).MaximumLength(200);
         RuleFor(x => x.PriorityLevelId).GreaterThan(0).When(x => x.PriorityLevelId.HasValue);
         RuleFor(x => x.ResponseOwnerId).MaximumLength(100);
         RuleFor(x => x.ResponseOwnerName).MaximumLength(200);

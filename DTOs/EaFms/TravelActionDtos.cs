@@ -4,12 +4,20 @@ public class ApproveTravelRequestDto
 {
     public int ExpectedCycleNo { get; set; }
     public string? DecisionComment { get; set; }
+    /// <summary>Frontend-supplied actor snapshot: the operator's employee id (stored as attribution; not verified).</summary>
+    public string? EmployeeId { get; set; }
+    /// <summary>Frontend-supplied actor snapshot: the operator's employee name. Becomes the decision actor value.</summary>
+    public string? EmployeeName { get; set; }
 }
 
 public class RejectTravelRequestDto
 {
     public int ExpectedCycleNo { get; set; }
     public string? DecisionComment { get; set; }
+    /// <summary>Frontend-supplied actor snapshot: the operator's employee id (stored as attribution; not verified).</summary>
+    public string? EmployeeId { get; set; }
+    /// <summary>Frontend-supplied actor snapshot: the operator's employee name. Becomes the decision actor value.</summary>
+    public string? EmployeeName { get; set; }
 }
 
 public class RequestTravelChangesDto
@@ -35,6 +43,8 @@ public class TravelActionResponseDto
     public DateTime? SubmittedAt { get; set; }
     public DateTime? ApprovedAt { get; set; }
     public DateTime? RejectedAt { get; set; }
+    public string? ApprovedBy { get; set; }
+    public string? RejectedBy { get; set; }
     public DateTime? StartedAt { get; set; }
     public DateTime? CompletedAt { get; set; }
     public TravelCurrentCycleDto? CurrentCycle { get; set; }

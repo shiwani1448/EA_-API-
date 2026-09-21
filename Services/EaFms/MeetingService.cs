@@ -187,7 +187,7 @@ public class MeetingService : IMeetingService
                 PopulateTaskSnapshot(item, task);
             if (!meeting.WorkflowInstanceId.HasValue) continue;
             var workflowId = meeting.WorkflowInstanceId.Value;
-            if (currentAssignmentsByWorkflow.TryGetValue(workflowId, out var assignment)) { item.AssignedToId = assignment.AssignedToId; item.AssignedToName = assignment.AssignedToName; }
+            if (currentAssignmentsByWorkflow.TryGetValue(workflowId, out var assignment)) { item.DoerId = assignment.DoerId; item.DoerName = assignment.DoerName; }
             if (workflowsById.TryGetValue(workflowId, out var workflow))
             {
                 item.StatusName = statusNamesById.TryGetValue(workflow.StatusId, out var statusName) ? statusName : null;
@@ -291,15 +291,15 @@ public class MeetingService : IMeetingService
 
                 dto.AssignmentSummary = new MeetingAssignmentSummaryDto
                 {
-                    AssignedToId = a.AssignedToId,
-                    AssignedToName = a.AssignedToName,
+                    DoerId = a.DoerId,
+                    DoerName = a.DoerName,
                     AssignedById = a.AssignedById,
                     AssignedByName = a.AssignedByName,
                     AssignedAt = a.AssignedAt,
                     AssignmentType = a.AssignmentType,
                     AssignmentReason = a.Reason,
-                    PreviousAssignedToId = prev?.AssignedToId,
-                    PreviousAssignedToName = prev?.AssignedToName,
+                    PreviousDoerId = prev?.DoerId,
+                    PreviousDoerName = prev?.DoerName,
                     IsAssigned = true,
                     IsCurrent = a.IsCurrent
                 };

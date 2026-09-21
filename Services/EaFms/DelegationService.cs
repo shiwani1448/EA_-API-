@@ -6,6 +6,8 @@ using Jarvis5.Data.EaFms;
 using Jarvis5.Dtos.EaFms;
 using Jarvis5.Entities.EaFms;
 using Jarvis5.Repositories.EaFms;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.EntityFrameworkCore;
 
 namespace Jarvis5.Services.EaFms;
@@ -24,24 +26,34 @@ public class DelegationService : IDelegationService
 {
     public const string DelegationBusinessModuleName = "Delegation";
 
+    // Completion PDF: same limits as Meeting's completionPdf (PDF only, 25 MiB).
+    private const long MaxCompletionPdfBytes = 25 * 1024 * 1024;
+
+    // ea_attachments association for the Delegation completion PDF (no dedicated table or column).
+    private const string AttachmentRelatedModule = "Delegation";
+    private const string AttachmentRelatedEntity = "Delegation";
+
     private readonly EaFmsDbContext _db;
     private readonly ICurrentUserService _user;
     private readonly IAuditService _audit;
     private readonly IDelegationNumberRepository _numbers;
     private readonly IEaTaskService _eaTaskService;
+    private readonly IWebHostEnvironment _env;
 
     public DelegationService(
         EaFmsDbContext db,
         ICurrentUserService user,
         IAuditService audit,
         IDelegationNumberRepository numbers,
-        IEaTaskService eaTaskService)
+        IEaTaskService eaTaskService,
+        IWebHostEnvironment env)
     {
         _db = db;
         _user = user;
         _audit = audit;
         _numbers = numbers;
         _eaTaskService = eaTaskService;
+        _env = env;
     }
 
     // ============================================================
@@ -65,8 +77,9 @@ public class DelegationService : IDelegationService
     private static DelegationCreateCommand ToCommand(DelegationCreateRequestDto dto) => new()
     {
         Title = dto.Title, Description = dto.Description,
-        AssignedToId = dto.AssignedToId, AssignedToNameSnapshot = dto.AssignedToNameSnapshot,
-        Priority = dto.Priority, DueDate = dto.DueDate,
+        DelegationType = dto.DelegationType, StartDate = dto.StartDate,
+        DoerId = dto.DoerId, DoerNameSnapshot = dto.DoerNameSnapshot,
+        Priority = dto.Priority, DueDate = dto.EndDate,
         SourceBusinessModuleId = dto.SourceBusinessModuleId, SourceEntityId = dto.SourceEntityId,
         SourceReference = dto.SourceReference, AdditionalNotes = dto.AdditionalNotes
     };
@@ -107,6 +120,7 @@ public class DelegationService : IDelegationService
         }
 
         var priority = NormalizePriority(command.Priority);
+        var delegationType = NormalizeDelegationType(command.DelegationType);
 
         var actor = Actor();
         var actorName = _user.UserName;
@@ -121,16 +135,27 @@ public class DelegationService : IDelegationService
         // EaTaskService.CreateWithoutTatAsync is itself ambient-transaction-aware (joins
         // the caller's transaction rather than owning its own), so this composes cleanly
         // regardless of who owns the outer transaction. Delegation has no approved TAT
-        // classification (explicit DueDate instead), so this always goes through the
-        // backend-only no-TAT path.
-        var eaTaskDto = await _eaTaskService.CreateWithoutTatAsync(new CreateEaTaskDto
+        // classification apart from delegationType, so TAT is resolved only when a delegationType was
+        // supplied: module + Type = delegationType, no subtype (backend-only type-only path; a missing rule fails
+        // like any canonical TAT resolution). A blank delegationType, and every Meeting-created Delegation,
+        // keeps the backend-only no-TAT path — no Type is ever fabricated.
+        var eaTaskRequest = new CreateEaTaskDto
         {
             ModuleId = delegationModule.Id,
             BusinessRecordId = referenceNo,
             Task = string.IsNullOrWhiteSpace(command.Title) ? referenceNo : command.Title.Trim(),
             Description = string.IsNullOrWhiteSpace(command.Description) ? null : command.Description.Trim(),
             WorkflowInstanceId = null
-        }, ct);
+        };
+        EaTaskResponseDto eaTaskDto;
+        if (delegationType is null)
+            eaTaskDto = await _eaTaskService.CreateWithoutTatAsync(eaTaskRequest, ct);
+        else
+        {
+            eaTaskRequest.Type = delegationType;
+            eaTaskRequest.Subtype = null;
+            eaTaskDto = await _eaTaskService.CreateWithTypeOnlyTatAsync(eaTaskRequest, ct);
+        }
 
         var entity = new Delegation
         {
@@ -140,14 +165,16 @@ public class DelegationService : IDelegationService
             Title = command.Title?.Trim() ?? string.Empty,
             Description = string.IsNullOrWhiteSpace(command.Description) ? null : command.Description.Trim(),
 
-            AssignedToId = command.AssignedToId?.Trim() ?? string.Empty,
-            AssignedToNameSnapshot = string.IsNullOrWhiteSpace(command.AssignedToNameSnapshot) ? null : command.AssignedToNameSnapshot.Trim(),
+            DoerId = command.DoerId?.Trim() ?? string.Empty,
+            DoerNameSnapshot = string.IsNullOrWhiteSpace(command.DoerNameSnapshot) ? null : command.DoerNameSnapshot.Trim(),
 
             AssignedById = actor,
             AssignedByNameSnapshot = actorName,
 
             Priority = priority,
             DueDate = command.DueDate,
+            DelegationType = delegationType,
+            StartDate = command.StartDate,
             Status = DelegationStatus.Pending,
 
             SourceBusinessModuleId = sourceModule?.Id,
@@ -173,13 +200,14 @@ public class DelegationService : IDelegationService
             entity.Id.ToString(CultureInfo.InvariantCulture), null,
             new
             {
-                entity.ReferenceNo, entity.EaTaskId, entity.Title, entity.AssignedToId, entity.Status,
-                entity.Priority, entity.DueDate, entity.SourceBusinessModuleId, entity.SourceEntityId, entity.SourceReference
+                entity.ReferenceNo, entity.EaTaskId, entity.Title, entity.DoerId, entity.Status,
+                entity.Priority, entity.DueDate, entity.DelegationType, entity.StartDate,
+                entity.SourceBusinessModuleId, entity.SourceEntityId, entity.SourceReference
             },
             "Delegation created");
         await _db.SaveChangesAsync(ct);
 
-        return ToDto(entity, sourceModule?.Name);
+        return ToDto(entity, sourceModule?.Name, null, await LoadTatViewAsync(entity, ct));
     }
 
     // ============================================================
@@ -193,7 +221,8 @@ public class DelegationService : IDelegationService
             .FirstOrDefaultAsync(d => d.Id == delegationId && !d.IsDeleted, ct)
             ?? throw new NotFoundException($"Delegation {delegationId} not found.");
 
-        return ToDto(entity, entity.SourceBusinessModule?.Name);
+        var pdfIds = await LoadCompletionPdfIdsAsync(new[] { entity.Id }, ct);
+        return ToDto(entity, entity.SourceBusinessModule?.Name, PdfId(pdfIds, entity.Id), await LoadTatViewAsync(entity, ct));
     }
 
     // ============================================================
@@ -222,11 +251,12 @@ public class DelegationService : IDelegationService
         }
 
         var priority = NormalizePriority(dto.Priority);
+        var delegationType = NormalizeDelegationType(dto.DelegationType);
 
         var snapshot = new
         {
-            entity.Title, entity.Description, entity.AssignedToId, entity.AssignedToNameSnapshot,
-            entity.DueDate, entity.Priority, entity.SourceBusinessModuleId, entity.SourceEntityId,
+            entity.Title, entity.Description, entity.DoerId, entity.DoerNameSnapshot,
+            entity.DueDate, entity.DelegationType, entity.StartDate, entity.Priority, entity.SourceBusinessModuleId, entity.SourceEntityId,
             entity.SourceReference, entity.AdditionalNotes
         };
 
@@ -235,9 +265,11 @@ public class DelegationService : IDelegationService
         // paths, neither of which touches EaTask after creation.
         entity.Title = dto.Title?.Trim() ?? string.Empty;
         entity.Description = string.IsNullOrWhiteSpace(dto.Description) ? null : dto.Description.Trim();
-        entity.AssignedToId = dto.AssignedToId?.Trim() ?? string.Empty;
-        entity.AssignedToNameSnapshot = string.IsNullOrWhiteSpace(dto.AssignedToNameSnapshot) ? null : dto.AssignedToNameSnapshot.Trim();
-        entity.DueDate = dto.DueDate;
+        entity.DoerId = dto.DoerId?.Trim() ?? string.Empty;
+        entity.DoerNameSnapshot = string.IsNullOrWhiteSpace(dto.DoerNameSnapshot) ? null : dto.DoerNameSnapshot.Trim();
+        entity.DueDate = dto.EndDate;
+        entity.DelegationType = delegationType;
+        entity.StartDate = dto.StartDate;
         entity.Priority = priority;
         entity.SourceBusinessModuleId = sourceModule?.Id;
         entity.SourceEntityId = string.IsNullOrWhiteSpace(dto.SourceEntityId) ? null : dto.SourceEntityId.Trim();
@@ -256,8 +288,8 @@ public class DelegationService : IDelegationService
             entity.Id.ToString(CultureInfo.InvariantCulture), snapshot,
             new
             {
-                entity.Title, entity.Description, entity.AssignedToId, entity.AssignedToNameSnapshot,
-                entity.DueDate, entity.Priority, entity.SourceBusinessModuleId, entity.SourceEntityId,
+                entity.Title, entity.Description, entity.DoerId, entity.DoerNameSnapshot,
+                entity.DueDate, entity.DelegationType, entity.StartDate, entity.Priority, entity.SourceBusinessModuleId, entity.SourceEntityId,
                 entity.SourceReference, entity.AdditionalNotes
             },
             "Delegation updated");
@@ -265,7 +297,7 @@ public class DelegationService : IDelegationService
         await _db.SaveChangesAsync(ct);
         await transaction.CommitAsync(ct);
 
-        return ToDto(entity, sourceModule?.Name);
+        return ToDto(entity, sourceModule?.Name, null, await LoadTatViewAsync(entity, ct));
     }
 
     // ============================================================
@@ -303,16 +335,27 @@ public class DelegationService : IDelegationService
         await transaction.CommitAsync(ct);
 
         var sourceModuleName = await ResolveSourceModuleNameAsync(entity.SourceBusinessModuleId, ct);
-        return ToDto(entity, sourceModuleName);
+        return ToDto(entity, sourceModuleName, null, await LoadTatViewAsync(entity, ct));
     }
 
-    public async Task<DelegationResponseDto> CompleteAsync(long delegationId, CancellationToken ct = default)
+    public async Task<DelegationResponseDto> CompleteAsync(long delegationId, IFormFile? completionPdf, CancellationToken ct = default)
     {
+        // Validate the PDF before opening the transaction so a bad upload fails fast, leaving the
+        // Delegation, its EaTask and the storage untouched.
+        var pdfBytes = completionPdf is null ? null : await ReadValidatedPdfAsync(completionPdf, ct);
+
         await using var transaction = await _db.Database.BeginTransactionAsync(ct);
 
         var entity = await LockDelegationAsync(delegationId, ct);
         if (entity.Status != DelegationStatus.InProgress)
             throw new BusinessRuleException($"Delegation cannot be completed from its current status '{entity.Status}'.");
+
+        // Same rule as Meeting's CompleteAsync: an open pause blocks completion (no auto-resume), so no
+        // orphan open WorkPause can ever survive a completed Delegation.
+        var eaTask = await _db.Tasks.FirstAsync(t => t.Id == entity.EaTaskId, ct);
+        if (eaTask.WorkflowInstanceId.HasValue
+            && await _db.WorkPauses.AnyAsync(p => p.WorkflowInstanceId == eaTask.WorkflowInstanceId && !p.IsDeleted && p.EndAt == null, ct))
+            throw new BusinessRuleException("Resume or continue open pauses/waiting before completion.");
 
         var now = Clock.UtcNowTz;
         entity.Status = DelegationStatus.Completed;
@@ -324,22 +367,384 @@ public class DelegationService : IDelegationService
         entity.ModifiedBy = Actor();
         entity.ModifiedDate = now;
 
-        var eaTask = await _db.Tasks.FirstAsync(t => t.Id == entity.EaTaskId, ct);
         eaTask.ExecutionStatus = EaTaskExecutionStatus.Completed;
         eaTask.CompletedAt = now;
 
-        _audit.AddAudit(
-            "DELEGATION_COMPLETE", "Delegation", nameof(Delegation),
-            entity.Id.ToString(CultureInfo.InvariantCulture),
-            new { Status = DelegationStatus.InProgress },
-            new { entity.Status, entity.CompletedAt, entity.CompletedById, entity.CompletedByNameSnapshot },
-            "Delegation completed");
+        // TAT-enabled Delegations only: freeze the final active TAT (actual StartedAt to now, simple pauses excluded)
+        // with the same shared calculation Meeting uses. No open pause can exist here (blocked above).
+        if (eaTask.AllottedTatMinutes.HasValue && eaTask.StartedAt.HasValue)
+        {
+            var pausesForTat = eaTask.WorkflowInstanceId.HasValue
+                ? await _db.WorkPauses.AsNoTracking()
+                    .Where(p => p.WorkflowInstanceId == eaTask.WorkflowInstanceId && !p.IsDeleted).ToListAsync(ct)
+                : new List<WorkPause>();
+            eaTask.TatUsedMinutes = EaTaskService.CalculateActiveTatMinutes(eaTask.StartedAt.Value, now, pausesForTat);
+        }
 
+        // A pause anchor exists only if the Delegation was ever paused; close it like Meeting closes its workflow.
+        if (eaTask.WorkflowInstanceId.HasValue)
+            await CompleteAnchorAsync(eaTask.WorkflowInstanceId.Value, now, ct);
+
+        // Delegation + EaTask + attachment metadata commit together. The file is written just before the
+        // commit; any failure from that point deletes it again so no orphan file or half state remains.
+        string? objectKey = null;
+        Attachment? attachment = null;
+        try
+        {
+            if (pdfBytes is not null)
+            {
+                objectKey = await WriteCompletionPdfAsync(delegationId, pdfBytes, ct);
+                var actor = Actor();
+                attachment = new Attachment
+                {
+                    RelatedModule = AttachmentRelatedModule,
+                    RelatedEntity = AttachmentRelatedEntity,
+                    RelatedEntityId = delegationId.ToString(CultureInfo.InvariantCulture),
+                    OriginalFileName = Path.GetFileName(completionPdf!.FileName.Replace('\\', '/')),
+                    ObjectKey = objectKey,
+                    ContentType = "application/pdf",
+                    Size = pdfBytes.LongLength,
+                    AccessUrl = null, // no storage path is exposed; download via GET /api/ea/delegations/{id}/completion-pdf
+                    UploadedBy = actor,
+                    UploadedAt = now,
+                    Metadata = $"{{\"purpose\":\"DelegationCompletionPdf\",\"delegationId\":{delegationId}}}",
+                    IsActive = true,
+                    IsDeleted = false,
+                    CreatedBy = actor,
+                    CreatedDate = now
+                };
+                _db.Attachments.Add(attachment);
+            }
+
+            _audit.AddAudit(
+                "DELEGATION_COMPLETE", "Delegation", nameof(Delegation),
+                entity.Id.ToString(CultureInfo.InvariantCulture),
+                new { Status = DelegationStatus.InProgress },
+                new { entity.Status, entity.CompletedAt, entity.CompletedById, entity.CompletedByNameSnapshot,
+                      HasCompletionPdf = attachment is not null },
+                "Delegation completed");
+
+            await _db.SaveChangesAsync(ct);
+            await transaction.CommitAsync(ct);
+        }
+        catch
+        {
+            if (objectKey is not null) TryDeleteFile(objectKey);
+            throw;
+        }
+
+        var sourceModuleName = await ResolveSourceModuleNameAsync(entity.SourceBusinessModuleId, ct);
+        return ToDto(entity, sourceModuleName, attachment?.Id, await LoadTatViewAsync(entity, ct));
+    }
+
+    // ============================================================
+    // LIFECYCLE — PAUSE / RESUME (shared WorkPause architecture)
+    // ============================================================
+    //
+    // A Delegation has no Meeting-style workflow, but the shared pause model (WorkPause, EaTask/EM Report pause
+    // detection, EaTask history) is keyed on EaTask.WorkflowInstanceId. So the first Pause lazily creates one
+    // minimal WorkflowInstance anchor (BusinessModule = Delegation, BusinessRecordId = Delegation.Id, In Progress,
+    // TatStartedAt = Delegation.StartedAt) and links it through the existing EaTask.WorkflowInstanceId column.
+    // No pause table, entity, status or ExecutionStatus is added: Paused stays derived (InProgress + open WorkPause).
+
+    public async Task<DelegationResponseDto> PauseAsync(long delegationId, DelegationPauseRequestDto? request, CancellationToken ct = default)
+    {
+        var reason = string.IsNullOrWhiteSpace(request?.PauseReason) ? "Delegation paused" : request!.PauseReason!.Trim();
+        if (reason.Length > 2000) throw new BadRequestException("pauseReason must be at most 2000 characters.");
+
+        await using var transaction = await _db.Database.BeginTransactionAsync(ct);
+
+        var entity = await LockDelegationAsync(delegationId, ct);
+        RequireInProgress(entity, "paused");
+
+        var eaTask = await _db.Tasks.FirstAsync(t => t.Id == entity.EaTaskId, ct);
+        var now = Clock.UtcNowTz;
+        var anchor = await EnsureAnchorAsync(entity, eaTask, now, ct);
+
+        if (await _db.WorkPauses.AnyAsync(p => p.WorkflowInstanceId == anchor.Id && !p.IsDeleted && p.EndAt == null, ct))
+            throw new BusinessRuleException("Delegation is already paused. Resume it first.");
+
+        var actor = Actor();
+        var pause = new WorkPause
+        {
+            WorkflowInstanceId = anchor.Id,
+            IntakeRequestId = null,
+            FollowupId = null,
+            StartAt = now,
+            Reason = reason,
+            CreatedBy = actor,
+            CreatedDate = now
+        };
+        _db.WorkPauses.Add(pause);
+        AddSameStatusHistory(anchor, reason, "SIMPLE_PAUSE", actor, now);
+
+        entity.ModifiedBy = actor;
+        entity.ModifiedDate = now;
+        await _db.SaveChangesAsync(ct);
+
+        _audit.AddAudit(
+            "DELEGATION_PAUSE", "Delegation", nameof(Delegation),
+            entity.Id.ToString(CultureInfo.InvariantCulture),
+            new { entity.Status, IsPaused = false },
+            new { entity.Status, IsPaused = true, PauseId = pause.Id, pause.StartAt, pause.Reason },
+            "Delegation paused");
         await _db.SaveChangesAsync(ct);
         await transaction.CommitAsync(ct);
 
+        return await BuildResponseAsync(entity, ct);
+    }
+
+    public async Task<DelegationResponseDto> ResumeAsync(long delegationId, CancellationToken ct = default)
+    {
+        await using var transaction = await _db.Database.BeginTransactionAsync(ct);
+
+        var entity = await LockDelegationAsync(delegationId, ct);
+        RequireInProgress(entity, "resumed");
+
+        var eaTask = await _db.Tasks.FirstAsync(t => t.Id == entity.EaTaskId, ct);
+        var open = eaTask.WorkflowInstanceId.HasValue
+            ? await _db.WorkPauses
+                .Where(p => p.WorkflowInstanceId == eaTask.WorkflowInstanceId && !p.IsDeleted && p.EndAt == null)
+                .OrderByDescending(p => p.StartAt).ThenByDescending(p => p.Id)
+                .ToListAsync(ct)
+            : new List<WorkPause>();
+        if (open.Count == 0)
+            throw new BusinessRuleException("No open pause found. The Delegation is not paused.");
+        if (open.Count > 1)
+            throw new BusinessRuleException("Multiple open operational stops exist; resolve manually.");
+
+        var pause = open[0];
+        var now = Clock.UtcNowTz;
+        var actor = Actor();
+        pause.EndAt = now;
+        pause.ResumedById = _user.UserId.ToString(CultureInfo.InvariantCulture);
+        pause.ResumedByName = _user.UserName;
+        pause.ModifiedBy = actor;
+        pause.ModifiedDate = now;
+
+        var anchor = await _db.WorkflowInstances.FirstAsync(w => w.Id == eaTask.WorkflowInstanceId!.Value, ct);
+        AddSameStatusHistory(anchor, "Work resumed", "SIMPLE_RESUME", actor, now);
+
+        entity.ModifiedBy = actor;
+        entity.ModifiedDate = now;
+
+        _audit.AddAudit(
+            "DELEGATION_RESUME", "Delegation", nameof(Delegation),
+            entity.Id.ToString(CultureInfo.InvariantCulture),
+            new { entity.Status, IsPaused = true, PauseId = pause.Id },
+            new { entity.Status, IsPaused = false, PauseId = pause.Id, pause.EndAt, pause.ResumedById, pause.ResumedByName },
+            "Delegation resumed");
+        await _db.SaveChangesAsync(ct);
+        await transaction.CommitAsync(ct);
+
+        return await BuildResponseAsync(entity, ct);
+    }
+
+    private static void RequireInProgress(Delegation entity, string action)
+    {
+        if (entity.Status != DelegationStatus.InProgress)
+            throw new BusinessRuleException($"Delegation cannot be {action} from its current status '{entity.Status}'. It must be InProgress.");
+    }
+
+    private async Task<DelegationResponseDto> BuildResponseAsync(Delegation entity, CancellationToken ct)
+    {
         var sourceModuleName = await ResolveSourceModuleNameAsync(entity.SourceBusinessModuleId, ct);
-        return ToDto(entity, sourceModuleName);
+        var pdfIds = await LoadCompletionPdfIdsAsync(new[] { entity.Id }, ct);
+        return ToDto(entity, sourceModuleName, PdfId(pdfIds, entity.Id), await LoadTatViewAsync(entity, ct));
+    }
+
+    /// <summary>Returns the Delegation's pause anchor, creating and linking it on first use.</summary>
+    private async Task<WorkflowInstance> EnsureAnchorAsync(Delegation entity, EaTask eaTask, DateTime now, CancellationToken ct)
+    {
+        if (eaTask.WorkflowInstanceId.HasValue)
+            return await _db.WorkflowInstances.FirstOrDefaultAsync(w => w.Id == eaTask.WorkflowInstanceId.Value && !w.IsDeleted, ct)
+                ?? throw new BusinessRuleException("The Delegation's pause workflow is missing or deleted.");
+
+        var module = await _db.BusinessModules.AsNoTracking()
+            .Where(m => !m.IsDeleted && m.IsActive && m.Name == DelegationBusinessModuleName)
+            .FirstOrDefaultAsync(ct)
+            ?? throw new BusinessRuleException(
+                $"An active '{DelegationBusinessModuleName}' record is required in ea_business_modules.");
+        var inProgress = await SingleStatusAsync("In Progress", ct);
+
+        var startedAt = entity.StartedAt ?? now;
+        var anchor = new WorkflowInstance
+        {
+            BusinessModuleId = module.Id,
+            BusinessRecordId = entity.Id.ToString(CultureInfo.InvariantCulture),
+            StatusId = inProgress.Id,
+            StartedAt = startedAt,
+            TatStartedAt = startedAt,
+            UpdatedAt = now,
+            DoerId = entity.DoerId,
+            DoerName = entity.DoerNameSnapshot,
+            IsActive = true,
+            CreatedBy = Actor(),
+            CreatedDate = now
+        };
+        _db.WorkflowInstances.Add(anchor);
+        await _db.SaveChangesAsync(ct);
+        eaTask.WorkflowInstanceId = anchor.Id;
+        return anchor;
+    }
+
+    private async Task CompleteAnchorAsync(long workflowId, DateTime now, CancellationToken ct)
+    {
+        var anchor = await _db.WorkflowInstances.FirstOrDefaultAsync(w => w.Id == workflowId && !w.IsDeleted, ct);
+        if (anchor is null) return;
+        var completed = await SingleStatusAsync("Completed", ct);
+        var fromStatusId = anchor.StatusId;
+        anchor.StatusId = completed.Id;
+        anchor.UpdatedAt = now;
+        anchor.CompletedAt ??= now;
+        anchor.IsActive = false;
+        anchor.ModifiedBy = Actor();
+        anchor.ModifiedDate = now;
+        _db.WorkflowHistory.Add(new WorkflowHistory
+        {
+            WorkflowInstanceId = anchor.Id,
+            FromStatusId = fromStatusId,
+            ToStatusId = completed.Id,
+            Notes = "Delegation completed",
+            ChangedAt = now,
+            CreatedBy = Actor(),
+            CreatedDate = now
+        });
+    }
+
+    private async Task<Status> SingleStatusAsync(string name, CancellationToken ct)
+    {
+        var lower = name.ToLower();
+        var matches = await _db.Statuses.Where(s => s.IsActive && !s.IsDeleted && s.Name.ToLower() == lower).Take(2).ToListAsync(ct);
+        if (matches.Count != 1) throw new BusinessRuleException($"Exactly one active '{name}' status is required.");
+        return matches[0];
+    }
+
+    private void AddSameStatusHistory(WorkflowInstance anchor, string? notes, string transitionType, string actor, DateTime now) =>
+        _db.WorkflowHistory.Add(new WorkflowHistory
+        {
+            WorkflowInstanceId = anchor.Id,
+            FromStatusId = anchor.StatusId,
+            ToStatusId = anchor.StatusId,
+            Notes = notes,
+            ChangedAt = now,
+            CreatedBy = actor,
+            CreatedDate = now,
+            TransitionType = transitionType
+        });
+
+    /// <summary>
+    /// Execution/TAT values shown on a Delegation response. Every value comes from the central EaTask and its WorkPauses —
+    /// the same rows and the same canonical calculation (EaTaskService.CalculateCurrentTatUsedMinutes) the EaTask API and the
+    /// EM Report use — so nothing is duplicated onto ea_delegations and the three views always reconcile.
+    /// </summary>
+    private sealed record DelegationTatView(
+        string ExecutionStatus, bool IsPaused, DateTime? StartedAt, DateTime? CompletedAt,
+        int? AllottedTatMinutes, int? CurrentTatUsedMinutes, int? TatUsedMinutes);
+
+    private async Task<DelegationTatView?> LoadTatViewAsync(Delegation delegation, CancellationToken ct) =>
+        (await LoadTatViewsAsync(new[] { delegation }, ct)).GetValueOrDefault(delegation.EaTaskId);
+
+    /// <summary>Two queries for any number of Delegations (tasks, then their pauses) — no per-row lookup.</summary>
+    private async Task<Dictionary<long, DelegationTatView>> LoadTatViewsAsync(IEnumerable<Delegation> delegations, CancellationToken ct)
+    {
+        var eaTaskIds = delegations.Select(d => d.EaTaskId).Distinct().ToList();
+        if (eaTaskIds.Count == 0) return new();
+        var tasks = await _db.Tasks.AsNoTracking().Where(t => eaTaskIds.Contains(t.Id)).ToListAsync(ct);
+        var workflowIds = tasks.Where(t => t.WorkflowInstanceId.HasValue).Select(t => t.WorkflowInstanceId!.Value).Distinct().ToList();
+        var pausesByWorkflow = workflowIds.Count == 0
+            ? new Dictionary<long, List<WorkPause>>()
+            : (await _db.WorkPauses.AsNoTracking()
+                .Where(p => p.WorkflowInstanceId != null && workflowIds.Contains(p.WorkflowInstanceId.Value) && !p.IsDeleted)
+                .ToListAsync(ct)).GroupBy(p => p.WorkflowInstanceId!.Value).ToDictionary(g => g.Key, g => g.ToList());
+
+        var now = Clock.UtcNowTz;
+        return tasks.ToDictionary(t => t.Id, t =>
+        {
+            var pauses = t.WorkflowInstanceId.HasValue && pausesByWorkflow.TryGetValue(t.WorkflowInstanceId.Value, out var p) ? p : new List<WorkPause>();
+            var isPaused = t.ExecutionStatus == EaTaskExecutionStatus.InProgress && pauses.Any(x => x.EndAt == null);
+            return new DelegationTatView(t.ExecutionStatus, isPaused, t.StartedAt, t.CompletedAt, t.AllottedTatMinutes,
+                EaTaskService.CalculateCurrentTatUsedMinutes(t, pauses, now), t.TatUsedMinutes);
+        });
+    }
+
+    private static long? PdfId(Dictionary<long, long> ids, long delegationId) => ids.TryGetValue(delegationId, out var id) ? id : null;
+
+    /// <summary>Latest completion-PDF attachment id per Delegation, in one query.</summary>
+    private async Task<Dictionary<long, long>> LoadCompletionPdfIdsAsync(IReadOnlyCollection<long> delegationIds, CancellationToken ct)
+    {
+        if (delegationIds.Count == 0) return new();
+        var keys = delegationIds.Select(i => i.ToString(CultureInfo.InvariantCulture)).ToList();
+        var rows = await _db.Attachments.AsNoTracking()
+            .Where(a => a.RelatedModule == AttachmentRelatedModule && a.RelatedEntity == AttachmentRelatedEntity
+                && a.RelatedEntityId != null && keys.Contains(a.RelatedEntityId) && a.IsActive && !a.IsDeleted)
+            .Select(a => new { a.Id, a.RelatedEntityId }).ToListAsync(ct);
+        return rows.GroupBy(r => long.Parse(r.RelatedEntityId!, CultureInfo.InvariantCulture))
+            .ToDictionary(g => g.Key, g => g.Max(r => r.Id));
+    }
+
+    /// <summary>
+    /// Same rules as Meeting's completionPdf (MeetingCompletionFileStore.ValidateAsync): non-empty, at most 25 MiB,
+    /// .pdf and application/pdf, %PDF- signature and a readable document with at least one page.
+    /// </summary>
+    private static async Task<byte[]> ReadValidatedPdfAsync(IFormFile file, CancellationToken ct)
+    {
+        if (file.Length <= 0 || file.Length > MaxCompletionPdfBytes)
+            throw new BusinessRuleException("A nonempty completion PDF of at most 25 MiB is required.");
+        var originalFileName = Path.GetFileName(file.FileName?.Replace('\\', '/') ?? string.Empty);
+        if (string.IsNullOrWhiteSpace(originalFileName) || originalFileName.Length > 500)
+            throw new BusinessRuleException("Completion PDF filename must contain 1 to 500 characters.");
+        if (!string.Equals(Path.GetExtension(originalFileName), ".pdf", StringComparison.OrdinalIgnoreCase)
+            || !string.Equals(file.ContentType, "application/pdf", StringComparison.OrdinalIgnoreCase))
+            throw new BusinessRuleException("Completion file must be a PDF.");
+
+        await using var input = file.OpenReadStream();
+        using var buffer = new MemoryStream();
+        var chunk = new byte[81920];
+        int count;
+        while ((count = await input.ReadAsync(chunk, ct)) != 0)
+        {
+            if (buffer.Length + count > MaxCompletionPdfBytes) throw new BusinessRuleException("Completion PDF exceeds 25 MiB.");
+            await buffer.WriteAsync(chunk.AsMemory(0, count), ct);
+        }
+        var bytes = buffer.ToArray();
+        if (bytes.Length < 5 || !bytes.AsSpan(0, 5).SequenceEqual("%PDF-"u8))
+            throw new BusinessRuleException("Completion PDF signature is invalid.");
+        try { using var pdf = UglyToad.PdfPig.PdfDocument.Open(bytes); if (pdf.NumberOfPages < 1) throw new InvalidDataException(); }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        { throw new BusinessRuleException("Completion file is not a readable PDF."); }
+        return bytes;
+    }
+
+    /// <summary>Writes the PDF to Content/DelegationCompletion/{delegationId}/ and returns the relative object key. Removes a partial file on failure.</summary>
+    private async Task<string> WriteCompletionPdfAsync(long delegationId, byte[] content, CancellationToken ct)
+    {
+        var key = $"Content/DelegationCompletion/{delegationId.ToString(CultureInfo.InvariantCulture)}/{Guid.NewGuid():N}.pdf";
+        var absolute = ResolveStoragePath(key);
+        Directory.CreateDirectory(Path.GetDirectoryName(absolute)!);
+        try
+        {
+            await using var stream = new FileStream(absolute, FileMode.CreateNew, FileAccess.Write, FileShare.None, 81920, FileOptions.Asynchronous);
+            await stream.WriteAsync(content, ct);
+            await stream.FlushAsync(ct);
+        }
+        catch { TryDeleteFile(key); throw; }
+        return key;
+    }
+
+    /// <summary>Resolves an object key under Content/ (path-traversal guarded).</summary>
+    private string ResolveStoragePath(string objectKey)
+    {
+        var root = Path.GetFullPath(Path.Combine(_env.ContentRootPath, "Content")) + Path.DirectorySeparatorChar;
+        var absolute = Path.GetFullPath(Path.Combine(_env.ContentRootPath, objectKey.Replace('/', Path.DirectorySeparatorChar)));
+        if (!absolute.StartsWith(root, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("Invalid completion storage key.");
+        return absolute;
+    }
+
+    private void TryDeleteFile(string objectKey)
+    {
+        try { var path = ResolveStoragePath(objectKey); if (File.Exists(path)) File.Delete(path); } catch { /* best-effort */ }
     }
 
     // ============================================================
@@ -362,14 +767,20 @@ public class DelegationService : IDelegationService
             q = q.Where(d =>
                 d.ReferenceNo.ToLower().Contains(term) ||
                 d.Title.ToLower().Contains(term) ||
-                (d.AssignedToNameSnapshot != null && d.AssignedToNameSnapshot.ToLower().Contains(term)) ||
+                (d.DoerNameSnapshot != null && d.DoerNameSnapshot.ToLower().Contains(term)) ||
                 (d.SourceReference != null && d.SourceReference.ToLower().Contains(term)));
         }
 
-        if (!string.IsNullOrWhiteSpace(query.AssignedToId))
+        if (!string.IsNullOrWhiteSpace(query.DoerId))
         {
-            var id = query.AssignedToId.Trim();
-            q = q.Where(d => d.AssignedToId == id);
+            var id = query.DoerId.Trim();
+            q = q.Where(d => d.DoerId == id);
+        }
+
+        if (!string.IsNullOrWhiteSpace(query.DelegationType))
+        {
+            var type = query.DelegationType.Trim().ToLower();
+            q = q.Where(d => d.DelegationType != null && d.DelegationType.ToLower() == type);
         }
 
         if (!string.IsNullOrWhiteSpace(query.Priority))
@@ -381,9 +792,9 @@ public class DelegationService : IDelegationService
         if (query.SourceBusinessModuleId.HasValue)
             q = q.Where(d => d.SourceBusinessModuleId == query.SourceBusinessModuleId.Value);
 
-        if (query.DueDate.HasValue)
+        if (query.EndDate.HasValue)
         {
-            var day = query.DueDate.Value.Date;
+            var day = query.EndDate.Value.Date;
             q = q.Where(d => d.DueDate.HasValue && d.DueDate.Value.Date == day);
         }
 
@@ -415,9 +826,12 @@ public class DelegationService : IDelegationService
             .Take(pageSize)
             .ToListAsync(ct);
 
+        // One batched lookup for the page (no per-row query).
+        var pdfIds = await LoadCompletionPdfIdsAsync(items.Where(d => d.Status == DelegationStatus.Completed).Select(d => d.Id).ToList(), ct);
+        var tatViews = await LoadTatViewsAsync(items, ct);
         return new PagedResult<DelegationResponseDto>
         {
-            Items = items.Select(d => ToDto(d, d.SourceBusinessModule?.Name)).ToArray(),
+            Items = items.Select(d => ToDto(d, d.SourceBusinessModule?.Name, PdfId(pdfIds, d.Id), tatViews.GetValueOrDefault(d.EaTaskId))).ToArray(),
             PageNumber = page,
             PageSize = pageSize,
             TotalCount = totalCount
@@ -506,6 +920,15 @@ public class DelegationService : IDelegationService
     /// data for a dropdown, not a persistence gate). Only whitespace is trimmed; any
     /// submitted value, including one PriorityLevel doesn't know about, is stored as-is.
     /// </summary>
+    /// <summary>Frontend-supplied free text: trimmed, blank becomes null, at most 200 characters. No enum or catalog.</summary>
+    private static string? NormalizeDelegationType(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return null;
+        var trimmed = value.Trim();
+        if (trimmed.Length > 200) throw new BadRequestException("delegationType must be at most 200 characters.");
+        return trimmed;
+    }
+
     private static string? NormalizePriority(string? priority) =>
         string.IsNullOrWhiteSpace(priority) ? null : priority.Trim();
 
@@ -547,7 +970,7 @@ public class DelegationService : IDelegationService
             throw new BadRequestException($"view '{view}' conflicts with status '{status}' (Completed is excluded from {view}).");
     }
 
-    private static DelegationResponseDto ToDto(Delegation d, string? sourceModuleName)
+    private static DelegationResponseDto ToDto(Delegation d, string? sourceModuleName, long? completionPdfAttachmentId = null, DelegationTatView? tat = null)
     {
         var today = IndiaBusinessCalendar.Today;
         // Compiled from the exact same expressions used for the register view filter and
@@ -564,14 +987,17 @@ public class DelegationService : IDelegationService
             Title = d.Title,
             Description = d.Description,
 
-            AssignedToId = d.AssignedToId,
-            AssignedToName = d.AssignedToNameSnapshot,
+            DelegationType = d.DelegationType,
+
+            DoerId = d.DoerId,
+            DoerName = d.DoerNameSnapshot,
 
             AssignedById = d.AssignedById,
             AssignedByName = d.AssignedByNameSnapshot,
 
             Priority = d.Priority,
-            DueDate = d.DueDate,
+            StartDate = d.StartDate,
+            EndDate = d.DueDate,
 
             Status = d.Status,
 
@@ -582,10 +1008,17 @@ public class DelegationService : IDelegationService
 
             AdditionalNotes = d.AdditionalNotes,
 
-            StartedAt = d.StartedAt,
-            CompletedAt = d.CompletedAt,
+            // The central EaTask is authoritative (the TAT clock runs from its StartedAt); the Delegation's own copy is the fallback.
+            StartedAt = tat?.StartedAt ?? d.StartedAt,
+            CompletedAt = tat?.CompletedAt ?? d.CompletedAt,
             CompletedById = d.CompletedById,
             CompletedByName = d.CompletedByNameSnapshot,
+            CompletionPdfAttachmentId = completionPdfAttachmentId,
+            IsPaused = tat?.IsPaused ?? false,
+            ExecutionStatus = tat?.ExecutionStatus ?? EaTaskExecutionStatus.NotStarted,
+            AllottedTatMinutes = tat?.AllottedTatMinutes,
+            CurrentTatUsedMinutes = tat?.CurrentTatUsedMinutes,
+            TatUsedMinutes = tat?.TatUsedMinutes,
 
             IsDueToday = isDueToday,
             IsOverdue = isOverdue,

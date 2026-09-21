@@ -145,6 +145,8 @@ public partial class TravelRequestService : ITravelRequestService
 
             ApprovalRequired = dto.ApprovalRequired,
             ApproverId = dto.ApproverId?.Trim(),
+            ApprovedBy = NullIfBlank(dto.ApprovedBy),
+            RejectedBy = NullIfBlank(dto.RejectedBy),
             BusinessState = "Draft",
             ApprovalState = ResolveDraftApprovalState(dto.ApprovalRequired),
 
@@ -180,7 +182,9 @@ public partial class TravelRequestService : ITravelRequestService
             EaTaskId = entity.EaTaskId,
             ReferenceNo = entity.ReferenceNo,
             BusinessState = entity.BusinessState,
-            ApprovalState = entity.ApprovalState
+            ApprovalState = entity.ApprovalState,
+            ApprovedBy = entity.ApprovedBy,
+            RejectedBy = entity.RejectedBy
         };
     }
 
@@ -284,6 +288,9 @@ public partial class TravelRequestService : ITravelRequestService
         entity.EstimatedLocalTransportCost = dto.EstimatedLocalTransportCost;
         entity.EstimatedHospitalityCost = dto.EstimatedHospitalityCost;
         entity.Currency = dto.Currency?.Trim();
+        // Pre-decision business data only: unsubmitted drafts and controlled rework are the only states that reach here.
+        entity.ApprovedBy = NullIfBlank(dto.ApprovedBy);
+        entity.RejectedBy = NullIfBlank(dto.RejectedBy);
         if (!rework)
         {
             // Opaque IDs remain opaque; optional HRMS snapshot resolution is deferred.
@@ -580,7 +587,9 @@ public partial class TravelRequestService : ITravelRequestService
                 Required = e.ApprovalRequired,
                 ApproverId = e.ApproverId,
                 ApproverName = e.ApproverNameSnapshot,
-                State = e.ApprovalState
+                State = e.ApprovalState,
+                ApprovedBy = e.ApprovedBy,
+                RejectedBy = e.RejectedBy
             },
 
             SubmittedAt = e.SubmittedAt,
@@ -603,6 +612,8 @@ public partial class TravelRequestService : ITravelRequestService
             SubmittedAt = e.SubmittedAt,
             ApprovedAt = e.ApprovedAt,
             RejectedAt = e.RejectedAt,
+            ApprovedBy = e.ApprovedBy,
+            RejectedBy = e.RejectedBy,
             Id = e.Id,
             ReferenceNo = e.ReferenceNo,
             Travellers = ToTravellerDtos(e.Travellers),

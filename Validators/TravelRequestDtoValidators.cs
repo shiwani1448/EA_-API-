@@ -53,6 +53,8 @@ public class CreateTravelRequestDtoValidator : AbstractValidator<CreateTravelReq
         RuleFor(x => x.AdditionalInstructions).MaximumLength(4000);
         RuleFor(x => x.Currency).MaximumLength(10);
         RuleFor(x => x.ApproverId).MaximumLength(100);
+        RuleFor(x => x.ApprovedBy).MaximumLength(200);
+        RuleFor(x => x.RejectedBy).MaximumLength(200);
 
         // ---- Date relationship rules (only when both dates are supplied) ----
         When(x => x.DepartureDate.HasValue && x.ReturnDate.HasValue, () =>
@@ -158,6 +160,8 @@ public class UpdateTravelDraftDtoValidator : AbstractValidator<UpdateTravelDraft
         RuleFor(x => x.AdditionalInstructions).MaximumLength(4000);
         RuleFor(x => x.Currency).MaximumLength(10);
         RuleFor(x => x.ApproverId).MaximumLength(100);
+        RuleFor(x => x.ApprovedBy).MaximumLength(200);
+        RuleFor(x => x.RejectedBy).MaximumLength(200);
 
         // ---- Date relationship rules (only when both dates are supplied) ----
         When(x => x.DepartureDate.HasValue && x.ReturnDate.HasValue, () =>

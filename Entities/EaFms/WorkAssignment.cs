@@ -16,8 +16,8 @@ public class WorkAssignment
     public long? FollowupId { get; set; }
     public Followup? Followup { get; set; }
 
-    public string AssignedToId { get; set; } = string.Empty;
-    public string? AssignedToName { get; set; }
+    public string DoerId { get; set; } = string.Empty;
+    public string? DoerName { get; set; }
 
     public string? AssignedById { get; set; }
     public string? AssignedByName { get; set; }

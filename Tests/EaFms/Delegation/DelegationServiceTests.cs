@@ -92,16 +92,17 @@ public class DelegationServiceTests
 
         numbers ??= new Mock<IDelegationNumberRepository>();
         eaTasks ??= new Mock<IEaTaskService>();
-        return (new DelegationService(db, user, auditSpy.Object, numbers.Object, eaTasks.Object), auditSpy);
+        return (new DelegationService(db, user, auditSpy.Object, numbers.Object, eaTasks.Object,
+            Mock.Of<Microsoft.AspNetCore.Hosting.IWebHostEnvironment>()), auditSpy);
     }
 
     private static DelegationCreateRequestDto MakeCreateDto(long sourceModuleId, string sourceEntityId = "51") => new()
     {
         Title = "Prepare board deck",
         Description = "Compile Q3 numbers",
-        AssignedToId = "emp-42",
-        AssignedToNameSnapshot = "Doer One",
-        DueDate = DateTime.UtcNow.Date.AddDays(3),
+        DoerId = "emp-42",
+        DoerNameSnapshot = "Doer One",
+        EndDate = DateTime.UtcNow.Date.AddDays(3),
         Priority = "High",
         SourceBusinessModuleId = sourceModuleId,
         SourceEntityId = sourceEntityId,
@@ -129,8 +130,8 @@ public class DelegationServiceTests
         Assert.NotEqual(0, result.DelegationId);
         Assert.NotEqual(0, result.EaTaskId);
         Assert.Equal("Pending", result.Status);
-        Assert.Equal("emp-42", result.AssignedToId);
-        Assert.Equal("Doer One", result.AssignedToName);
+        Assert.Equal("emp-42", result.DoerId);
+        Assert.Equal("Doer One", result.DoerName);
         Assert.Equal("manager-1", result.AssignedById);
         Assert.Equal("High", result.Priority);
         Assert.Equal(source.Id, result.SourceBusinessModuleId);
@@ -324,8 +325,8 @@ public class DelegationServiceTests
         var update = new DelegationUpdateRequestDto
         {
             Title = "Updated title", Description = "Updated description",
-            AssignedToId = "emp-99", AssignedToNameSnapshot = "New Doer",
-            DueDate = DateTime.UtcNow.Date.AddDays(10), Priority = "Low",
+            DoerId = "emp-99", DoerNameSnapshot = "New Doer",
+            EndDate = DateTime.UtcNow.Date.AddDays(10), Priority = "Low",
             SourceBusinessModuleId = otherSource.Id, SourceEntityId = "APR-2026-000010",
             SourceReference = "APR-000010", AdditionalNotes = "Revised notes"
         };
@@ -335,8 +336,8 @@ public class DelegationServiceTests
         Assert.Equal(created.ReferenceNo, result.ReferenceNo); // immutable
         Assert.Equal(created.EaTaskId, result.EaTaskId); // no second EaTask
         Assert.Equal("Updated title", result.Title);
-        Assert.Equal("emp-99", result.AssignedToId);
-        Assert.Equal("New Doer", result.AssignedToName);
+        Assert.Equal("emp-99", result.DoerId);
+        Assert.Equal("New Doer", result.DoerName);
         Assert.Equal("Low", result.Priority);
         Assert.Equal(otherSource.Id, result.SourceBusinessModuleId);
         Assert.Equal("EA Approval", result.SourceModuleName);
@@ -376,7 +377,7 @@ public class DelegationServiceTests
         await db.SaveChangesAsync();
 
         await Assert.ThrowsAsync<BusinessRuleException>(() => service.UpdateAsync(created.DelegationId,
-            new DelegationUpdateRequestDto { Title = "x", AssignedToId = "emp-1", SourceBusinessModuleId = source.Id, SourceEntityId = "1" }));
+            new DelegationUpdateRequestDto { Title = "x", DoerId = "emp-1", SourceBusinessModuleId = source.Id, SourceEntityId = "1" }));
     }
 
     // ----------------------------------------------------------------
@@ -401,20 +402,20 @@ public class DelegationServiceTests
 
         var a = await service.CreateAsync(new DelegationCreateRequestDto
         {
-            Title = "Prepare board deck", AssignedToId = "emp-1", AssignedToNameSnapshot = "Alice",
-            DueDate = today, Priority = "High", SourceBusinessModuleId = source.Id,
+            Title = "Prepare board deck", DoerId = "emp-1", DoerNameSnapshot = "Alice",
+            EndDate = today, Priority = "High", SourceBusinessModuleId = source.Id,
             SourceEntityId = "51", SourceReference = "MTG-000051"
         });
         var b = await service.CreateAsync(new DelegationCreateRequestDto
         {
-            Title = "Chase travel booking", AssignedToId = "emp-2", AssignedToNameSnapshot = "Bob",
-            DueDate = today.AddDays(-2), Priority = "Low", SourceBusinessModuleId = otherSource.Id,
+            Title = "Chase travel booking", DoerId = "emp-2", DoerNameSnapshot = "Bob",
+            EndDate = today.AddDays(-2), Priority = "Low", SourceBusinessModuleId = otherSource.Id,
             SourceEntityId = "9", SourceReference = "TRV-2026-000009"
         });
         var c = await service.CreateAsync(new DelegationCreateRequestDto
         {
-            Title = "Follow up notes", AssignedToId = "emp-1", AssignedToNameSnapshot = "Alice",
-            DueDate = today.AddDays(5), SourceBusinessModuleId = source.Id, SourceEntityId = "52"
+            Title = "Follow up notes", DoerId = "emp-1", DoerNameSnapshot = "Alice",
+            EndDate = today.AddDays(5), SourceBusinessModuleId = source.Id, SourceEntityId = "52"
         });
 
         // Directly mutate persisted state to exercise InProgress/Completed without a
@@ -429,7 +430,7 @@ public class DelegationServiceTests
         // A soft-deleted record that must never appear in any list result.
         var deleted = await service.CreateAsync(new DelegationCreateRequestDto
         {
-            Title = "Should never appear", AssignedToId = "emp-3", SourceBusinessModuleId = source.Id, SourceEntityId = "999"
+            Title = "Should never appear", DoerId = "emp-3", SourceBusinessModuleId = source.Id, SourceEntityId = "999"
         });
         var deletedEntity = await db.Delegations.SingleAsync(d => d.Id == deleted.DelegationId);
         deletedEntity.IsDeleted = true;
@@ -464,19 +465,19 @@ public class DelegationServiceTests
 
         var byDoerName = await service.ListAsync(new DelegationListQueryDto { Search = "bob" });
         Assert.Single(byDoerName.Items);
-        Assert.Equal("emp-2", byDoerName.Items[0].AssignedToId);
+        Assert.Equal("emp-2", byDoerName.Items[0].DoerId);
 
         var bySourceReference = await service.ListAsync(new DelegationListQueryDto { Search = "TRV-2026-000009" });
         Assert.Single(bySourceReference.Items);
     }
 
     [Fact]
-    public async Task Filter_AssignedTo_Priority_Status_SourceModule_DueDate_AllNarrowCorrectly()
+    public async Task Filter_Doer_Priority_Status_SourceModule_DueDate_AllNarrowCorrectly()
     {
         var (_, service, source) = await SeedRegisterAsync();
 
-        var byAssignee = await service.ListAsync(new DelegationListQueryDto { AssignedToId = "emp-1" });
-        Assert.Equal(2, byAssignee.Items.Count);
+        var byDoer = await service.ListAsync(new DelegationListQueryDto { DoerId = "emp-1" });
+        Assert.Equal(2, byDoer.Items.Count);
 
         var byPriority = await service.ListAsync(new DelegationListQueryDto { Priority = "high" });
         Assert.Single(byPriority.Items);
@@ -487,7 +488,7 @@ public class DelegationServiceTests
         var bySourceModule = await service.ListAsync(new DelegationListQueryDto { SourceBusinessModuleId = source.Id });
         Assert.Equal(2, bySourceModule.Items.Count); // "Prepare board deck" + "Follow up notes"
 
-        var byDueDate = await service.ListAsync(new DelegationListQueryDto { DueDate = DateTime.UtcNow.Date });
+        var byDueDate = await service.ListAsync(new DelegationListQueryDto { EndDate = DateTime.UtcNow.Date });
         Assert.Single(byDueDate.Items);
     }
 
@@ -545,14 +546,14 @@ public class DelegationServiceTests
     // ----------------------------------------------------------------
 
     [Fact]
-    public async Task Filters_SearchAndAssignedTo_ComposeTogether()
+    public async Task Filters_SearchAndDoer_ComposeTogether()
     {
         var (_, service, _) = await SeedRegisterAsync();
         // "Alice" (emp-1) owns "Prepare board deck" and "Follow up notes"; searching "board"
         // must narrow to just the one that also matches the search term.
-        var result = await service.ListAsync(new DelegationListQueryDto { AssignedToId = "emp-1", Search = "board" });
+        var result = await service.ListAsync(new DelegationListQueryDto { DoerId = "emp-1", Search = "board" });
         Assert.Single(result.Items);
-        Assert.Equal("emp-1", result.Items[0].AssignedToId);
+        Assert.Equal("emp-1", result.Items[0].DoerId);
     }
 
     [Fact]
@@ -577,13 +578,13 @@ public class DelegationServiceTests
     }
 
     [Fact]
-    public async Task Filters_ViewInProgressAndAssignedTo_ComposeTogether()
+    public async Task Filters_ViewInProgressAndDoer_ComposeTogether()
     {
         var (_, service, _) = await SeedRegisterAsync();
-        var matching = await service.ListAsync(new DelegationListQueryDto { View = "inProgress", AssignedToId = "emp-2" });
+        var matching = await service.ListAsync(new DelegationListQueryDto { View = "inProgress", DoerId = "emp-2" });
         Assert.Single(matching.Items);
 
-        var nonMatching = await service.ListAsync(new DelegationListQueryDto { View = "inProgress", AssignedToId = "emp-1" });
+        var nonMatching = await service.ListAsync(new DelegationListQueryDto { View = "inProgress", DoerId = "emp-1" });
         Assert.Empty(nonMatching.Items);
     }
 
@@ -618,8 +619,8 @@ public class DelegationServiceTests
 
         var created = await service.CreateAsync(new DelegationCreateRequestDto
         {
-            Title = "Old completed item", AssignedToId = "emp-1",
-            DueDate = IndiaBusinessCalendar.Today.AddDays(-30),
+            Title = "Old completed item", DoerId = "emp-1",
+            EndDate = IndiaBusinessCalendar.Today.AddDays(-30),
             SourceBusinessModuleId = source.Id, SourceEntityId = "1"
         });
         var entity = await db.Delegations.SingleAsync(d => d.Id == created.DelegationId);
@@ -642,8 +643,8 @@ public class DelegationServiceTests
 
         var created = await service.CreateAsync(new DelegationCreateRequestDto
         {
-            Title = "Completed today", AssignedToId = "emp-1",
-            DueDate = IndiaBusinessCalendar.Today,
+            Title = "Completed today", DoerId = "emp-1",
+            EndDate = IndiaBusinessCalendar.Today,
             SourceBusinessModuleId = source.Id, SourceEntityId = "1"
         });
         var entity = await db.Delegations.SingleAsync(d => d.Id == created.DelegationId);
@@ -722,8 +723,8 @@ public class DelegationServiceTests
         await service.StartAsync(created.DelegationId);
 
         var reloaded = await service.GetByIdAsync(created.DelegationId);
-        Assert.Equal(created.AssignedToId, reloaded.AssignedToId);
-        Assert.Equal(created.AssignedToName, reloaded.AssignedToName);
+        Assert.Equal(created.DoerId, reloaded.DoerId);
+        Assert.Equal(created.DoerName, reloaded.DoerName);
         Assert.Equal(created.AssignedById, reloaded.AssignedById);
         Assert.Equal(created.SourceBusinessModuleId, reloaded.SourceBusinessModuleId);
         Assert.Equal(created.SourceEntityId, reloaded.SourceEntityId);
@@ -750,7 +751,7 @@ public class DelegationServiceTests
     {
         var (db, service, created, _) = await SeedPendingDelegationAsync();
         await service.StartAsync(created.DelegationId);
-        await service.CompleteAsync(created.DelegationId);
+        await service.CompleteAsync(created.DelegationId, null);
 
         await Assert.ThrowsAsync<BusinessRuleException>(() => service.StartAsync(created.DelegationId));
         _ = db;
@@ -774,7 +775,7 @@ public class DelegationServiceTests
         var (db, service, created, auditSpy) = await SeedPendingDelegationAsync();
         var started = await service.StartAsync(created.DelegationId);
 
-        var result = await service.CompleteAsync(created.DelegationId);
+        var result = await service.CompleteAsync(created.DelegationId, null);
 
         Assert.Equal("Completed", result.Status);
         Assert.Equal(started.StartedAt, result.StartedAt); // original start preserved
@@ -799,7 +800,7 @@ public class DelegationServiceTests
     public async Task Complete_WhilePending_ThrowsConflict()
     {
         var (db, service, created, _) = await SeedPendingDelegationAsync();
-        var ex = await Assert.ThrowsAsync<BusinessRuleException>(() => service.CompleteAsync(created.DelegationId));
+        var ex = await Assert.ThrowsAsync<BusinessRuleException>(() => service.CompleteAsync(created.DelegationId, null));
         Assert.Contains("cannot be completed", ex.Message);
         _ = db;
     }
@@ -809,9 +810,9 @@ public class DelegationServiceTests
     {
         var (db, service, created, _) = await SeedPendingDelegationAsync();
         await service.StartAsync(created.DelegationId);
-        await service.CompleteAsync(created.DelegationId);
+        await service.CompleteAsync(created.DelegationId, null);
 
-        await Assert.ThrowsAsync<BusinessRuleException>(() => service.CompleteAsync(created.DelegationId));
+        await Assert.ThrowsAsync<BusinessRuleException>(() => service.CompleteAsync(created.DelegationId, null));
         Assert.Equal(1, (await db.AuditLogs.ToListAsync()).Count(a => a.ActionType == "DELEGATION_COMPLETE"));
     }
 
@@ -820,7 +821,7 @@ public class DelegationServiceTests
     {
         var db = MakeDb();
         var (service, _) = MakeService(db);
-        await Assert.ThrowsAsync<NotFoundException>(() => service.CompleteAsync(999));
+        await Assert.ThrowsAsync<NotFoundException>(() => service.CompleteAsync(999, null));
     }
 
     // ----------------------------------------------------------------
@@ -846,7 +847,7 @@ public class DelegationServiceTests
         Assert.Empty((await service.ListAsync(new DelegationListQueryDto { View = "pending" })).Items);
         Assert.Single((await service.ListAsync(new DelegationListQueryDto { View = "inProgress" })).Items);
 
-        await service.CompleteAsync(created.DelegationId);
+        await service.CompleteAsync(created.DelegationId, null);
 
         var afterComplete = await service.GetSummaryAsync();
         Assert.Equal(0, afterComplete.InProgress);
@@ -866,8 +867,8 @@ public class DelegationServiceTests
         var (service, _) = MakeService(db, numbers, eaTasks);
         var created = await service.CreateAsync(new DelegationCreateRequestDto
         {
-            Title = "Overdue then completed", AssignedToId = "emp-1",
-            DueDate = IndiaBusinessCalendar.Today.AddDays(-5),
+            Title = "Overdue then completed", DoerId = "emp-1",
+            EndDate = IndiaBusinessCalendar.Today.AddDays(-5),
             SourceBusinessModuleId = source.Id, SourceEntityId = "1"
         });
         await service.StartAsync(created.DelegationId);
@@ -876,7 +877,7 @@ public class DelegationServiceTests
         Assert.True(beforeComplete.IsOverdue);
         Assert.Single((await service.ListAsync(new DelegationListQueryDto { View = "overdue" })).Items);
 
-        var completed = await service.CompleteAsync(created.DelegationId);
+        var completed = await service.CompleteAsync(created.DelegationId, null);
 
         Assert.False(completed.IsOverdue);
         Assert.Empty((await service.ListAsync(new DelegationListQueryDto { View = "overdue" })).Items);
@@ -893,15 +894,15 @@ public class DelegationServiceTests
         var (service, _) = MakeService(db, numbers, eaTasks);
         var created = await service.CreateAsync(new DelegationCreateRequestDto
         {
-            Title = "Due today then completed", AssignedToId = "emp-1",
-            DueDate = IndiaBusinessCalendar.Today,
+            Title = "Due today then completed", DoerId = "emp-1",
+            EndDate = IndiaBusinessCalendar.Today,
             SourceBusinessModuleId = source.Id, SourceEntityId = "1"
         });
         await service.StartAsync(created.DelegationId);
 
         Assert.Single((await service.ListAsync(new DelegationListQueryDto { View = "dueToday" })).Items);
 
-        var completed = await service.CompleteAsync(created.DelegationId);
+        var completed = await service.CompleteAsync(created.DelegationId, null);
 
         Assert.False(completed.IsDueToday);
         Assert.Empty((await service.ListAsync(new DelegationListQueryDto { View = "dueToday" })).Items);
@@ -932,14 +933,14 @@ public class DelegationServiceTests
         {
             Title = "Prepare quarterly summary",
             Description = "Ad hoc EA request, no source record",
-            AssignedToId = "emp-manual-1",
-            AssignedToNameSnapshot = "Manual Doer",
+            DoerId = "emp-manual-1",
+            DoerNameSnapshot = "Manual Doer",
             Priority = "High"
         });
 
         Assert.Equal("Pending", result.Status);
-        Assert.Equal("emp-manual-1", result.AssignedToId);
-        Assert.Equal("Manual Doer", result.AssignedToName);
+        Assert.Equal("emp-manual-1", result.DoerId);
+        Assert.Equal("Manual Doer", result.DoerName);
         Assert.Equal("manager-1", result.AssignedById); // server-owned actor, unchanged
         Assert.Null(result.SourceBusinessModuleId);
         Assert.Null(result.SourceModuleName);
@@ -973,7 +974,7 @@ public class DelegationServiceTests
         var result = await service.CreateAsync(new DelegationCreateRequestDto
         {
             Title = "Prepare quarterly summary",
-            AssignedToId = "emp-manual-1",
+            DoerId = "emp-manual-1",
             SourceBusinessModuleId = null,
             SourceEntityId = null,
             SourceReference = null
@@ -996,7 +997,7 @@ public class DelegationServiceTests
         var result = await service.CreateAsync(new DelegationCreateRequestDto
         {
             Title = "Send report",
-            AssignedToId = "emp-manual-3"
+            DoerId = "emp-manual-3"
         });
 
         var task = await db.Tasks.SingleAsync(t => t.Id == result.EaTaskId);
@@ -1016,7 +1017,7 @@ public class DelegationServiceTests
         var result = await service.CreateAsync(new DelegationCreateRequestDto
         {
             Title = "Follow up with vendor",
-            AssignedToId = "emp-manual-2",
+            DoerId = "emp-manual-2",
             SourceReference = "Verbal instruction from EA on 2026-09-18"
         });
 
@@ -1037,7 +1038,7 @@ public class DelegationServiceTests
         var result = await service.CreateAsync(new DelegationCreateRequestDto
         {
             Title = "Chase meeting action",
-            AssignedToId = "emp-1",
+            DoerId = "emp-1",
             SourceBusinessModuleId = source.Id,
             SourceEntityId = "MTG-ACTION-4",
             SourceReference = "MTG-000060"
@@ -1059,7 +1060,7 @@ public class DelegationServiceTests
         await Assert.ThrowsAsync<BusinessRuleException>(() => service.CreateAsync(new DelegationCreateRequestDto
         {
             Title = "Should fail",
-            AssignedToId = "emp-1",
+            DoerId = "emp-1",
             SourceBusinessModuleId = 999999
         }));
         Assert.Empty(await db.Delegations.ToListAsync());
@@ -1076,11 +1077,11 @@ public class DelegationServiceTests
 
         var sourced = await service.CreateAsync(new DelegationCreateRequestDto
         {
-            Title = "Sourced", AssignedToId = "emp-1", SourceBusinessModuleId = source.Id, SourceEntityId = "1"
+            Title = "Sourced", DoerId = "emp-1", SourceBusinessModuleId = source.Id, SourceEntityId = "1"
         });
         var manual = await service.CreateAsync(new DelegationCreateRequestDto
         {
-            Title = "Manual", AssignedToId = "emp-2"
+            Title = "Manual", DoerId = "emp-2"
         });
 
         var filtered = await service.ListAsync(new DelegationListQueryDto { SourceBusinessModuleId = source.Id });
@@ -1101,13 +1102,13 @@ public class DelegationServiceTests
 
         var created = await service.CreateAsync(new DelegationCreateRequestDto
         {
-            Title = "Sourced initially", AssignedToId = "emp-1",
+            Title = "Sourced initially", DoerId = "emp-1",
             SourceBusinessModuleId = source.Id, SourceEntityId = "1", SourceReference = "MTG-1"
         });
 
         var updated = await service.UpdateAsync(created.DelegationId, new DelegationUpdateRequestDto
         {
-            Title = "Now manual", AssignedToId = "emp-1",
+            Title = "Now manual", DoerId = "emp-1",
             SourceBusinessModuleId = null, SourceEntityId = null, SourceReference = null
         });
 

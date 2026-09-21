@@ -30,8 +30,8 @@ public class MeetingListItemResponseDto
     public string? OrganizerName { get; set; }
 
 
-    public string? AssignedToId { get; set; }
-    public string? AssignedToName { get; set; }
+    public string? DoerId { get; set; }
+    public string? DoerName { get; set; }
 
     public string? Priority { get; set; }
 

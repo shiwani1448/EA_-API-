@@ -39,8 +39,8 @@ public class IntakeRequest
     public bool IsConfidential { get; set; } = false;
 
     // Assignment (owner/doer) fields - external identity strings (no FK to HRMS)
-    public string? AssignedToId { get; set; }
-    public string? AssignedToName { get; set; }
+    public string? DoerId { get; set; }
+    public string? DoerName { get; set; }
 
     // Audit
     public string CreatedBy { get; set; } = string.Empty;

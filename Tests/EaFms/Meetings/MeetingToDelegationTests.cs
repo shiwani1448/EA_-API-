@@ -48,7 +48,8 @@ public class MeetingToDelegationTests
     {
         var eaTasks = new EaTaskService(db, new EaTaskRepository(db), new TatRuleRepository(db),
             new CreateEaTaskDtoValidator(), user, audit);
-        return new DelegationService(db, user, audit, new DelegationRepository(db), eaTasks);
+        return new DelegationService(db, user, audit, new DelegationRepository(db), eaTasks,
+            Mock.Of<Microsoft.AspNetCore.Hosting.IWebHostEnvironment>());
     }
 
     private static Mock<IMeetingCompletionFileStore> MakeFileStoreMock()
@@ -142,7 +143,7 @@ public class MeetingToDelegationTests
 
     private static async Task<MeetingAction> AddActionAsync(
         EaFmsDbContext db, long meetingId, string marker,
-        string? assignedToId = "EMP-5B3-1", string? ownerName = "Step 5B-3 Doer",
+        string? doerId = "EMP-5B3-1", string? doerName = "Step 5B-3 Doer",
         string? title = null, string? description = "Disposable Step 5B-3 test action",
         string? priority = "High", DateTime? dueDate = null, bool isDeleted = false)
     {
@@ -151,8 +152,8 @@ public class MeetingToDelegationTests
             MeetingId = meetingId,
             Title = title ?? $"Action {marker}",
             Description = description,
-            AssignedToId = assignedToId,
-            OwnerName = ownerName,
+            DoerId = doerId,
+            DoerName = doerName,
             Priority = priority,
             DueDate = dueDate ?? DateTime.UtcNow.Date.AddDays(5),
             CreatedBy = "step5b3-ea", CreatedDate = DateTime.UtcNow,
@@ -203,7 +204,7 @@ public class MeetingToDelegationTests
         var (meeting, meetingModuleId) = await SeedInProgressMeetingAsync(db, marker);
         var dueDate = DateTime.UtcNow.Date.AddDays(7);
         var action = await AddActionAsync(db, meeting.Id, marker,
-            assignedToId: "EMP-5B3-ONE", ownerName: "One Doer",
+            doerId: "EMP-5B3-ONE", doerName: "One Doer",
             title: $"Prepare revised proposal {marker}", description: "Full mapping check",
             priority: "Anything Selected By Frontend", dueDate: dueDate);
 
@@ -221,8 +222,8 @@ public class MeetingToDelegationTests
 
         Assert.Equal($"Prepare revised proposal {marker}", delegation.Title);
         Assert.Equal("Full mapping check", delegation.Description);
-        Assert.Equal("EMP-5B3-ONE", delegation.AssignedToId); // Doer identity, copied verbatim
-        Assert.Equal("One Doer", delegation.AssignedToNameSnapshot);
+        Assert.Equal("EMP-5B3-ONE", delegation.DoerId); // Doer identity, copied verbatim
+        Assert.Equal("One Doer", delegation.DoerNameSnapshot);
         Assert.Equal("Anything Selected By Frontend", delegation.Priority); // custom string, no catalog lookup
         Assert.Equal(dueDate, delegation.DueDate);
         Assert.Equal(meetingModuleId, delegation.SourceBusinessModuleId); // dynamically resolved
@@ -231,6 +232,8 @@ public class MeetingToDelegationTests
         Assert.Equal("step5b3-ea", delegation.AssignedById); // server actor, not the Doer
         Assert.Equal("Pending", delegation.Status);
         Assert.Null(delegation.StartedAt);
+        Assert.Null(delegation.DelegationType); // Meeting actions carry neither; never fabricated
+        Assert.Null(delegation.StartDate);
         Assert.Null(delegation.CompletedAt);
 
         var task = await verify.Tasks.SingleAsync(t => t.Id == delegation.EaTaskId);
@@ -255,9 +258,9 @@ public class MeetingToDelegationTests
         await using var db = MakeRealDb();
         var marker = $"multi-{Guid.NewGuid():N}";
         var (meeting, meetingModuleId) = await SeedInProgressMeetingAsync(db, marker);
-        var a1 = await AddActionAsync(db, meeting.Id, $"{marker}-a1", assignedToId: "EMP-5B3-A1");
-        var a2 = await AddActionAsync(db, meeting.Id, $"{marker}-a2", assignedToId: "EMP-5B3-A2");
-        var a3 = await AddActionAsync(db, meeting.Id, $"{marker}-a3", assignedToId: "EMP-5B3-A3");
+        var a1 = await AddActionAsync(db, meeting.Id, $"{marker}-a1", doerId: "EMP-5B3-A1");
+        var a2 = await AddActionAsync(db, meeting.Id, $"{marker}-a2", doerId: "EMP-5B3-A2");
+        var a3 = await AddActionAsync(db, meeting.Id, $"{marker}-a3", doerId: "EMP-5B3-A3");
 
         var user = Mock.Of<ICurrentUserService>(u => u.UserName == "step5b3-ea" && u.UserId == 1);
         var audit = new AuditService(db, user);
@@ -276,17 +279,17 @@ public class MeetingToDelegationTests
     }
 
     // ----------------------------------------------------------------
-    // Doer workload visibility (assignedToId filter)
+    // Doer workload visibility (doerId filter)
     // ----------------------------------------------------------------
 
     [Fact]
-    public async Task GeneratedDelegation_VisibleThroughAssignedToIdFilter_DifferentDoerExcluded()
+    public async Task GeneratedDelegation_VisibleThroughDoerIdFilter_DifferentDoerExcluded()
     {
         await using var db = MakeRealDb();
         var marker = $"filter-{Guid.NewGuid():N}";
         var (meeting, _) = await SeedInProgressMeetingAsync(db, marker);
         var doerId = $"EMP-5B3-FILTER-{marker}";
-        await AddActionAsync(db, meeting.Id, marker, assignedToId: doerId);
+        await AddActionAsync(db, meeting.Id, marker, doerId: doerId);
 
         var user = Mock.Of<ICurrentUserService>(u => u.UserName == "step5b3-ea" && u.UserId == 1);
         var audit = new AuditService(db, user);
@@ -297,30 +300,30 @@ public class MeetingToDelegationTests
         await using var verify = MakeRealDb();
         var verifyDelegations = MakeRealDelegationService(verify, user, new AuditService(verify, user));
 
-        var matched = await verifyDelegations.ListAsync(new DelegationListQueryDto { AssignedToId = doerId });
+        var matched = await verifyDelegations.ListAsync(new DelegationListQueryDto { DoerId = doerId });
         Assert.Single(matched.Items);
-        Assert.Equal(doerId, matched.Items[0].AssignedToId);
+        Assert.Equal(doerId, matched.Items[0].DoerId);
 
-        var notMatched = await verifyDelegations.ListAsync(new DelegationListQueryDto { AssignedToId = $"EMP-NOT-{marker}" });
-        Assert.DoesNotContain(notMatched.Items, i => i.AssignedToId == doerId);
+        var notMatched = await verifyDelegations.ListAsync(new DelegationListQueryDto { DoerId = $"EMP-NOT-{marker}" });
+        Assert.DoesNotContain(notMatched.Items, i => i.DoerId == doerId);
     }
 
     // ----------------------------------------------------------------
-    // Missing doer — fails completion, no fake assignee, no partial commit
+    // Missing doer — fails completion, no fake doer, no partial commit
     // ----------------------------------------------------------------
 
     [Theory]
     [InlineData(null)]
     [InlineData("")]
     [InlineData("   ")]
-    public async Task CompleteAsync_MissingAssignedToId_FailsCompletion_NoFakeAssignee_NoPartialDelegations_MeetingRemainsIncomplete(string? blankAssignedToId)
+    public async Task CompleteAsync_MissingDoerId_FailsCompletion_NoFakeDoer_NoPartialDelegations_MeetingRemainsIncomplete(string? blankDoerId)
     {
         await using var db = MakeRealDb();
         var marker = $"missing-{Guid.NewGuid():N}";
         var (meeting, meetingModuleId) = await SeedInProgressMeetingAsync(db, marker);
-        var validAction = await AddActionAsync(db, meeting.Id, $"{marker}-valid", assignedToId: "EMP-5B3-VALID",
+        var validAction = await AddActionAsync(db, meeting.Id, $"{marker}-valid", doerId: "EMP-5B3-VALID",
             title: "Valid action");
-        var brokenAction = await AddActionAsync(db, meeting.Id, $"{marker}-broken", assignedToId: blankAssignedToId,
+        var brokenAction = await AddActionAsync(db, meeting.Id, $"{marker}-broken", doerId: blankDoerId,
             title: "Prepare revised proposal");
 
         var user = Mock.Of<ICurrentUserService>(u => u.UserName == "step5b3-ea" && u.UserId == 1);
@@ -340,21 +343,21 @@ public class MeetingToDelegationTests
         // proving the whole attempt rolled back rather than partially converting.
         Assert.False(await verify.Delegations.AnyAsync(d => d.SourceBusinessModuleId == meetingModuleId && d.SourceEntityId == validAction.Id.ToString()));
         Assert.False(await verify.Delegations.AnyAsync(d => d.SourceBusinessModuleId == meetingModuleId && d.SourceEntityId == brokenAction.Id.ToString()));
-        // No fake assignee anywhere in the (nonexistent) Delegation rows for this meeting.
-        Assert.Equal(0, await verify.Delegations.CountAsync(d => d.AssignedToId == "Unknown" || d.AssignedToId == "Unassigned"));
+        // No fake doer anywhere in the (nonexistent) Delegation rows for this meeting.
+        Assert.Equal(0, await verify.Delegations.CountAsync(d => d.DoerId == "Unknown" || d.DoerId == "Unassigned"));
     }
 
     // ----------------------------------------------------------------
-    // Valid AssignedToId + null OwnerName still succeeds
+    // Valid DoerId + null DoerName still succeeds
     // ----------------------------------------------------------------
 
     [Fact]
-    public async Task CompleteAsync_ValidAssignedToId_NullOwnerName_SucceedsWithNullNameSnapshot()
+    public async Task CompleteAsync_ValidDoerId_NullDoerName_SucceedsWithNullNameSnapshot()
     {
         await using var db = MakeRealDb();
         var marker = $"noname-{Guid.NewGuid():N}";
         var (meeting, meetingModuleId) = await SeedInProgressMeetingAsync(db, marker);
-        var action = await AddActionAsync(db, meeting.Id, marker, assignedToId: "EMP-5B3-NONAME", ownerName: null);
+        var action = await AddActionAsync(db, meeting.Id, marker, doerId: "EMP-5B3-NONAME", doerName: null);
 
         var user = Mock.Of<ICurrentUserService>(u => u.UserName == "step5b3-ea" && u.UserId == 1);
         var audit = new AuditService(db, user);
@@ -365,8 +368,8 @@ public class MeetingToDelegationTests
 
         await using var verify = MakeRealDb();
         var delegation = await verify.Delegations.SingleAsync(d => d.SourceBusinessModuleId == meetingModuleId && d.SourceEntityId == action.Id.ToString());
-        Assert.Equal("EMP-5B3-NONAME", delegation.AssignedToId);
-        Assert.Null(delegation.AssignedToNameSnapshot);
+        Assert.Equal("EMP-5B3-NONAME", delegation.DoerId);
+        Assert.Null(delegation.DoerNameSnapshot);
     }
 
     // ----------------------------------------------------------------
@@ -379,8 +382,8 @@ public class MeetingToDelegationTests
         await using var db = MakeRealDb();
         var marker = $"deleted-{Guid.NewGuid():N}";
         var (meeting, meetingModuleId) = await SeedInProgressMeetingAsync(db, marker);
-        var live = await AddActionAsync(db, meeting.Id, $"{marker}-live", assignedToId: "EMP-5B3-LIVE");
-        var deleted = await AddActionAsync(db, meeting.Id, $"{marker}-deleted", assignedToId: "EMP-5B3-DELETED", isDeleted: true);
+        var live = await AddActionAsync(db, meeting.Id, $"{marker}-live", doerId: "EMP-5B3-LIVE");
+        var deleted = await AddActionAsync(db, meeting.Id, $"{marker}-deleted", doerId: "EMP-5B3-DELETED", isDeleted: true);
 
         var user = Mock.Of<ICurrentUserService>(u => u.UserName == "step5b3-ea" && u.UserId == 1);
         var audit = new AuditService(db, user);
@@ -404,7 +407,7 @@ public class MeetingToDelegationTests
         await using var db = MakeRealDb();
         var marker = $"dup-{Guid.NewGuid():N}";
         var (meeting, meetingModuleId) = await SeedInProgressMeetingAsync(db, marker);
-        var action = await AddActionAsync(db, meeting.Id, marker, assignedToId: "EMP-5B3-DUP");
+        var action = await AddActionAsync(db, meeting.Id, marker, doerId: "EMP-5B3-DUP");
 
         var user = Mock.Of<ICurrentUserService>(u => u.UserName == "step5b3-ea" && u.UserId == 1);
         var audit = new AuditService(db, user);
@@ -416,7 +419,7 @@ public class MeetingToDelegationTests
             await delegations.CreateCoreAsync(new DelegationCreateCommand
             {
                 Title = "Pre-existing linked Delegation (disposable Step 5B-3 test)",
-                AssignedToId = "EMP-5B3-DUP",
+                DoerId = "EMP-5B3-DUP",
                 SourceBusinessModuleId = meetingModuleId,
                 SourceEntityId = action.Id.ToString()
             }, default);
@@ -443,7 +446,7 @@ public class MeetingToDelegationTests
         await using var db = MakeRealDb();
         var marker = $"retry-{Guid.NewGuid():N}";
         var (meeting, meetingModuleId) = await SeedInProgressMeetingAsync(db, marker);
-        var action = await AddActionAsync(db, meeting.Id, marker, assignedToId: "EMP-5B3-RETRY");
+        var action = await AddActionAsync(db, meeting.Id, marker, doerId: "EMP-5B3-RETRY");
 
         var user = Mock.Of<ICurrentUserService>(u => u.UserName == "step5b3-ea" && u.UserId == 1);
         var audit = new AuditService(db, user);
@@ -474,7 +477,7 @@ public class MeetingToDelegationTests
         var marker = $"concurrent-{Guid.NewGuid():N}";
         await using var seedDb = MakeRealDb();
         var (meeting, meetingModuleId) = await SeedInProgressMeetingAsync(seedDb, marker);
-        var action = await AddActionAsync(seedDb, meeting.Id, marker, assignedToId: "EMP-5B3-CONCURRENT");
+        var action = await AddActionAsync(seedDb, meeting.Id, marker, doerId: "EMP-5B3-CONCURRENT");
 
         Task<MeetingLifecycleResponseDto> RunAttempt()
         {
@@ -511,15 +514,15 @@ public class MeetingToDelegationTests
         await using var db = MakeRealDb();
         var marker = $"midfail-{Guid.NewGuid():N}";
         var (meeting, meetingModuleId) = await SeedInProgressMeetingAsync(db, marker);
-        // Both actions have valid titles and assignees so they persist without error.
+        // Both actions have valid titles and doers so they persist without error.
         // The failure is injected via a mock IDelegationNumberRepository (the seam
         // already present in DelegationService's constructor) that succeeds on the first
         // call and throws on the second — deterministically causing CreateCoreAsync to
         // fail during the second Delegation creation, inside the outer Meeting-completion
         // transaction, so the first Delegation (and its EaTask) roll back with it.
-        var first  = await AddActionAsync(db, meeting.Id, $"{marker}-first",  assignedToId: "EMP-5B3-FIRST",
+        var first  = await AddActionAsync(db, meeting.Id, $"{marker}-first",  doerId: "EMP-5B3-FIRST",
             title: "First action (disposable Step 5B-3 rollback test)");
-        var second = await AddActionAsync(db, meeting.Id, $"{marker}-second", assignedToId: "EMP-5B3-SECOND",
+        var second = await AddActionAsync(db, meeting.Id, $"{marker}-second", doerId: "EMP-5B3-SECOND",
             title: "Second action (disposable Step 5B-3 rollback test)");
 
         // ---- PRE-CONDITION snapshot (taken BEFORE CompleteAsync) ----
@@ -564,7 +567,8 @@ public class MeetingToDelegationTests
 
         var eaTasks = new EaTaskService(db, new EaTaskRepository(db), new TatRuleRepository(db),
             new CreateEaTaskDtoValidator(), user, audit);
-        var delegations = new DelegationService(db, user, audit, mockNumbers.Object, eaTasks);
+        var delegations = new DelegationService(db, user, audit, mockNumbers.Object, eaTasks,
+            Mock.Of<Microsoft.AspNetCore.Hosting.IWebHostEnvironment>());
         var lifecycle = MakeLifecycleService(db, user, audit, delegations, out _);
 
         // ---- ACTION: CompleteAsync must throw (failure during second Delegation creation) ----
@@ -620,7 +624,7 @@ public class MeetingToDelegationTests
         var result = await delegations.CreateAsync(new DelegationCreateRequestDto
         {
             Title = $"Manual Delegation {marker} (disposable Step 5B-3 test)",
-            AssignedToId = "EMP-5B3-MANUAL"
+            DoerId = "EMP-5B3-MANUAL"
         });
 
         Assert.Null(result.SourceBusinessModuleId);
@@ -640,7 +644,7 @@ public class MeetingToDelegationTests
         await using var db = MakeRealDb();
         var marker = $"lifecycle-{Guid.NewGuid():N}";
         var (meeting, meetingModuleId) = await SeedInProgressMeetingAsync(db, marker);
-        var action = await AddActionAsync(db, meeting.Id, marker, assignedToId: "EMP-5B3-LIFECYCLE");
+        var action = await AddActionAsync(db, meeting.Id, marker, doerId: "EMP-5B3-LIFECYCLE");
 
         var user = Mock.Of<ICurrentUserService>(u => u.UserName == "step5b3-ea" && u.UserId == 1);
         var audit = new AuditService(db, user);
@@ -661,7 +665,7 @@ public class MeetingToDelegationTests
         Assert.Equal("InProgress", afterStart.ExecutionStatus);
 
         var delegationsForComplete = MakeRealDelegationService(verify2, user, new AuditService(verify2, user));
-        var completed = await delegationsForComplete.CompleteAsync(generated.Id);
+        var completed = await delegationsForComplete.CompleteAsync(generated.Id, null);
         Assert.Equal("Completed", completed.Status);
 
         await using var verify3 = MakeRealDb();

@@ -36,7 +36,10 @@ internal sealed class EaTaskHistoryBuilder(EaFmsDbContext db)
             }
         };
 
-        if (task.WorkflowInstanceId.HasValue)
+        // A Delegation's WorkflowInstanceId is only its pause anchor (created on first Pause) — its
+        // Started/Completed events still come from the Delegation audit trail, pauses from WorkPause.
+        if (task.WorkflowInstanceId.HasValue
+            && !string.Equals(task.ModuleName, "Delegation", StringComparison.OrdinalIgnoreCase))
             await AddMeetingEventsAsync(task, events, ct);
         else
             await AddNoTatModuleEventsAsync(task, events, ct);
@@ -78,50 +81,7 @@ internal sealed class EaTaskHistoryBuilder(EaFmsDbContext db)
                 Source = started is not null ? "WorkflowHistory" : "EaTask"
             });
 
-            foreach (var pause in pauses.Where(p => p.StartAt >= task.StartedAt.Value))
-            {
-                var priorPauses = pauses.Where(p => p.StartAt < pause.StartAt).ToList();
-                var usedAtPauseStart = ElapsedMinusPaused(task.StartedAt.Value, pause.StartAt, priorPauses);
-                events.Add(new EaTaskHistoryEventDto
-                {
-                    EventType = "Paused",
-                    PreviousExecutionStatus = EaTaskExecutionStatus.InProgress,
-                    NewExecutionStatus = EaTaskExecutionStatus.InProgress,
-                    OccurredAt = pause.StartAt,
-                    PerformedBy = pause.CreatedBy,
-                    IsPaused = true,
-                    AllottedTatMinutes = task.AllottedTatMinutes,
-                    CurrentTatUsedMinutes = usedAtPauseStart,
-                    CurrentTatDifferenceMinutes = task.AllottedTatMinutes - usedAtPauseStart,
-                    PauseStartedAt = pause.StartAt,
-                    Notes = pause.Reason,
-                    Source = "WorkPause"
-                });
-
-                if (pause.EndAt.HasValue)
-                {
-                    var pausesUpToAndIncluding = pauses.Where(p => p.StartAt <= pause.StartAt).ToList();
-                    var usedAtResume = ElapsedMinusPaused(task.StartedAt.Value, pause.EndAt.Value, pausesUpToAndIncluding);
-                    events.Add(new EaTaskHistoryEventDto
-                    {
-                        EventType = "Resumed",
-                        PreviousExecutionStatus = EaTaskExecutionStatus.InProgress,
-                        NewExecutionStatus = EaTaskExecutionStatus.InProgress,
-                        OccurredAt = pause.EndAt.Value,
-                        PerformedBy = pause.ResumedById ?? pause.CreatedBy,
-                        PerformedByName = pause.ResumedByName,
-                        IsPaused = false,
-                        AllottedTatMinutes = task.AllottedTatMinutes,
-                        CurrentTatUsedMinutes = usedAtResume,
-                        CurrentTatDifferenceMinutes = task.AllottedTatMinutes - usedAtResume,
-                        PauseStartedAt = pause.StartAt,
-                        PauseEndedAt = pause.EndAt,
-                        PauseDurationMinutes = (int)(pause.EndAt.Value - pause.StartAt).TotalMinutes,
-                        Notes = pause.ResumedReason,
-                        Source = "WorkPause"
-                    });
-                }
-            }
+            AddPauseEvents(task, pauses, events);
         }
 
         if (task.CompletedAt.HasValue)
@@ -139,6 +99,55 @@ internal sealed class EaTaskHistoryBuilder(EaFmsDbContext db)
                 CurrentTatDifferenceMinutes = task.AllottedTatMinutes - task.TatUsedMinutes,
                 Source = completed is not null ? "WorkflowHistory" : "EaTask"
             });
+        }
+    }
+
+    /// <summary>Paused/Resumed events from shared WorkPause rows (used by Meeting and by Delegation pause anchors).</summary>
+    private static void AddPauseEvents(EaTask task, IReadOnlyList<WorkPause> pauses, List<EaTaskHistoryEventDto> events)
+    {
+        foreach (var pause in pauses.Where(p => p.StartAt >= task.StartedAt.Value))
+        {
+            var priorPauses = pauses.Where(p => p.StartAt < pause.StartAt).ToList();
+            var usedAtPauseStart = ElapsedMinusPaused(task.StartedAt.Value, pause.StartAt, priorPauses);
+            events.Add(new EaTaskHistoryEventDto
+            {
+                EventType = "Paused",
+                PreviousExecutionStatus = EaTaskExecutionStatus.InProgress,
+                NewExecutionStatus = EaTaskExecutionStatus.InProgress,
+                OccurredAt = pause.StartAt,
+                PerformedBy = pause.CreatedBy,
+                IsPaused = true,
+                AllottedTatMinutes = task.AllottedTatMinutes,
+                CurrentTatUsedMinutes = usedAtPauseStart,
+                CurrentTatDifferenceMinutes = task.AllottedTatMinutes - usedAtPauseStart,
+                PauseStartedAt = pause.StartAt,
+                Notes = pause.Reason,
+                Source = "WorkPause"
+            });
+
+            if (pause.EndAt.HasValue)
+            {
+                var pausesUpToAndIncluding = pauses.Where(p => p.StartAt <= pause.StartAt).ToList();
+                var usedAtResume = ElapsedMinusPaused(task.StartedAt.Value, pause.EndAt.Value, pausesUpToAndIncluding);
+                events.Add(new EaTaskHistoryEventDto
+                {
+                    EventType = "Resumed",
+                    PreviousExecutionStatus = EaTaskExecutionStatus.InProgress,
+                    NewExecutionStatus = EaTaskExecutionStatus.InProgress,
+                    OccurredAt = pause.EndAt.Value,
+                    PerformedBy = pause.ResumedById ?? pause.CreatedBy,
+                    PerformedByName = pause.ResumedByName,
+                    IsPaused = false,
+                    AllottedTatMinutes = task.AllottedTatMinutes,
+                    CurrentTatUsedMinutes = usedAtResume,
+                    CurrentTatDifferenceMinutes = task.AllottedTatMinutes - usedAtResume,
+                    PauseStartedAt = pause.StartAt,
+                    PauseEndedAt = pause.EndAt,
+                    PauseDurationMinutes = (int)(pause.EndAt.Value - pause.StartAt).TotalMinutes,
+                    Notes = pause.ResumedReason,
+                    Source = "WorkPause"
+                });
+            }
         }
     }
 
@@ -210,6 +219,16 @@ internal sealed class EaTaskHistoryBuilder(EaFmsDbContext db)
                     "DELEGATION_COMPLETE" => ("Completed", EaTaskExecutionStatus.InProgress, EaTaskExecutionStatus.Completed),
                     _ => (log.ActionType, null, null)
                 }));
+
+            if (task.WorkflowInstanceId.HasValue && task.StartedAt.HasValue)
+            {
+                var workflowId = task.WorkflowInstanceId.Value;
+                var pauses = await db.WorkPauses.AsNoTracking()
+                    .Where(p => p.WorkflowInstanceId == workflowId && !p.IsDeleted)
+                    .OrderBy(p => p.StartAt)
+                    .ToListAsync(ct);
+                AddPauseEvents(task, pauses, events);
+            }
         }
         // No other module currently creates EaTasks.
     }

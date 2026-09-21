@@ -39,7 +39,8 @@ public class DelegationCreateCoreTransactionTests
         var audit = new AuditService(db, user);
         var eaTasks = new EaTaskService(db, new EaTaskRepository(db), new TatRuleRepository(db),
             new CreateEaTaskDtoValidator(), user, audit);
-        return new DelegationService(db, user, audit, new DelegationRepository(db), eaTasks);
+        return new DelegationService(db, user, audit, new DelegationRepository(db), eaTasks,
+            Mock.Of<Microsoft.AspNetCore.Hosting.IWebHostEnvironment>());
     }
 
     private static async Task<long> ResolveMeetingModuleIdAsync(EaFmsDbContext db) =>
@@ -48,8 +49,8 @@ public class DelegationCreateCoreTransactionTests
     private static DelegationCreateCommand MakeCommand(string marker, long sourceModuleId) => new()
     {
         Title = $"Step 5B-2 transaction test {marker} (disposable Step 5B-2 test)",
-        AssignedToId = "step5b2-doer",
-        AssignedToNameSnapshot = "Step 5B-2 Tester",
+        DoerId = "step5b2-doer",
+        DoerNameSnapshot = "Step 5B-2 Tester",
         SourceBusinessModuleId = sourceModuleId,
         SourceEntityId = marker
     };

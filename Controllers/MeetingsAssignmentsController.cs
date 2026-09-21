@@ -49,15 +49,15 @@ public class MeetingsAssignmentsController : ControllerBase
 
         var dto = new MeetingAssignmentSummaryDto
         {
-            AssignedToId = a.AssignedToId,
-            AssignedToName = a.AssignedToName,
+            DoerId = a.DoerId,
+            DoerName = a.DoerName,
             AssignedById = a.AssignedById,
             AssignedByName = a.AssignedByName,
             AssignedAt = a.AssignedAt,
             AssignmentType = a.AssignmentType,
             AssignmentReason = a.Reason,
-            PreviousAssignedToId = prev?.AssignedToId,
-            PreviousAssignedToName = prev?.AssignedToName,
+            PreviousDoerId = prev?.DoerId,
+            PreviousDoerName = prev?.DoerName,
             IsAssigned = true,
             IsCurrent = a.IsCurrent
         };
@@ -79,8 +79,8 @@ public class MeetingsAssignmentsController : ControllerBase
 
         var dtos = list.Select(w => new MeetingAssignmentSummaryDto
         {
-            AssignedToId = w.AssignedToId,
-            AssignedToName = w.AssignedToName,
+            DoerId = w.DoerId,
+            DoerName = w.DoerName,
             AssignedById = w.AssignedById,
             AssignedByName = w.AssignedByName,
             AssignedAt = w.AssignedAt,
@@ -121,14 +121,14 @@ public class MeetingsAssignmentsController : ControllerBase
                 existing.ModifiedBy = byName ?? byId;
                 existing.ModifiedDate = now;
                 _context.WorkAssignments.Update(existing);
-                _auditService.AddAudit("MEETING_REASSIGN", "Meeting", nameof(WorkAssignment), existing.Id.ToString(), null, new { existing.WorkflowInstanceId, existing.AssignedToId }, "Assignment closed");
+                _auditService.AddAudit("MEETING_REASSIGN", "Meeting", nameof(WorkAssignment), existing.Id.ToString(), null, new { existing.WorkflowInstanceId, existing.DoerId }, "Assignment closed");
             }
 
             var assignment = new WorkAssignment
             {
                 WorkflowInstanceId = workflowId,
-                AssignedToId = dto.AssignedToId ?? string.Empty,
-                AssignedToName = dto.AssignedToName,
+                DoerId = dto.DoerId ?? string.Empty,
+                DoerName = dto.DoerName,
                 AssignedById = byId,
                 AssignedByName = byName,
                 AssignedAt = now,
@@ -146,22 +146,22 @@ public class MeetingsAssignmentsController : ControllerBase
             var wf = await _context.WorkflowInstances.FindAsync(new object[] { workflowId }, ct);
             if (wf != null)
             {
-                wf.AssignedToId = assignment.AssignedToId;
-                wf.AssignedToName = assignment.AssignedToName;
+                wf.DoerId = assignment.DoerId;
+                wf.DoerName = assignment.DoerName;
                 wf.ModifiedBy = byName ?? byId;
                 wf.ModifiedDate = now;
                 _context.WorkflowInstances.Update(wf);
             }
 
-            _auditService.AddAudit("MEETING_ASSIGN", "Meeting", nameof(WorkAssignment), assignment.Id.ToString(), null, new { assignment.WorkflowInstanceId, assignment.AssignedToId }, "Assignment created");
+            _auditService.AddAudit("MEETING_ASSIGN", "Meeting", nameof(WorkAssignment), assignment.Id.ToString(), null, new { assignment.WorkflowInstanceId, assignment.DoerId }, "Assignment created");
 
             await _context.SaveChangesAsync(ct);
             await tx.CommitAsync(ct);
 
             var resp = new MeetingAssignmentSummaryDto
             {
-                AssignedToId = assignment.AssignedToId,
-                AssignedToName = assignment.AssignedToName,
+                DoerId = assignment.DoerId,
+                DoerName = assignment.DoerName,
                 AssignedById = assignment.AssignedById,
                 AssignedByName = assignment.AssignedByName,
                 AssignedAt = assignment.AssignedAt,

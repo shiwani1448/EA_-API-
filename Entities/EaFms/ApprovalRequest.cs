@@ -19,6 +19,10 @@ public class ApprovalRequest
     public DateTime? RequiredApprovalDate { get; set; }
     public string? ApproverId { get; set; }
     public string? ApproverName { get; set; }
+    // Business decision actors (who actually approved / rejected). NOT audit attribution (CreatedBy/ModifiedBy)
+    // and NOT the designated approver (ApproverId / ApproverName*).
+    public string? ApprovedBy { get; set; }
+    public string? RejectedBy { get; set; }
     public string? WorkflowStatus { get; set; }
     public int CurrentCycleNo { get; set; }
 

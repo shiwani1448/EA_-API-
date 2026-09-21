@@ -4,7 +4,7 @@ public class FollowupListQueryDto
 {
     public long? BusinessModuleId { get; set; }
     public string? BusinessRecordId { get; set; }
-    public string? AssignedToId { get; set; }
+    public string? DoerId { get; set; }
     public string? WaitingOnId { get; set; }
     public string? ResponseOwnerId { get; set; }
     public int? PriorityLevelId { get; set; }

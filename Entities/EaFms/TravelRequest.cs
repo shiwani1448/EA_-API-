@@ -64,6 +64,10 @@ public class TravelRequest
     public bool ApprovalRequired { get; set; }
     public string? ApproverId { get; set; }
     public string? ApproverNameSnapshot { get; set; }
+    // Business decision actors (who actually approved / rejected). NOT audit attribution (CreatedBy/ModifiedBy)
+    // and NOT the designated approver (ApproverId / ApproverName*).
+    public string? ApprovedBy { get; set; }
+    public string? RejectedBy { get; set; }
     public string BusinessState { get; set; } = "Draft";
     public string ApprovalState { get; set; } = "NotRequired";
 

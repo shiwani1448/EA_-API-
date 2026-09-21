@@ -99,6 +99,10 @@ namespace Studio5JarvisMasterApi.Migrations
                     b.Property<DateTime?>("ApprovedAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<string>("ApprovedBy")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
                     b.Property<string>("ApproverId")
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)");
@@ -153,6 +157,10 @@ namespace Studio5JarvisMasterApi.Migrations
 
                     b.Property<DateTime?>("RejectedAt")
                         .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("RejectedBy")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
 
                     b.Property<string>("RequestTitle")
                         .HasMaxLength(500)
@@ -442,15 +450,6 @@ namespace Studio5JarvisMasterApi.Migrations
                         .HasMaxLength(200)
                         .HasColumnType("character varying(200)");
 
-                    b.Property<string>("AssignedToId")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)");
-
-                    b.Property<string>("AssignedToNameSnapshot")
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)");
-
                     b.Property<DateTime?>("CompletedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -470,8 +469,21 @@ namespace Studio5JarvisMasterApi.Migrations
                     b.Property<DateTime>("CreatedDate")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<string>("DelegationType")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
                     b.Property<string>("Description")
                         .HasColumnType("text");
+
+                    b.Property<string>("DoerId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("DoerNameSnapshot")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
 
                     b.Property<DateTime?>("DueDate")
                         .HasColumnType("timestamp with time zone");
@@ -508,6 +520,9 @@ namespace Studio5JarvisMasterApi.Migrations
                         .HasMaxLength(200)
                         .HasColumnType("character varying(200)");
 
+                    b.Property<DateTime?>("StartDate")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<DateTime?>("StartedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -525,7 +540,7 @@ namespace Studio5JarvisMasterApi.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("AssignedToId");
+                    b.HasIndex("DoerId");
 
                     b.HasIndex("DueDate");
 
@@ -817,14 +832,6 @@ namespace Studio5JarvisMasterApi.Migrations
 
                     NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
 
-                    b.Property<string>("AssignedToId")
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)");
-
-                    b.Property<string>("AssignedToName")
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)");
-
                     b.Property<long?>("BusinessModuleId")
                         .HasColumnType("bigint");
 
@@ -862,6 +869,14 @@ namespace Studio5JarvisMasterApi.Migrations
 
                     b.Property<DateTime>("CreatedDate")
                         .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("DoerId")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("DoerName")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
 
                     b.Property<DateTime>("DueAt")
                         .HasColumnType("timestamp with time zone");
@@ -1094,14 +1109,6 @@ namespace Studio5JarvisMasterApi.Migrations
 
                     NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
 
-                    b.Property<string>("AssignedToId")
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)");
-
-                    b.Property<string>("AssignedToName")
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)");
-
                     b.Property<long?>("BusinessModuleId")
                         .HasColumnType("bigint");
 
@@ -1116,6 +1123,14 @@ namespace Studio5JarvisMasterApi.Migrations
                     b.Property<string>("Description")
                         .HasMaxLength(4000)
                         .HasColumnType("character varying(4000)");
+
+                    b.Property<string>("DoerId")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("DoerName")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
 
                     b.Property<bool>("IsActive")
                         .HasColumnType("boolean");
@@ -1355,10 +1370,6 @@ namespace Studio5JarvisMasterApi.Migrations
                         .HasMaxLength(200)
                         .HasColumnType("character varying(200)");
 
-                    b.Property<string>("AssignedToId")
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)");
-
                     b.Property<DateTime?>("CompletedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -1373,6 +1384,14 @@ namespace Studio5JarvisMasterApi.Migrations
                     b.Property<string>("Description")
                         .HasMaxLength(4000)
                         .HasColumnType("character varying(4000)");
+
+                    b.Property<string>("DoerId")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("DoerName")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
 
                     b.Property<DateTime?>("DueDate")
                         .HasColumnType("timestamp with time zone");
@@ -1389,10 +1408,6 @@ namespace Studio5JarvisMasterApi.Migrations
 
                     b.Property<DateTime?>("ModifiedDate")
                         .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("OwnerName")
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)");
 
                     b.Property<string>("Priority")
                         .HasMaxLength(100)
@@ -2337,6 +2352,10 @@ namespace Studio5JarvisMasterApi.Migrations
                     b.Property<DateTime?>("ApprovedAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<string>("ApprovedBy")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
                     b.Property<string>("ApproverId")
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)");
@@ -2482,6 +2501,10 @@ namespace Studio5JarvisMasterApi.Migrations
 
                     b.Property<DateTime?>("RejectedAt")
                         .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("RejectedBy")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
 
                     b.Property<DateTime?>("RequiredDate")
                         .HasColumnType("timestamp with time zone");
@@ -2709,15 +2732,6 @@ namespace Studio5JarvisMasterApi.Migrations
                         .HasMaxLength(200)
                         .HasColumnType("character varying(200)");
 
-                    b.Property<string>("AssignedToId")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)");
-
-                    b.Property<string>("AssignedToName")
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)");
-
                     b.Property<string>("AssignmentType")
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)");
@@ -2729,6 +2743,15 @@ namespace Studio5JarvisMasterApi.Migrations
 
                     b.Property<DateTime>("CreatedDate")
                         .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("DoerId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("DoerName")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
 
                     b.Property<long?>("FollowupId")
                         .HasColumnType("bigint");
@@ -2770,7 +2793,7 @@ namespace Studio5JarvisMasterApi.Migrations
 
                     b.HasIndex("AssignedAt");
 
-                    b.HasIndex("AssignedToId");
+                    b.HasIndex("DoerId");
 
                     b.HasIndex("FollowupId");
 
@@ -3050,14 +3073,6 @@ namespace Studio5JarvisMasterApi.Migrations
                     b.Property<DateTime?>("ArchivedAt")
                         .HasColumnType("timestamp with time zone");
 
-                    b.Property<string>("AssignedToId")
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)");
-
-                    b.Property<string>("AssignedToName")
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)");
-
                     b.Property<long?>("BusinessModuleId")
                         .HasColumnType("bigint");
 
@@ -3075,6 +3090,14 @@ namespace Studio5JarvisMasterApi.Migrations
 
                     b.Property<DateTime>("CreatedDate")
                         .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("DoerId")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("DoerName")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
 
                     b.Property<long?>("IntakeRequestId")
                         .HasColumnType("bigint");
@@ -3105,7 +3128,7 @@ namespace Studio5JarvisMasterApi.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("AssignedToId");
+                    b.HasIndex("DoerId");
 
                     b.HasIndex("IntakeRequestId");
 

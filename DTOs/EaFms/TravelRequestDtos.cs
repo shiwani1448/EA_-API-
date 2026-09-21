@@ -87,6 +87,10 @@ public class CreateTravelRequestDto
     /// ApproverNameSnapshot is backend-owned; optional identity lookup is deferred.
     /// </summary>
     public string? ApproverId { get; set; }
+    /// <summary>Who actually approved (business data; not the designated approver and not audit attribution). The approve action sets it authoritatively.</summary>
+    public string? ApprovedBy { get; set; }
+    /// <summary>Who actually rejected (business data). The reject action sets it authoritatively.</summary>
+    public string? RejectedBy { get; set; }
 }
 
 // ============================================================
@@ -162,6 +166,10 @@ public class UpdateTravelDraftDto
     // --- Approval routing ---
     public bool ApprovalRequired { get; set; }
     public string? ApproverId { get; set; }
+    /// <summary>Who actually approved (business data; not the designated approver and not audit attribution). The approve action sets it authoritatively.</summary>
+    public string? ApprovedBy { get; set; }
+    /// <summary>Who actually rejected (business data). The reject action sets it authoritatively.</summary>
+    public string? RejectedBy { get; set; }
 }
 
 // ============================================================
@@ -255,6 +263,10 @@ public class TravelApprovalDto
     /// <summary>Resolved from identity system at creation time; not writable by frontend.</summary>
     public string? ApproverName { get; set; }
     public string? State { get; set; }
+    /// <summary>Who actually approved (not the designated approver).</summary>
+    public string? ApprovedBy { get; set; }
+    /// <summary>Who actually rejected.</summary>
+    public string? RejectedBy { get; set; }
 }
 
 // ============================================================
@@ -304,6 +316,8 @@ public class TravelRequestCreatedDto
     public string ReferenceNo { get; set; } = string.Empty;
     public string BusinessState { get; set; } = string.Empty;
     public string ApprovalState { get; set; } = string.Empty;
+    public string? ApprovedBy { get; set; }
+    public string? RejectedBy { get; set; }
 }
 
 // ============================================================
@@ -316,6 +330,8 @@ public class TravelRequestListItemDto
     public DateTime? SubmittedAt { get; set; }
     public DateTime? ApprovedAt { get; set; }
     public DateTime? RejectedAt { get; set; }
+    public string? ApprovedBy { get; set; }
+    public string? RejectedBy { get; set; }
     public long Id { get; set; }
     public string ReferenceNo { get; set; } = string.Empty;
     public List<TravelTravellerDto> Travellers { get; set; } = new();

@@ -27,8 +27,8 @@ public class WorkflowInstance
     public DateTime? CompletedAt { get; set; }
 
     // Assignment / ownership for the workflow instance
-    public string? AssignedToId { get; set; }
-    public string? AssignedToName { get; set; }
+    public string? DoerId { get; set; }
+    public string? DoerName { get; set; }
 
     // Archive timestamp
     public DateTime? ArchivedAt { get; set; }

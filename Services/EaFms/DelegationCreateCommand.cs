@@ -14,11 +14,14 @@ public sealed class DelegationCreateCommand
     public string? Title { get; init; }
     public string? Description { get; init; }
 
-    public string? AssignedToId { get; init; }
-    public string? AssignedToNameSnapshot { get; init; }
+    public string? DoerId { get; init; }
+    public string? DoerNameSnapshot { get; init; }
 
     public string? Priority { get; init; }
     public DateTime? DueDate { get; init; }
+
+    public string? DelegationType { get; init; }
+    public DateTime? StartDate { get; init; }
 
     public long? SourceBusinessModuleId { get; init; }
     public string? SourceEntityId { get; init; }

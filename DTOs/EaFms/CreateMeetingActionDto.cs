@@ -5,9 +5,9 @@ public class CreateMeetingActionDto
     public string? Title { get; set; }
     public string? Description { get; set; }
     /// <summary>Opaque stable doer identity. Optional — existing callers that send only
-    /// OwnerName continue to work unchanged.</summary>
-    public string? AssignedToId { get; set; }
-    public string? OwnerName { get; set; }
+    /// DoerName continue to work unchanged.</summary>
+    public string? DoerId { get; set; }
+    public string? DoerName { get; set; }
     public string? Priority { get; set; }
     public DateTime? DueDate { get; set; }
     public string? Status { get; set; }

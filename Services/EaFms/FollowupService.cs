@@ -82,8 +82,8 @@ public class FollowupService : IFollowupService
             Type = dto.Type?.Trim(),
             DueAt = dto.DueAt,
             Note = ResolveRemark(dto.Remark, dto.Note),
-            AssignedToId = dto.AssignedToId,
-            AssignedToName = dto.AssignedToName,
+            DoerId = dto.DoerId,
+            DoerName = dto.DoerName,
             PriorityLevelId = dto.PriorityLevelId,
             ReminderAt = dto.ReminderAt,
             ReminderSendEmail = dto.ReminderSendEmail,
@@ -128,8 +128,8 @@ public class FollowupService : IFollowupService
                 followup.Subject,
                 followup.Type,
                 followup.Note,
-                followup.AssignedToId,
-                followup.AssignedToName,
+                followup.DoerId,
+                followup.DoerName,
                 followup.PriorityLevelId,
                 followup.DueAt,
                 followup.ReminderAt,
@@ -254,8 +254,8 @@ public class FollowupService : IFollowupService
         f.Type = dto.Type?.Trim();
         f.DueAt = dto.DueAt;
         f.Note = ResolveRemark(dto.Remark, dto.Note);
-        f.AssignedToId = dto.AssignedToId;
-        f.AssignedToName = dto.AssignedToName;
+        f.DoerId = dto.DoerId;
+        f.DoerName = dto.DoerName;
         f.PriorityLevelId = dto.PriorityLevelId;
         f.ReminderAt = dto.ReminderAt;
         f.ReminderSendEmail = dto.ReminderSendEmail;
@@ -293,8 +293,8 @@ public class FollowupService : IFollowupService
                 f.Subject,
                 f.Type,
                 f.Note,
-                f.AssignedToId,
-                f.AssignedToName,
+                f.DoerId,
+                f.DoerName,
                 f.PriorityLevelId,
                 f.DueAt,
                 f.ReminderAt,

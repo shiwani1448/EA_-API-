@@ -18,6 +18,9 @@ public class EaTaskService(EaFmsDbContext db, IEaTaskRepository repository, ITat
     private static readonly HashSet<string> NoTatAuthorizedModules =
         new(StringComparer.OrdinalIgnoreCase) { "EA Approval", "Travel & Hospitality", "Delegation" };
 
+    public static bool IsTypeOnlyTatModule(string moduleName) =>
+        TypeOnlyTatModules.Contains(moduleName.Trim());
+
     public static bool IsNoTatAuthorized(string moduleName) =>
         NoTatAuthorizedModules.Contains(moduleName.Trim());
 
@@ -96,15 +99,27 @@ public class EaTaskService(EaFmsDbContext db, IEaTaskRepository repository, ITat
         return pauses.GroupBy(p => p.WorkflowInstanceId!.Value).ToDictionary(g => g.Key, g => g.ToList());
     }
 
+    // How TAT is resolved at creation. Required = exact module + type + subtype (Meeting, generic endpoint);
+    // None = no TAT (backend-only); TypeOnly = module + type, no subtype (backend-only, Delegation).
+    private enum TatMode { Required, None, TypeOnly }
+
+    // Only Delegation has a single business classification (delegationType) and therefore no subtype.
+    private static readonly HashSet<string> TypeOnlyTatModules = new(StringComparer.OrdinalIgnoreCase) { "Delegation" };
+
     public Task<EaTaskResponseDto> CreateAsync(CreateEaTaskDto dto, CancellationToken ct) =>
-        CreateCoreAsync(dto, requireTat: true, ct);
+        CreateCoreAsync(dto, TatMode.Required, ct);
 
     // Backend-only Approval path; no public request can select this behavior.
     public Task<EaTaskResponseDto> CreateWithoutTatAsync(CreateEaTaskDto dto, CancellationToken ct) =>
-        CreateCoreAsync(dto, requireTat: false, ct);
+        CreateCoreAsync(dto, TatMode.None, ct);
 
-    private async Task<EaTaskResponseDto> CreateCoreAsync(CreateEaTaskDto dto, bool requireTat, CancellationToken ct)
+    // Backend-only Delegation path: TAT rule identity is module + Type (= delegationType), Subtype not applicable.
+    public Task<EaTaskResponseDto> CreateWithTypeOnlyTatAsync(CreateEaTaskDto dto, CancellationToken ct) =>
+        CreateCoreAsync(dto, TatMode.TypeOnly, ct);
+
+    private async Task<EaTaskResponseDto> CreateCoreAsync(CreateEaTaskDto dto, TatMode mode, CancellationToken ct)
     {
+        var requireTat = mode == TatMode.Required;
         dto.BusinessRecordId = dto.BusinessRecordId?.Trim()!;
         dto.Task = dto.Task?.Trim()!;
         dto.Description = string.IsNullOrWhiteSpace(dto.Description) ? null : dto.Description.Trim();
@@ -130,8 +145,10 @@ public class EaTaskService(EaFmsDbContext db, IEaTaskRepository repository, ITat
         var type = dto.Type;
         var subtype = dto.Subtype;
         var isApproval = string.Equals(module.Name.Trim(), "EA Approval", StringComparison.OrdinalIgnoreCase);
-        if (!requireTat && !IsNoTatAuthorized(module.Name))
+        if (mode == TatMode.None && !IsNoTatAuthorized(module.Name))
             throw new BusinessRuleException("Task creation without TAT is only supported for EA Approval, Travel & Hospitality, and Delegation.");
+        if (mode == TatMode.TypeOnly && !TypeOnlyTatModules.Contains(module.Name.Trim()))
+            throw new BusinessRuleException("Type-only TAT resolution is only supported for Delegation.");
         if (string.Equals(module.Name.Trim(), "Meeting", StringComparison.OrdinalIgnoreCase))
         {
             if (!long.TryParse(dto.BusinessRecordId, NumberStyles.None, CultureInfo.InvariantCulture, out var meetingId))
@@ -148,6 +165,20 @@ public class EaTaskService(EaFmsDbContext db, IEaTaskRepository repository, ITat
         }
         int? allottedTatMinutes = null;
         long? tatRuleId = null;
+        if (mode == TatMode.TypeOnly)
+        {
+            // No fake/default subtype: the rule identity is exactly module + type.
+            type = type?.Trim();
+            subtype = null;
+            if (string.IsNullOrWhiteSpace(type))
+                throw new BusinessRuleException("Type is required to resolve a TAT rule.");
+            var applicable = await rules.GetApplicableByTypeOnlyAsync(dto.ModuleId, type, ct);
+            if (applicable.Count == 0) throw new BusinessRuleException("No active TAT rule is configured for this module/type combination.");
+            if (applicable.Count != 1) throw new BusinessRuleException("Multiple active TAT rules are configured for this module/type combination.");
+            if (applicable[0].TatMinutes <= 0) throw new BusinessRuleException("The module TAT must be greater than zero.");
+            allottedTatMinutes = applicable[0].TatMinutes;
+            tatRuleId = applicable[0].Id;
+        }
         if (requireTat)
         {
             if (!isApproval && (string.IsNullOrWhiteSpace(type) || string.IsNullOrWhiteSpace(subtype)))
@@ -250,7 +281,7 @@ public class EaTaskService(EaFmsDbContext db, IEaTaskRepository repository, ITat
     /// only, matching the existing Meeting TAT semantics). Null before execution starts and
     /// for no-TAT modules; equals the frozen value once Completed.
     /// </summary>
-    private static int? CalculateCurrentTatUsedMinutes(EaTask task, IReadOnlyCollection<WorkPause> pauses, DateTime now)
+    public static int? CalculateCurrentTatUsedMinutes(EaTask task, IReadOnlyCollection<WorkPause> pauses, DateTime now)
     {
         if (!task.AllottedTatMinutes.HasValue) return null;
         if (string.Equals(task.ExecutionStatus, EaTaskExecutionStatus.Completed, StringComparison.Ordinal))
@@ -258,8 +289,17 @@ public class EaTaskService(EaFmsDbContext db, IEaTaskRepository repository, ITat
         if (!task.StartedAt.HasValue) return null;
 
         var end = task.CompletedAt ?? now;
-        var paused = WorkPauseClassifier.GetPausedDuration(task.StartedAt.Value, end, pauses);
-        var used = end - task.StartedAt.Value - paused;
+        return CalculateActiveTatMinutes(task.StartedAt.Value, end, pauses);
+    }
+
+    /// <summary>
+    /// The one canonical active-TAT calculation shared by the live value, the value frozen at completion
+    /// (Meeting and Delegation) and EM Report: elapsed minus simple-pause time, never negative.
+    /// </summary>
+    public static int CalculateActiveTatMinutes(DateTime start, DateTime end, IReadOnlyCollection<WorkPause> pauses)
+    {
+        var paused = WorkPauseClassifier.GetPausedDuration(start, end, pauses);
+        var used = end - start - paused;
         if (used < TimeSpan.Zero) used = TimeSpan.Zero;
         return (int)used.TotalMinutes;
     }

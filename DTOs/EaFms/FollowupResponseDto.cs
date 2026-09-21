@@ -34,8 +34,8 @@ public class FollowupResponseDto
     public bool? IsPaused { get; set; }
     public string? Subject { get; set; }
     public string? Type { get; set; }
-    public string? AssignedToId { get; set; }
-    public string? AssignedToName { get; set; }
+    public string? DoerId { get; set; }
+    public string? DoerName { get; set; }
     public int? PriorityLevelId { get; set; }
     public DateTime? ReminderAt { get; set; }
     public bool ReminderSendEmail { get; set; }

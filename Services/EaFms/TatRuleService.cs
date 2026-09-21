@@ -32,19 +32,31 @@ public class TatRuleService(EaFmsDbContext db, ITatRuleRepository repository,
         var validation = await validator.ValidateAsync(dto, ct);
         if (!validation.IsValid) throw new BusinessRuleException(string.Join("; ", validation.Errors.Select(x => x.ErrorMessage)));
         var type = dto.Type!.Trim();
-        var subtype = dto.Subtype!.Trim();
+        var subtype = string.IsNullOrWhiteSpace(dto.Subtype) ? null : dto.Subtype.Trim();
         var typeKey = await TatClassification.NormalizeAsync(db, type, ct);
-        var subtypeKey = await TatClassification.NormalizeAsync(db, subtype, ct);
+        var subtypeKey = subtype is null ? null : await TatClassification.NormalizeAsync(db, subtype, ct);
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
         var module = await db.BusinessModules.FirstOrDefaultAsync(x => x.Id == dto.ModuleId && x.IsActive && !x.IsDeleted, ct)
             ?? throw new BusinessRuleException("Module must exist and be active/non-deleted.");
         if (dto.ModuleName is not null
             && !string.Equals(dto.ModuleName.Trim(), module.Name.Trim(), StringComparison.OrdinalIgnoreCase))
             throw new BusinessRuleException("ModuleName must match the selected ModuleId.");
-        if (dto.IsActive == true && await db.TatRules.AnyAsync(x => x.BusinessModuleId == dto.ModuleId
+        var typeOnlyModule = EaTaskService.IsTypeOnlyTatModule(module.Name);
+        if (subtype is null && !typeOnlyModule)
+            throw new BadRequestException("Subtype is required for this module.");
+        if (subtype is not null && typeOnlyModule)
+            throw new BadRequestException($"{module.Name} TAT rules are classified by Type only; Subtype must be omitted.");
+        if (dto.IsActive == true && subtype is not null && await db.TatRules.AnyAsync(x => x.BusinessModuleId == dto.ModuleId
             && x.Type != null && x.Subtype != null && TatClassification.TrimForMatch(x.Type).ToLower() == typeKey && TatClassification.TrimForMatch(x.Subtype).ToLower() == subtypeKey
             && x.IsActive && !x.IsDeleted && (!id.HasValue || x.Id != id.Value), ct))
             throw new BusinessRuleException("An active TAT rule already exists for this module/type/subtype combination.");
+        // Type-only rules (Delegation) have no partial unique index; the lookup's LIMIT 2 ambiguity check is the
+        // safety net, this is the friendly pre-check.
+        if (dto.IsActive == true && subtype is null && await db.TatRules.AnyAsync(x => x.BusinessModuleId == dto.ModuleId
+            && x.Type != null && TatClassification.TrimForMatch(x.Type).ToLower() == typeKey
+            && (x.Subtype == null || TatClassification.TrimForMatch(x.Subtype) == "")
+            && x.IsActive && !x.IsDeleted && (!id.HasValue || x.Id != id.Value), ct))
+            throw new BusinessRuleException("An active TAT rule already exists for this module/type combination.");
 
         var actor = EaActorSnapshot.From(dto.EmployeeId, dto.EmployeeName);
         var actorDisplay = actor.DisplayName ?? user.UserId.ToString(CultureInfo.InvariantCulture);

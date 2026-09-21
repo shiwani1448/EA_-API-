@@ -22,8 +22,8 @@ public class IntakeRequestResponseDto
     // Use RequiredDate (frontend contract requires this field name)
     public DateTime? RequiredDate { get; set; }
     public bool IsConfidential { get; set; }
-    public string? AssignedToId { get; set; }
-    public string? AssignedToName { get; set; }
+    public string? DoerId { get; set; }
+    public string? DoerName { get; set; }
     public bool IsActive { get; set; }
     public bool IsDeleted { get; set; }
     public string? CreatedBy { get; set; }

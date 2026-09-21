@@ -7,8 +7,8 @@ public class CreateAssignmentRequestDtoValidator : AbstractValidator<CreateAssig
 {
     public CreateAssignmentRequestDtoValidator()
     {
-        RuleFor(x => x.AssignedToId).MaximumLength(100);
-        RuleFor(x => x.AssignedToName).MaximumLength(200);
+        RuleFor(x => x.DoerId).MaximumLength(100);
+        RuleFor(x => x.DoerName).MaximumLength(200);
         RuleFor(x => x.AssignmentType).MaximumLength(100);
         RuleFor(x => x.Reason).MaximumLength(1000);
     }

@@ -13,5 +13,5 @@ public class UpdateIntakeRequestDto
     public string? SourceReferenceId { get; set; }
     public DateTime? RequiredDate { get; set; }
     public bool? IsConfidential { get; set; }
-    public string? AssignedToId { get; set; }
+    public string? DoerId { get; set; }
 }

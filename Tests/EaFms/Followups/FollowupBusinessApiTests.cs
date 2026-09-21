@@ -66,7 +66,7 @@ public class FollowupBusinessApiTests
         var meeting = new Meeting { Title = "Board meeting", CreatedBy = "seed", CreatedDate = Base };
         var travel = new TravelRequest { ReferenceNo = "TRV-2026-000001", EaTaskId = 501, CreatedBy = "seed", CreatedDate = Base };
         var approval = new ApprovalRequest { ReferenceNo = "APR-2026-000009", EaTaskId = 502, RequestTitle = "Laptop purchase", CreatedBy = "seed" };
-        var delegation = new DelegationEntity { ReferenceNo = "DLG-2026-000001", EaTaskId = 503, Title = "Chase vendor", AssignedToId = "u1", AssignedById = "u2", CreatedBy = "seed", CreatedDate = Base };
+        var delegation = new DelegationEntity { ReferenceNo = "DLG-2026-000001", EaTaskId = 503, Title = "Chase vendor", DoerId = "u1", AssignedById = "u2", CreatedBy = "seed", CreatedDate = Base };
         db.Meetings.Add(meeting); db.TravelRequests.Add(travel); db.ApprovalRequests.Add(approval); db.Delegations.Add(delegation);
         await db.SaveChangesAsync();
         return new Seed
@@ -79,7 +79,7 @@ public class FollowupBusinessApiTests
     private static CreateFollowupRequestDto Create(long? moduleId, string? recordId, string? subject = "Chase") => new()
     {
         BusinessModuleId = moduleId, BusinessRecordId = recordId, Subject = subject,
-        Note = "note", Type = "Action", DueAt = Base.AddDays(2), AssignedToId = "ea-1", AssignedToName = "EA One"
+        Note = "note", Type = "Action", DueAt = Base.AddDays(2), DoerId = "ea-1", DoerName = "EA One"
     };
 
     // 1-4: create against each supported module, identified only by module + record.
@@ -231,7 +231,7 @@ public class FollowupBusinessApiTests
 
         Assert.True(created.Id > 0);
         Assert.Null(created.Subject);
-        Assert.Null(created.AssignedToId);
+        Assert.Null(created.DoerId);
         Assert.Null(created.IntakeRequestId);
         Assert.Null(created.WorkflowInstanceId);
     }
