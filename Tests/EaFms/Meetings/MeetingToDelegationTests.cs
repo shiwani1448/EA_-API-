@@ -677,12 +677,12 @@ public class MeetingToDelegationTests
     }
 
     // ----------------------------------------------------------------
-    // MOM/PDF completion invariant remains enforced (regression, unrelated to this
-    // integration but proves it was not weakened).
+    // completionMom is optional (frontend controls mandatory fields): a blank MOM no longer blocks
+    // completion and is stored as null.
     // ----------------------------------------------------------------
 
     [Fact]
-    public async Task CompleteAsync_BlankCompletionMom_StillRejected()
+    public async Task CompleteAsync_BlankCompletionMom_IsAllowed_AndStoredAsNull()
     {
         await using var db = MakeRealDb();
         var marker = $"mom-{Guid.NewGuid():N}";
@@ -692,12 +692,12 @@ public class MeetingToDelegationTests
         var delegations = MakeRealDelegationService(db, user, audit);
         var lifecycle = MakeLifecycleService(db, user, audit, delegations, out _);
 
-        await Assert.ThrowsAsync<BusinessRuleException>(() =>
-            lifecycle.CompleteAsync(meeting.Id, MakeCompleteDto(mom: "   "), default));
+        await lifecycle.CompleteAsync(meeting.Id, MakeCompleteDto(mom: "   "), default);
 
         await using var verify = MakeRealDb();
         var reloaded = await verify.Meetings.SingleAsync(m => m.Id == meeting.Id);
-        Assert.Null(reloaded.CompletedAt);
+        Assert.NotNull(reloaded.CompletedAt);
+        Assert.Null(reloaded.CompletionMom);
     }
 }
 

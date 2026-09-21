@@ -72,13 +72,11 @@ public class FollowupsController : ControllerBase
         return Ok(updated);
     }
 
-    /// <summary>Sends an explicit immediate reminder email using the persisted frontend-supplied recipient snapshot.</summary>
+    /// <summary>Returns a manual Email handoff (recipient, subject, body and a ready-to-open mailto: URL) using the persisted frontend-supplied recipient snapshot; it does not send or open any email.</summary>
     [HttpPost("{id:long}/send-email")]
+    [ProducesResponseType(typeof(FollowupEmailActionResponseDto), StatusCodes.Status200OK)]
     public async Task<IActionResult> SendEmail(long id, CancellationToken ct)
-    {
-        await _followupService.SendEmailAsync(id, ct);
-        return NoContent();
-    }
+        => Ok(await _followupService.SendEmailAsync(id, ct));
     /// <summary>Returns a manual WhatsApp handoff using the persisted frontend-supplied phone snapshot; it does not deliver or open WhatsApp.</summary>
     [HttpPost("{id:long}/send-whatsapp")]
     [ProducesResponseType(typeof(FollowupWhatsAppActionResponseDto), StatusCodes.Status200OK)]

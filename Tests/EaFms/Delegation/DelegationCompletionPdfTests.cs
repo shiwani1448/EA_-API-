@@ -133,12 +133,12 @@ public class DelegationCompletionPdfTests : IDisposable
     }
 
     [Fact]
-    public void MeetingCompleteContract_IsUnchanged_CompletionMomAndRequiredCompletionPdf()
+    public void MeetingCompleteContract_KeepsTheFieldNames_ButBothFieldsAreNowOptional()
     {
         var pdf = typeof(MeetingCompleteRequestDto).GetProperty(nameof(MeetingCompleteRequestDto.CompletionPdf))!;
 
         Assert.Equal("completionPdf", pdf.GetCustomAttribute<FromFormAttribute>()!.Name);
-        Assert.NotNull(pdf.GetCustomAttribute<System.ComponentModel.DataAnnotations.RequiredAttribute>());
+        Assert.Null(pdf.GetCustomAttribute<System.ComponentModel.DataAnnotations.RequiredAttribute>());   // optional: the frontend controls mandatory fields
         Assert.Equal("completionMom", typeof(MeetingCompleteRequestDto).GetProperty(nameof(MeetingCompleteRequestDto.CompletionMom))!.GetCustomAttribute<FromFormAttribute>()!.Name);
     }
 

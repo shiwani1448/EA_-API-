@@ -32,9 +32,9 @@ public class EaActorAttributionTests
     private static BusinessModuleService Modules(EaFmsDbContext db, Mock<IAuditService>? audit = null) =>
         new(db, new BusinessModuleRepository(db), Placeholder, (audit ?? new Mock<IAuditService>()).Object);
 
-    private static FollowupService Followups(EaFmsDbContext db, Mock<IAuditService>? audit = null, IEaReminderEmailSender? sender = null) => new(
+    private static FollowupService Followups(EaFmsDbContext db, Mock<IAuditService>? audit = null) => new(
         new FollowupRepository(db), db, Mapper, Placeholder, (audit ?? new Mock<IAuditService>()).Object,
-        new FollowupSourceResolver(db), sender);
+        new FollowupSourceResolver(db));
 
     private static SaveBusinessModuleDto Module(string name, bool active = true, string? id = "S5I-1013", string? actorName = "Siddhi Jadhav") =>
         new() { Name = name, IsActive = active, EmployeeId = id, EmployeeName = actorName };
@@ -339,10 +339,9 @@ public class EaActorAttributionTests
     [Fact]
     public async Task SendWhatsApp_SendEmail_AndMultipleFollowups_StillWork_WithActorAttributedFollowups()
     {
-        var sender = new Mock<IEaReminderEmailSender>();
         var (s, _) = await FollowupSeedAsync();
         await using var __ = s.Db;
-        var svc = Followups(s.Db, null, sender.Object);
+        var svc = Followups(s.Db);
         var m = s.Modules["Meeting"].Id;
         var dto = new CreateFollowupRequestDto
         {
@@ -354,10 +353,11 @@ public class EaActorAttributionTests
         var a = await svc.CreateAsync(dto);
         var b = await svc.CreateAsync(dto);
         var handoff = await svc.SendWhatsAppAsync(a.Id);
-        await svc.SendEmailAsync(a.Id);
+        var email = await svc.SendEmailAsync(a.Id);
 
         Assert.NotEqual(a.Id, b.Id);
         Assert.Equal("9999999999", handoff.Phone);
-        sender.Verify(x => x.SendAsync(It.Is<EaReminderEmailMessage>(e => e.To == "aman@example.com"), It.IsAny<CancellationToken>()), Times.Once);
+        Assert.Equal("aman@example.com", email.Email);
+        Assert.StartsWith("mailto:aman@example.com?subject=", email.MailtoUrl);
     }
 }

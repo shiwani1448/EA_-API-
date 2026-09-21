@@ -188,9 +188,11 @@ public class MeetingLifecycleService : IMeetingLifecycleService
                 throw new BusinessRuleException("Complete requires started work in In Progress or Submitted state.");
             if (await _db.WorkPauses.AnyAsync(x => x.WorkflowInstanceId == workflowId && !x.IsDeleted && x.EndAt == null, ct))
                 throw new BusinessRuleException("Resume or continue open pauses/waiting before completion.");
-            if (string.IsNullOrWhiteSpace(dto.CompletionMom) || dto.CompletionMom.Length > 4000)
-                throw new BusinessRuleException("Completion MOM must contain 1 to 4000 characters.");
-            var content = await _files.ValidateAsync(dto.CompletionPdf, ct);
+            // MOM and PDF are optional. A supplied MOM is limited to the column size; a supplied PDF gets the full existing validation.
+            if (dto.CompletionMom is { Length: > 4000 })
+                throw new BusinessRuleException("Completion MOM must contain at most 4000 characters.");
+            var completionMom = string.IsNullOrWhiteSpace(dto.CompletionMom) ? null : dto.CompletionMom.Trim();
+            var content = dto.CompletionPdf is null ? null : await _files.ValidateAsync(dto.CompletionPdf, ct);
             var tasks = await _db.Tasks.Where(x => x.BusinessModuleId == wf.BusinessModuleId && x.BusinessRecordId == meeting.Id.ToString(CultureInfo.InvariantCulture) && !x.IsDeleted).Take(2).ToListAsync(ct);
             if (tasks.Count > 1) throw new BusinessRuleException("Meeting has ambiguous EA task snapshots.");
 
@@ -201,20 +203,23 @@ public class MeetingLifecycleService : IMeetingLifecycleService
             // before the PDF is written to storage below.
             await CreateDelegationsForMeetingActionsAsync(meeting, ct);
 
-            objectKey = await _files.SaveAsync(meeting.Id, content, ct);
             var now = Clock.UtcNowTz;
-            var attachment = new Attachment
+            if (content is not null)
             {
-                RelatedModule = "Meeting", RelatedEntity = "Meeting",
-                RelatedEntityId = meeting.Id.ToString(CultureInfo.InvariantCulture),
-                OriginalFileName = Path.GetFileName(dto.CompletionPdf.FileName),
-                ObjectKey = objectKey, ContentType = "application/pdf", Size = content.LongLength,
-                AccessUrl = "/" + objectKey, Metadata = "{\"purpose\":\"MeetingCompletionPdf\"}",
-                UploadedBy = Actor, UploadedAt = now, CreatedBy = Actor, CreatedDate = now, IsActive = true
-            };
-            _db.Attachments.Add(attachment);
-            meeting.CompletionMom = dto.CompletionMom.Trim();
-            meeting.CompletionPdfAttachment = attachment;
+                objectKey = await _files.SaveAsync(meeting.Id, content, ct);
+                var attachment = new Attachment
+                {
+                    RelatedModule = "Meeting", RelatedEntity = "Meeting",
+                    RelatedEntityId = meeting.Id.ToString(CultureInfo.InvariantCulture),
+                    OriginalFileName = Path.GetFileName(dto.CompletionPdf!.FileName),
+                    ObjectKey = objectKey, ContentType = "application/pdf", Size = content.LongLength,
+                    AccessUrl = "/" + objectKey, Metadata = "{\"purpose\":\"MeetingCompletionPdf\"}",
+                    UploadedBy = Actor, UploadedAt = now, CreatedBy = Actor, CreatedDate = now, IsActive = true
+                };
+                _db.Attachments.Add(attachment);
+                meeting.CompletionPdfAttachment = attachment;
+            }
+            meeting.CompletionMom = completionMom;
             meeting.ModifiedBy = Actor; meeting.ModifiedDate = now;
             await _db.SaveChangesAsync(ct);
 

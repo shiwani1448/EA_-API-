@@ -22,13 +22,13 @@ public class MeetingResumeRequestDto { }
 
 public class MeetingCompleteRequestDto
 {
-    [System.ComponentModel.DataAnnotations.Required]
-    [System.ComponentModel.DataAnnotations.StringLength(4000, MinimumLength = 1)]
+    /// <summary>Optional (the frontend decides whether it is mandatory). When supplied: trimmed, at most 4000 characters; blank is stored as null.</summary>
+    [System.ComponentModel.DataAnnotations.StringLength(4000)]
     [Microsoft.AspNetCore.Mvc.FromForm(Name = "completionMom")]
-    public string CompletionMom { get; set; } = string.Empty;
-    [System.ComponentModel.DataAnnotations.Required]
+    public string? CompletionMom { get; set; }
+    /// <summary>Optional. When supplied it must be a valid PDF (max 25 MiB); when omitted no attachment is created.</summary>
     [Microsoft.AspNetCore.Mvc.FromForm(Name = "completionPdf")]
-    public Microsoft.AspNetCore.Http.IFormFile CompletionPdf { get; set; } = null!;
+    public Microsoft.AspNetCore.Http.IFormFile? CompletionPdf { get; set; }
 }
 
 public class MeetingLifecycleResponseDto

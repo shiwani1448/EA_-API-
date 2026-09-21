@@ -18,9 +18,8 @@ public class FollowupService : IFollowupService
     private readonly ICurrentUserService _currentUser;
     private readonly IAuditService _auditService;
     private readonly IFollowupSourceResolver _sourceResolver;
-    private readonly IEaReminderEmailSender? _emailSender;
 
-    public FollowupService(IFollowupRepository repo, EaFmsDbContext context, IMapper mapper, ICurrentUserService currentUser, IAuditService auditService, IFollowupSourceResolver sourceResolver, IEaReminderEmailSender? emailSender = null)
+    public FollowupService(IFollowupRepository repo, EaFmsDbContext context, IMapper mapper, ICurrentUserService currentUser, IAuditService auditService, IFollowupSourceResolver sourceResolver)
     {
         _repo = repo;
         _context = context;
@@ -28,7 +27,6 @@ public class FollowupService : IFollowupService
         _currentUser = currentUser;
         _auditService = auditService;
         _sourceResolver = sourceResolver;
-        _emailSender = emailSender;
     }
 
     public async Task<FollowupResponseDto> CreateAsync(CreateFollowupRequestDto dto, CancellationToken ct = default)
@@ -203,18 +201,29 @@ public class FollowupService : IFollowupService
         catch (FormatException) { return false; }
     }
 
-    public async Task SendEmailAsync(long id, CancellationToken ct = default)
+    /// <summary>
+    /// Returns the persisted frontend-supplied recipient snapshot with a prefilled subject/body and a mailto: URL for a user-initiated
+    /// email (same handoff pattern as SendWhatsAppAsync). Nothing is sent from the server, so no SMTP configuration is involved.
+    /// </summary>
+    public async Task<FollowupEmailActionResponseDto> SendEmailAsync(long id, CancellationToken ct = default)
     {
         var followup = await _repo.GetByIdAsync(id, ct) ?? throw new NotFoundException($"Followup {id} not found.");
         if (!followup.ReminderSendEmail) throw new BadRequestException("ReminderSendEmail must be true to send a reminder email.");
         if (!IsUsableEmail(followup.ReminderRecipientEmail))
             throw new BadRequestException("ReminderRecipientEmail is required and must be a valid email address to send a reminder email.");
-        var sender = _emailSender ?? throw new BusinessRuleException("EA email sender is unavailable.");
         var context = await EnrichAsync(followup, ct);
-        await sender.SendAsync(new EaReminderEmailMessage(
-            followup.ReminderRecipientEmail.Trim(),
-            $"Reminder / Follow-up - {context.Task ?? string.Empty}",
-            BuildReminderEmailBody(context)), ct);
+        var email = followup.ReminderRecipientEmail!.Trim();
+        var subject = $"Reminder / Follow-up - {context.Task ?? string.Empty}";
+        var body = BuildReminderEmailBody(context);
+        return new FollowupEmailActionResponseDto { Email = email, Subject = subject, Body = body, MailtoUrl = BuildMailtoUrl(email, subject, body) };
+    }
+
+    /// <summary>RFC 6068: mailto:{address}?subject={encoded}&amp;body={encoded}; spaces become %20 and line breaks %0D%0A.</summary>
+    internal static string BuildMailtoUrl(string email, string subject, string body)
+    {
+        var address = Uri.EscapeDataString(email).Replace("%40", "@");
+        var crlfBody = body.Replace("\r\n", "\n").Replace("\n", "\r\n");
+        return $"mailto:{address}?subject={Uri.EscapeDataString(subject)}&body={Uri.EscapeDataString(crlfBody)}";
     }
     /// <summary>Returns the persisted frontend-supplied phone snapshot and message for a frontend-controlled WhatsApp handoff.</summary>
     public async Task<FollowupWhatsAppActionResponseDto> SendWhatsAppAsync(long id, CancellationToken ct = default)

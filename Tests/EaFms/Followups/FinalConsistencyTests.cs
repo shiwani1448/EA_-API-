@@ -28,8 +28,8 @@ public class FinalConsistencyTests
     private static BusinessModuleService Modules(EaFmsDbContext db) =>
         new(db, new BusinessModuleRepository(db), Placeholder, Mock.Of<IAuditService>());
 
-    private static FollowupService Followups(EaFmsDbContext db, IEaReminderEmailSender? sender = null) => new(
-        new FollowupRepository(db), db, Mapper, Placeholder, Mock.Of<IAuditService>(), new FollowupSourceResolver(db), sender);
+    private static FollowupService Followups(EaFmsDbContext db) => new(
+        new FollowupRepository(db), db, Mapper, Placeholder, Mock.Of<IAuditService>(), new FollowupSourceResolver(db));
 
     private static SaveBusinessModuleDto Save(string name, bool active) =>
         new() { Name = name, IsActive = active, EmployeeId = "S5I-1013", EmployeeName = "Siddhi Jadhav" };
@@ -88,10 +88,10 @@ public class FinalConsistencyTests
     }
 
     // ---------------- record-followup = one action, one history row ----------------
-    private static async Task<(EaFmsDbContext Db, FollowupService Svc, FollowupResponseDto F)> NewFollowupAsync(IEaReminderEmailSender? sender = null)
+    private static async Task<(EaFmsDbContext Db, FollowupService Svc, FollowupResponseDto F)> NewFollowupAsync()
     {
         var s = await SeedAsync();
-        var svc = Followups(s.Db, sender);
+        var svc = Followups(s.Db);
         var f = await svc.CreateAsync(new CreateFollowupRequestDto
         {
             BusinessModuleId = s.Modules["Meeting"].Id, BusinessRecordId = s.Meeting.Id.ToString(), DueAt = Base.AddDays(9), Remark = "start",
@@ -194,9 +194,8 @@ public class FinalConsistencyTests
     [Fact]
     public async Task Update_Complete_WhatsApp_Email_AndEscalation_StillWork_AfterRecordedFollowups()
     {
-        var sender = new Mock<IEaReminderEmailSender>();
         var s = await SeedAsync(); await using var db = s.Db;
-        var svc = Followups(db, sender.Object);
+        var svc = Followups(db);
         var f = await svc.CreateAsync(new CreateFollowupRequestDto
         {
             BusinessModuleId = s.Modules["Travel & Hospitality"].Id, BusinessRecordId = s.Travel.Id.ToString(), DueAt = Base.AddDays(3),
@@ -209,7 +208,7 @@ public class FinalConsistencyTests
         { Subject = "u", DueAt = Base.AddDays(3), ReminderAt = Base.AddDays(1), ReminderSendEmail = true, ReminderRecipientEmail = "aman@example.com",
           ReminderSendWhatsApp = true, ReminderWhatsAppNumber = "9999999999", EmployeeName = "Riya" });
         var wa = await svc.SendWhatsAppAsync(f.Id);
-        await svc.SendEmailAsync(f.Id);
+        var email = await svc.SendEmailAsync(f.Id);
         db.EscalationLevels.Add(new EscalationLevel { Id = 1, Code = "L1", Name = "L1", Level = 1, CreatedBy = "seed", CreatedDate = Base });
         await db.SaveChangesAsync();
         var esc = await new EscalationService(new EscalationRepository(db), db, Mapper, Placeholder, Mock.Of<IAuditService>())
@@ -218,7 +217,7 @@ public class FinalConsistencyTests
 
         Assert.Equal("Riya", updated.ModifiedByEmployeeName);
         Assert.Equal("9999999999", wa.Phone);
-        sender.Verify(x => x.SendAsync(It.IsAny<EaReminderEmailMessage>(), It.IsAny<CancellationToken>()), Times.Once);
+        Assert.Equal("aman@example.com", email.Email);
         Assert.Equal(f.Id, esc.FollowupId);
         Assert.True(done.IsCompleted);
         Assert.Equal(1, await db.FollowupCycles.CountAsync());          // none of those actions add history

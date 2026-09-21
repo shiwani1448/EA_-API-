@@ -110,6 +110,21 @@ public sealed class FollowupSummaryResponseDto
     public int Completed { get; set; }
     public int Escalated { get; set; }
 }
+/// <summary>
+/// Explicit frontend Email handoff (same pattern as the WhatsApp handoff); this is not a delivery result — the backend sends nothing.
+/// The frontend opens <see cref="MailtoUrl"/> (or builds its own link from Email/Subject/Body) and the user sends the mail manually.
+/// </summary>
+public sealed class FollowupEmailActionResponseDto
+{
+    /// <summary>The persisted frontend-supplied ReminderRecipientEmail snapshot.</summary>
+    public string Email { get; set; } = string.Empty;
+    public string Subject { get; set; } = string.Empty;
+    /// <summary>Plain-text body (unencoded).</summary>
+    public string Body { get; set; } = string.Empty;
+    /// <summary>RFC 6068 mailto: URI with the recipient, subject and body prefilled and URI-encoded.</summary>
+    public string MailtoUrl { get; set; } = string.Empty;
+}
+
 /// <summary>Explicit frontend WhatsApp handoff; this is not a delivery result.</summary>
 public sealed class FollowupWhatsAppActionResponseDto
 {

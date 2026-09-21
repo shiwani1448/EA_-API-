@@ -23,7 +23,7 @@ public class MeetingCompleteRequestDtoValidator : AbstractValidator<MeetingCompl
 {
     public MeetingCompleteRequestDtoValidator()
     {
-        RuleFor(x => x.CompletionMom).NotEmpty().MaximumLength(4000);
-        RuleFor(x => x.CompletionPdf).NotNull();
+        // Both fields are optional; a supplied MOM is still limited to the column size, and a supplied PDF is validated by the file store.
+        RuleFor(x => x.CompletionMom).MaximumLength(4000);
     }
 }
