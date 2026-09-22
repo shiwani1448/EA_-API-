@@ -94,7 +94,8 @@ public class DelegationTypeOnlyTatTests : IClassFixture<ScratchTatDatabase>, IDi
         var audit = new AuditService(db, User);
         var eaTasks = new EaTaskService(db, new EaTaskRepository(db), new TatRuleRepository(db), new CreateEaTaskDtoValidator(), User, audit);
         return new DelegationService(db, User, audit, new DelegationRepository(db), eaTasks,
-            Mock.Of<Microsoft.AspNetCore.Hosting.IWebHostEnvironment>(e => e.ContentRootPath == _root));
+            Mock.Of<Microsoft.AspNetCore.Hosting.IWebHostEnvironment>(e => e.ContentRootPath == _root),
+            new TaskReviewService(db, new TaskReviewRepository(db), User, audit));
     }
 
     private async Task<TatRule> AddRuleAsync(string? type, string? subtype, int minutes, bool active = true, bool deleted = false, long? moduleId = null)

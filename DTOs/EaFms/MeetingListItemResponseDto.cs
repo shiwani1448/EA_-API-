@@ -74,6 +74,7 @@ public class MeetingListItemResponseDto
     /// </summary>
     public MeetingTatSummaryDto TatSummary { get; set; } = new();
 
+
     public DateTime CreatedDate { get; set; }
     public DateTime? ModifiedDate { get; set; }
 }

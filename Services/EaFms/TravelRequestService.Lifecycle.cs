@@ -293,6 +293,7 @@ public partial class TravelRequestService
         ApprovedAt = parent.ApprovedAt, RejectedAt = parent.RejectedAt,
         ApprovedBy = parent.ApprovedBy, RejectedBy = parent.RejectedBy,
         StartedAt = parent.StartedAt, CompletedAt = parent.CompletedAt,
-        CurrentCycle = ToCurrentTravelCycle(cycle)
+        CurrentCycle = ToCurrentTravelCycle(cycle),
+
     };
 }

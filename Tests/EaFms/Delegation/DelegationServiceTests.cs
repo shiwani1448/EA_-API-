@@ -93,7 +93,8 @@ public class DelegationServiceTests
         numbers ??= new Mock<IDelegationNumberRepository>();
         eaTasks ??= new Mock<IEaTaskService>();
         return (new DelegationService(db, user, auditSpy.Object, numbers.Object, eaTasks.Object,
-            Mock.Of<Microsoft.AspNetCore.Hosting.IWebHostEnvironment>()), auditSpy);
+            Mock.Of<Microsoft.AspNetCore.Hosting.IWebHostEnvironment>(),
+            new TaskReviewService(db, new TaskReviewRepository(db), user, auditSpy.Object)), auditSpy);
     }
 
     private static DelegationCreateRequestDto MakeCreateDto(long sourceModuleId, string sourceEntityId = "51") => new()

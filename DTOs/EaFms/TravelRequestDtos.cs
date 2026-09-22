@@ -276,6 +276,7 @@ public class TravelApprovalDto
 public class TravelRequestDetailDto
 {
     public TravelCurrentCycleDto? CurrentCycle { get; set; }
+
     public long Id { get; set; }
     public string ReferenceNo { get; set; } = string.Empty;
     public long EaTaskId { get; set; }
@@ -326,6 +327,7 @@ public class TravelRequestCreatedDto
 
 public class TravelRequestListItemDto
 {
+
     public int CurrentCycleNo { get; set; }
     public DateTime? SubmittedAt { get; set; }
     public DateTime? ApprovedAt { get; set; }

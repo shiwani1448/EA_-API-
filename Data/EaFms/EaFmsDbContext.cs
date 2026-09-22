@@ -31,6 +31,7 @@ public class EaFmsDbContext : DbContext
     public DbSet<WorkAssignment> WorkAssignments { get; set; } = null!;
     public DbSet<WorkRevision> WorkRevisions { get; set; } = null!;
     public DbSet<EaTask> Tasks { get; set; } = null!;
+    public DbSet<TaskReview> TaskReviews { get; set; } = null!;
     public DbSet<MeetingAgenda> MeetingAgendas { get; set; } = null!;
     public DbSet<MeetingAttendee> MeetingAttendees { get; set; } = null!;
     public DbSet<MeetingMinutes> MeetingMinutes { get; set; } = null!;
@@ -1033,6 +1034,36 @@ public class EaFmsDbContext : DbContext
             entity.HasIndex(e => e.TatRuleId);
             entity.HasIndex(e => e.ExecutionStatus);
             entity.HasIndex(e => new { e.BusinessModuleId, e.BusinessRecordId });
+        });
+
+        modelBuilder.Entity<TaskReview>(entity =>
+        {
+            entity.ToTable("ea_task_reviews", "public", t =>
+                t.HasCheckConstraint("CK_ea_task_reviews_ReviewStatus",
+                    "\"ReviewStatus\" IN ('PendingReview', 'Approved', 'ReworkRequested')"));
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).UseIdentityByDefaultColumn();
+            entity.Property(e => e.EaTaskId).HasColumnType("bigint").IsRequired();
+            entity.Property(e => e.ReviewCycleNo).IsRequired();
+            entity.Property(e => e.ReviewStatus).HasMaxLength(30).IsRequired();
+            entity.Property(e => e.ReviewerId).HasMaxLength(100);
+            entity.Property(e => e.ReviewerName).HasMaxLength(200);
+            entity.Property(e => e.SubmittedById).HasMaxLength(100);
+            entity.Property(e => e.SubmittedByName).HasMaxLength(200);
+            entity.Property(e => e.SubmittedAt).HasColumnType("timestamp with time zone").IsRequired();
+            entity.Property(e => e.ReviewedById).HasMaxLength(100);
+            entity.Property(e => e.ReviewedByName).HasMaxLength(200);
+            entity.Property(e => e.ReviewedAt).HasColumnType("timestamp with time zone");
+            entity.Property(e => e.ReviewRemark).HasMaxLength(2000);
+            entity.Property(e => e.ReworkRemark).HasMaxLength(2000);
+            entity.Property(e => e.CreatedBy).HasMaxLength(100);
+            entity.Property(e => e.CreatedDate).HasColumnType("timestamp with time zone").IsRequired();
+            entity.Property(e => e.ModifiedBy).HasMaxLength(100);
+            entity.Property(e => e.ModifiedDate).HasColumnType("timestamp with time zone");
+
+            entity.HasOne(e => e.EaTask).WithMany().HasForeignKey(e => e.EaTaskId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasIndex(e => e.EaTaskId);
+            entity.HasIndex(e => new { e.EaTaskId, e.ReviewCycleNo }).IsUnique().HasDatabaseName("UX_ea_task_reviews_EaTaskId_ReviewCycleNo");
         });
 
         // ==========================================

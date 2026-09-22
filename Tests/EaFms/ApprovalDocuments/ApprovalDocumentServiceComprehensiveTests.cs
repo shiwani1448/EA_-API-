@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 using Jarvis5.Data.EaFms;
 using Jarvis5.Dtos.EaFms;
 using Jarvis5.Entities.EaFms;
+using Jarvis5.Repositories.EaFms;
 using Jarvis5.Services.EaFms;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
@@ -33,6 +34,10 @@ namespace Jarvis5.Tests.EaFms.ApprovalDocuments
             return new FormFile(ms, 0, ms.Length, "file", fileName) { Headers = new HeaderDictionary(), ContentType = contentType };
         }
 
+        private static ITaskReviewService NewTaskReview(EaFmsDbContext db) =>
+            new TaskReviewService(db, new TaskReviewRepository(db),
+                Mock.Of<Jarvis5.Services.ICurrentUserService>(), Mock.Of<Jarvis5.Services.EaFms.IAuditService>());
+
         [Fact]
         public async Task Upload_SuccessfulUpload_PersistsAttachmentAndWritesFileAndAudit()
         {
@@ -55,7 +60,7 @@ namespace Jarvis5.Tests.EaFms.ApprovalDocuments
             var authMock = new Mock<IApprovalAuthorizationService>();
             authMock.Setup(a => a.CanPerformAsync(1, "upload", It.IsAny<CancellationToken>())).ReturnsAsync(true);
 
-            var lifecycle = new ApprovalLifecycleService(db, auditMock.Object);
+            var lifecycle = new ApprovalLifecycleService(db, auditMock.Object, NewTaskReview(db));
             var svc = new ApprovalDocumentService(db, user, auditMock.Object, env, authMock.Object, lifecycle);
 
             var content = new byte[] { 1, 2, 3, 4 };
@@ -169,7 +174,7 @@ namespace Jarvis5.Tests.EaFms.ApprovalDocuments
             db.ApprovalRequests.Add(req); db.ApprovalCycles.Add(cycle); await db.SaveChangesAsync();
 
             var authMock = new Mock<IApprovalAuthorizationService>(); authMock.Setup(a => a.CanPerformAsync(5, "upload", It.IsAny<CancellationToken>())).ReturnsAsync(true);
-            var lifecycle = new ApprovalLifecycleService(db, auditMock.Object);
+            var lifecycle = new ApprovalLifecycleService(db, auditMock.Object, NewTaskReview(db));
             var svc = new ApprovalDocumentService(db, user, auditMock.Object, env, authMock.Object, lifecycle);
 
             var bytes = new byte[] { 9, 9 };
@@ -204,7 +209,7 @@ namespace Jarvis5.Tests.EaFms.ApprovalDocuments
             db.ApprovalRequests.Add(req); db.ApprovalCycles.AddRange(c1, c2); await db.SaveChangesAsync();
 
             var auth = Mock.Of<IApprovalAuthorizationService>(a => a.CanPerformAsync(7, "upload", It.IsAny<CancellationToken>()) == Task.FromResult(true));
-            var lifecycle = new ApprovalLifecycleService(db, Mock.Of<Jarvis5.Services.EaFms.IAuditService>());
+            var lifecycle = new ApprovalLifecycleService(db, Mock.Of<Jarvis5.Services.EaFms.IAuditService>(), NewTaskReview(db));
             var svc = new ApprovalDocumentService(db, user, Mock.Of<Jarvis5.Services.EaFms.IAuditService>(), env, auth, lifecycle);
 
             var file = CreateFormFile(new byte[] { 1 }, "ok.pdf", "application/pdf");
@@ -274,7 +279,7 @@ namespace Jarvis5.Tests.EaFms.ApprovalDocuments
             db.ApprovalRequests.Add(req); db.ApprovalCycles.Add(c3); await db.SaveChangesAsync();
 
             var auth = Mock.Of<IApprovalAuthorizationService>(a => a.CanPerformAsync(11, "upload", It.IsAny<CancellationToken>()) == Task.FromResult(true));
-            var lifecycle = new ApprovalLifecycleService(db, audit);
+            var lifecycle = new ApprovalLifecycleService(db, audit, NewTaskReview(db));
             var svc = new ApprovalDocumentService(db, user, audit, env, auth, lifecycle);
 
             var file = CreateFormFile(new byte[] { 1 }, "a.pdf", "application/pdf");
@@ -331,7 +336,7 @@ namespace Jarvis5.Tests.EaFms.ApprovalDocuments
                 db.ApprovalRequests.Add(req); db.ApprovalCycles.Add(cycle); await db.SaveChangesAsync();
 
                 var auth = Mock.Of<IApprovalAuthorizationService>(a => a.CanPerformAsync(20, "upload", It.IsAny<CancellationToken>()) == Task.FromResult(true));
-                var lifecycle = new ApprovalLifecycleService(db, audit);
+                var lifecycle = new ApprovalLifecycleService(db, audit, NewTaskReview(db));
                 var svc = new ApprovalDocumentService(db, user, audit, env, auth, lifecycle);
 
                 var file = CreateFormFile(new byte[] { 1 }, "ok.pdf", "application/pdf");
@@ -358,7 +363,7 @@ namespace Jarvis5.Tests.EaFms.ApprovalDocuments
                 db.ApprovalRequests.Add(req); db.ApprovalCycles.Add(cycle); await db.SaveChangesAsync();
 
                 var auth = Mock.Of<IApprovalAuthorizationService>(a => a.CanPerformAsync(30, "upload", It.IsAny<CancellationToken>()) == Task.FromResult(true));
-                var lifecycle = new ApprovalLifecycleService(db, audit);
+                var lifecycle = new ApprovalLifecycleService(db, audit, NewTaskReview(db));
                 var svc = new ApprovalDocumentService(db, user, audit, env, auth, lifecycle);
 
                 var file = CreateFormFile(new byte[] { 1 }, "ok.pdf", "application/pdf");
@@ -382,7 +387,7 @@ namespace Jarvis5.Tests.EaFms.ApprovalDocuments
 
             var alice = Mock.Of<Jarvis5.Services.ICurrentUserService>(u => u.UserName == "alice" && u.UserId == 1000);
             var auth = new ApprovalAuthorizationService(db);
-            var lifecycle = new ApprovalLifecycleService(db, audit);
+            var lifecycle = new ApprovalLifecycleService(db, audit, NewTaskReview(db));
             var svc = new ApprovalDocumentService(db, alice, audit, env, auth, lifecycle);
             var file = CreateFormFile(new byte[] { 1 }, "a.pdf", "application/pdf");
             var dto = await svc.UploadAsync(40, file, null);
@@ -397,7 +402,7 @@ namespace Jarvis5.Tests.EaFms.ApprovalDocuments
 
             var approver = Mock.Of<Jarvis5.Services.ICurrentUserService>(u => u.UserName == "someone" && u.UserId == 2000);
             var auth2 = new ApprovalAuthorizationService(db2);
-            var lifecycle2 = new ApprovalLifecycleService(db2, audit);
+            var lifecycle2 = new ApprovalLifecycleService(db2, audit, NewTaskReview(db2));
             var svc2 = new ApprovalDocumentService(db2, approver, audit, env, auth2, lifecycle2);
             var dto2 = await svc2.UploadAsync(41, file, null);
             Assert.Equal(411, dto2.ApprovalCycleId);
@@ -411,7 +416,7 @@ namespace Jarvis5.Tests.EaFms.ApprovalDocuments
 
             var userMatchingDisplay = Mock.Of<Jarvis5.Services.ICurrentUserService>(u => u.UserName == "display-name" && u.UserId == 9999);
             var auth3 = new ApprovalAuthorizationService(db3);
-            var lifecycle3 = new ApprovalLifecycleService(db3, audit);
+            var lifecycle3 = new ApprovalLifecycleService(db3, audit, NewTaskReview(db3));
             var svc3 = new ApprovalDocumentService(db3, userMatchingDisplay, audit, env, auth3, lifecycle3);
 
             await Assert.ThrowsAsync<Jarvis5.Common.BusinessRuleException>(() => svc3.UploadAsync(42, file, null));

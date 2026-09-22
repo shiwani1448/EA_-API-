@@ -42,5 +42,4 @@ public class MeetingsLifecycleController : ControllerBase
     [ProducesResponseType(typeof(MeetingLifecycleResponseDto), 200)]
     public async Task<IActionResult> Complete(long meetingId, [FromForm] MeetingCompleteRequestDto dto, CancellationToken ct)
         => Ok(await _lifecycle.CompleteAsync(meetingId, dto, ct));
-
 }

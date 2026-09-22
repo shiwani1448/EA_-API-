@@ -95,7 +95,8 @@ public class DelegationPauseResumeTests : IDisposable
                     Task = t.Task, ExecutionStatus = t.ExecutionStatus, IsActive = true, CreatedBy = t.CreatedBy, CreatedDate = t.CreatedDate };
             });
         var audit = new Mock<IAuditService>();
-        var svc = new DelegationService(db, user, audit.Object, numbers.Object, tasks.Object, env);
+        var svc = new DelegationService(db, user, audit.Object, numbers.Object, tasks.Object, env,
+            new TaskReviewService(db, new TaskReviewRepository(db), user, audit.Object));
         Task<DelegationResponseDto> Create() => svc.CreateAsync(new DelegationCreateRequestDto { Title = "Prepare deck", DoerId = "emp-1", EndDate = DateTime.UtcNow.AddDays(5) });
         var created = await Create();
         if (start) await svc.StartAsync(created.DelegationId);

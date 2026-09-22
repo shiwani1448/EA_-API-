@@ -70,7 +70,9 @@ public class DelegationContractTests
                 return new EaTaskResponseDto { EaTaskId = t.Id, ModuleId = module.Id, ModuleName = t.ModuleName, BusinessRecordId = t.BusinessRecordId,
                     Task = t.Task, ExecutionStatus = t.ExecutionStatus, IsActive = true, CreatedBy = t.CreatedBy, CreatedDate = t.CreatedDate };
             });
-        return new Fx { Db = db, Svc = new DelegationService(db, user, new Mock<IAuditService>().Object, numbers.Object, tasks.Object, env) };
+        var auditObj = new Mock<IAuditService>().Object;
+        return new Fx { Db = db, Svc = new DelegationService(db, user, auditObj, numbers.Object, tasks.Object, env,
+            new TaskReviewService(db, new TaskReviewRepository(db), user, auditObj)) };
     }
 
     private static DelegationCreateRequestDto Request(string? type = "Director Delegation") => new()

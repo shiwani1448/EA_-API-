@@ -1,6 +1,7 @@
 using Jarvis5.Data.EaFms;
 using Jarvis5.Dtos.EaFms;
 using Jarvis5.Entities.EaFms;
+using Jarvis5.Repositories.EaFms;
 using Jarvis5.Services;
 using Jarvis5.Services.EaFms;
 using Microsoft.EntityFrameworkCore;
@@ -26,7 +27,8 @@ public class ApprovalNoTatQueryTests
         await db.SaveChangesAsync();
         var documents = new Mock<IApprovalDocumentService>();
         documents.Setup(x => x.ListAsync(approval.Id, It.IsAny<CancellationToken>())).ReturnsAsync(new List<ApprovalDocumentResponseDto>());
-        var service = new ApprovalQueryService(db, documents.Object);
+        var taskReview = new TaskReviewService(db, new TaskReviewRepository(db), Mock.Of<ICurrentUserService>(), Mock.Of<IAuditService>());
+        var service = new ApprovalQueryService(db, documents.Object, taskReview);
 
         var list = await service.ListAsync(null, null, null, null, null, null, null, null, null, null, null, 1, 50, default);
         Assert.Equal(dueState, Assert.Single(list.Items).DueState);

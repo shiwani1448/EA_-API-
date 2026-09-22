@@ -72,6 +72,7 @@ public class MeetingDetailResponseDto
     public MeetingAssignmentSummaryDto? AssignmentSummary { get; set; }
     public MeetingWaitingSummaryDto? WaitingSummary { get; set; }
     public MeetingTatSummaryDto? TatSummary { get; set; }
+
     public MeetingFollowupSummaryDto? FollowupSummary { get; set; }
     public object? EscalationSummary { get; set; }
     public object? RevisionSummary { get; set; }

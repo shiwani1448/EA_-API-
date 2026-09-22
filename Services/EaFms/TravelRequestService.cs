@@ -440,7 +440,7 @@ public partial class TravelRequestService : ITravelRequestService
 
         return new PagedResult<TravelRequestListItemDto>
         {
-            Items = items.Select(ToListItemDto).ToArray(),
+            Items = items.Select(e => ToListItemDto(e)).ToArray(),
             PageNumber = page,
             PageSize = pageSize,
             TotalCount = totalCount
@@ -506,6 +506,7 @@ public partial class TravelRequestService : ITravelRequestService
     {
         return new TravelRequestDetailDto
         {
+
             CurrentCycle = ToCurrentTravelCycle(cycle),
             Id = e.Id,
             ReferenceNo = e.ReferenceNo,
@@ -608,6 +609,7 @@ public partial class TravelRequestService : ITravelRequestService
     {
         return new TravelRequestListItemDto
         {
+
             CurrentCycleNo = e.CurrentCycleNo,
             SubmittedAt = e.SubmittedAt,
             ApprovedAt = e.ApprovedAt,

@@ -14,11 +14,13 @@ public class ApprovalLifecycleService : IApprovalLifecycleService
 {
     private readonly EaFmsDbContext _db;
     private readonly IAuditService _audit;
+    private readonly ITaskReviewService _taskReview;
 
-    public ApprovalLifecycleService(EaFmsDbContext db, IAuditService audit)
+    public ApprovalLifecycleService(EaFmsDbContext db, IAuditService audit, ITaskReviewService taskReview)
     {
         _db = db;
         _audit = audit;
+        _taskReview = taskReview;
     }
 
     public Task<bool> IsDocumentOperationAllowed(long approvalRequestId, string operation, CancellationToken ct = default)
@@ -224,5 +226,45 @@ public class ApprovalLifecycleService : IApprovalLifecycleService
         // Use shared workflow history & audit logs. For now, return audit logs filtered to this approval entity.
         var logs = await _db.AuditLogs.AsNoTracking().Where(a => a.Module == "Approval" && a.EntityName == nameof(ApprovalRequest) && a.EntityId == approvalRequestId.ToString()).OrderBy(a => a.CreatedDate).ToListAsync(ct);
         return logs.Select(l => new Jarvis5.Dtos.EaFms.WorkflowHistoryResponseDto { Id = l.Id, ChangedAt = l.CreatedDate, Notes = l.Description, StageOwnerId = l.ActorId, StageOwnerName = l.ActorName }).ToList();
+    }
+
+    // ============================================================
+    // TASK REVIEW / REWORK (Phase 1) — entirely separate from the business
+    // WorkflowStatus/ApprovalCycle lifecycle above (Submit/Approve/Reject/
+    // RequestChanges/Resubmit). Never reuses PendingApproval/Approved/Rejected/
+    // ChangesRequested for review state, and never touches WorkflowStatus/ApprovalCycle.
+    // ============================================================
+
+    private async Task<long> RequireApprovalEaTaskIdAsync(long approvalRequestId, CancellationToken ct)
+    {
+        var eaTaskId = await _db.ApprovalRequests.AsNoTracking()
+            .Where(a => a.Id == approvalRequestId && !a.IsDeleted)
+            .Select(a => (long?)a.EaTaskId)
+            .SingleOrDefaultAsync(ct);
+        return eaTaskId ?? throw new NotFoundException($"Approval {approvalRequestId} not found.");
+    }
+
+    public async Task<TaskReviewSummaryDto> SubmitForReviewAsync(long approvalRequestId, SubmitForReviewRequestDto dto, CancellationToken ct = default)
+    {
+        var eaTaskId = await RequireApprovalEaTaskIdAsync(approvalRequestId, ct);
+        return await _taskReview.SubmitForReviewAsync(eaTaskId, dto, ct);
+    }
+
+    public async Task<TaskReviewSummaryDto> ApproveReviewAsync(long approvalRequestId, ApproveTaskReviewRequestDto dto, CancellationToken ct = default)
+    {
+        var eaTaskId = await RequireApprovalEaTaskIdAsync(approvalRequestId, ct);
+        return await _taskReview.ApproveAsync(eaTaskId, dto, ct);
+    }
+
+    public async Task<TaskReviewSummaryDto> RequestTaskReworkAsync(long approvalRequestId, RequestTaskReworkRequestDto dto, CancellationToken ct = default)
+    {
+        var eaTaskId = await RequireApprovalEaTaskIdAsync(approvalRequestId, ct);
+        return await _taskReview.RequestReworkAsync(eaTaskId, dto, ct);
+    }
+
+    public async Task<List<TaskReviewHistoryItemDto>> GetReviewHistoryAsync(long approvalRequestId, CancellationToken ct = default)
+    {
+        var eaTaskId = await RequireApprovalEaTaskIdAsync(approvalRequestId, ct);
+        return await _taskReview.GetHistoryAsync(eaTaskId, ct);
     }
 }

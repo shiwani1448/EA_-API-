@@ -94,7 +94,8 @@ public class ApprovalCreateSubmitTests
         var audit = Mock.Of<IAuditService>();
         var env = Mock.Of<IWebHostEnvironment>(e => e.ContentRootPath == contentRoot);
         var auth = new ApprovalAuthorizationService(db);
-        var lifecycle = new ApprovalLifecycleService(db, audit);
+        var lifecycle = new ApprovalLifecycleService(db, audit,
+            new TaskReviewService(db, new TaskReviewRepository(db), Mock.Of<Jarvis5.Services.ICurrentUserService>(), audit));
         return new ApprovalDocumentService(db, user, audit, env, auth, lifecycle);
     }
 
@@ -201,7 +202,8 @@ public class ApprovalCreateSubmitTests
             ApproverId = "approver-1"
         });
 
-        var lifecycle = new ApprovalLifecycleService(db, Mock.Of<IAuditService>());
+        var lifecycle = new ApprovalLifecycleService(db, Mock.Of<IAuditService>(),
+            new TaskReviewService(db, new TaskReviewRepository(db), Mock.Of<Jarvis5.Services.ICurrentUserService>(), Mock.Of<IAuditService>()));
         var approved = await lifecycle.ApproveAsync(created.Id, new ApprovalDecisionDto { Comment = "ok" });
 
         Assert.Equal("Approved", approved.WorkflowStatus);

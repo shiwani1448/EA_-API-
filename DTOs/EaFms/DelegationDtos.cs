@@ -135,17 +135,45 @@ public class DelegationResponseDto
     /// <summary>Central task execution status: NotStarted | InProgress | Completed. Stays InProgress while paused (see isPaused).</summary>
     public string ExecutionStatus { get; set; } = string.Empty;
 
-    /// <summary>Configured TAT snapshot taken at creation (EaTask.AllottedTatMinutes). Null for a Delegation created without a delegationType (no TAT).</summary>
+    /// <summary>Configured TAT snapshot taken at creation (EaTask.AllottedTatMinutes). Null for a Delegation created without a delegationType (no TAT). Present on Meeting's own detail contract under the same name.</summary>
     public int? AllottedTatMinutes { get; set; }
 
     /// <summary>
-    /// Live ACTIVE TAT in minutes, counted from startedAt with paused time excluded. Null before Start and when there is no TAT.
-    /// Frozen at the final value once completed.
+    /// Strict Meeting-aligned public TAT value — same property, same formula and same lifecycle semantics
+    /// as Meeting's own tatUsedMinutes (TatSummaryCalculator's elapsed-minus-paused result, echoed in whole
+    /// minutes). Null before Start and when there is no TAT (no delegationType); live while InProgress
+    /// (including while paused, where it holds steady rather than advancing); stable once Completed because
+    /// tatSummary's end anchor becomes completedAt. There is no separate "current" vs "frozen" public field —
+    /// Meeting has only one, and Delegation's public contract now matches it exactly. (The central EaTask
+    /// still keeps its own internal frozen TatUsedMinutes column for the EaTask API and EM Report — that is
+    /// a different, internal concern and is untouched by this field.)
     /// </summary>
-    public int? CurrentTatUsedMinutes { get; set; }
-
-    /// <summary>Final frozen ACTIVE TAT in minutes (EaTask.TatUsedMinutes). Null until completed and when there is no TAT.</summary>
     public int? TatUsedMinutes { get; set; }
+
+    /// <summary>
+    /// Meeting-style live simple-pause minutes for the current TAT window — same TatSummaryCalculator
+    /// formula and WorkPause data as Meeting's own tatPausedMinutes. Null before Start and when there is no
+    /// TAT (no delegationType); 0 once started with no pauses; stops advancing while paused; stable once Completed.
+    /// </summary>
+    public int? TatPausedMinutes { get; set; }
+
+    /// <summary>
+    /// Meeting-style full-precision TAT summary — the exact same MeetingTatSummaryDto type, property names,
+    /// types and TatSummaryCalculator formula as Meeting's own tatSummary (tat/totalTat/tatDifference/
+    /// startTime/endTime/lastActiveTime/pauseTime/pauseCount). Populated from before Start (tat: zero) once a
+    /// delegationType configures a TAT. For a Delegation with no delegationType (no TAT), tat/totalTat/
+    /// tatDifference use Meeting's own "unavailable" shape (null/zero/zero) — the same fallback Meeting
+    /// itself falls back to for a task with no configured TAT — while startTime/endTime/lastActiveTime/
+    /// pauseTime/pauseCount still reflect the Delegation's real execution timeline. Never persisted.
+    /// </summary>
+    public MeetingTatSummaryDto TatSummary { get; set; } = new();
+
+    /// <summary>
+    /// Central Task Review/Rework state for this Delegation's EaTask (Phase 1). Null-shaped
+    /// (status null, reviewCycleNumber 0) when never submitted for review. Entirely separate
+    /// from executionStatus/status above — Phase 1 does not gate or trigger either from this.
+    /// </summary>
+    public TaskReviewSummaryDto ReviewSummary { get; set; } = new();
 
     /// <summary>Server-computed, not persisted: Status != Completed AND endDate's calendar date == today.</summary>
     public bool IsDueToday { get; set; }

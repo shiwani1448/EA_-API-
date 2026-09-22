@@ -122,4 +122,39 @@ public class DelegationsController : ControllerBase
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
     public async Task<IActionResult> Complete(long delegationId, [FromForm] DelegationCompleteRequestDto request, CancellationToken ct) =>
         Ok(await _service.CompleteAsync(delegationId, request.CompletionPdf, ct));
+
+    // ============================================================
+    // TASK REVIEW / REWORK (Phase 1)
+    // ============================================================
+
+    /// <summary>Submit the Delegation's central task for review. 409 if Cancelled, already Completed, or a review is already pending.</summary>
+    [HttpPost("{delegationId:long}/submit-for-review")]
+    [ProducesResponseType(typeof(DelegationResponseDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> SubmitForReview(long delegationId, [FromBody] SubmitForReviewRequestDto? dto, CancellationToken ct) =>
+        Ok(await _service.SubmitForReviewAsync(delegationId, dto ?? new SubmitForReviewRequestDto(), ct));
+
+    /// <summary>Approve the current pending review cycle. 409 if no review is currently pending.</summary>
+    [HttpPost("{delegationId:long}/review/approve")]
+    [ProducesResponseType(typeof(DelegationResponseDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> ApproveReview(long delegationId, [FromBody] ApproveTaskReviewRequestDto? dto, CancellationToken ct) =>
+        Ok(await _service.ApproveReviewAsync(delegationId, dto ?? new ApproveTaskReviewRequestDto(), ct));
+
+    /// <summary>Send the current pending review cycle back for rework. 409 if no review is currently pending.</summary>
+    [HttpPost("{delegationId:long}/review/rework")]
+    [ProducesResponseType(typeof(DelegationResponseDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> RequestRework(long delegationId, [FromBody] RequestTaskReworkRequestDto? dto, CancellationToken ct) =>
+        Ok(await _service.RequestReworkAsync(delegationId, dto ?? new RequestTaskReworkRequestDto(), ct));
+
+    /// <summary>Full review-cycle history, oldest (cycle 1) first. EaTask-based — no WorkflowInstanceId is exposed.</summary>
+    [HttpGet("{delegationId:long}/review/history")]
+    [ProducesResponseType(typeof(List<TaskReviewHistoryItemDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> ReviewHistory(long delegationId, CancellationToken ct) =>
+        Ok(await _service.GetReviewHistoryAsync(delegationId, ct));
 }

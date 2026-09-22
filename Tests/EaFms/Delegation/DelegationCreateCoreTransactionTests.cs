@@ -40,7 +40,8 @@ public class DelegationCreateCoreTransactionTests
         var eaTasks = new EaTaskService(db, new EaTaskRepository(db), new TatRuleRepository(db),
             new CreateEaTaskDtoValidator(), user, audit);
         return new DelegationService(db, user, audit, new DelegationRepository(db), eaTasks,
-            Mock.Of<Microsoft.AspNetCore.Hosting.IWebHostEnvironment>());
+            Mock.Of<Microsoft.AspNetCore.Hosting.IWebHostEnvironment>(),
+            new TaskReviewService(db, new TaskReviewRepository(db), user, audit));
     }
 
     private static async Task<long> ResolveMeetingModuleIdAsync(EaFmsDbContext db) =>

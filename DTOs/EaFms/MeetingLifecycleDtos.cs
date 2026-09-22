@@ -42,6 +42,7 @@ public class MeetingLifecycleResponseDto
     public bool IsPaused { get; set; }
     public DateTime? StartedAt { get; set; }
     public MeetingTatSummaryDto TatSummary { get; set; } = new();
+
     public DateTime? CompletedAt { get; set; }
     public DateTime? MeetingCompletedAt { get; set; }
     public bool IsActive { get; set; }
@@ -66,6 +67,7 @@ public class MeetingPauseResponseDto
     public bool IsPaused { get; set; }
     public DateTime? StartedAt { get; set; }
     public MeetingTatSummaryDto TatSummary { get; set; } = new();
+
     public DateTime? CompletedAt { get; set; }
     public bool IsActive { get; set; }
 }

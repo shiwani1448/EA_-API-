@@ -56,10 +56,11 @@ public class ApprovalApprovedRejectedByTests
                         Task = t.Task, ExecutionStatus = t.ExecutionStatus, IsActive = true, CreatedBy = "t", CreatedDate = t.CreatedDate };
                 });
             var audit = Mock.Of<IAuditService>();
+            var taskReview = new TaskReviewService(f.Db, new TaskReviewRepository(f.Db), Mock.Of<Jarvis5.Services.ICurrentUserService>(), audit);
             f.Service = new ApprovalService(f.Db, audit, numbers.Object, tasks.Object);
-            f.Queries = new ApprovalQueryService(f.Db, Mock.Of<IApprovalDocumentService>());
+            f.Queries = new ApprovalQueryService(f.Db, Mock.Of<IApprovalDocumentService>(), taskReview);
             f.Controller = new ApprovalsController(f.Service, f.Queries);
-            f.Lifecycle = new ApprovalLifecycleService(f.Db, audit);
+            f.Lifecycle = new ApprovalLifecycleService(f.Db, audit, taskReview);
             return f;
         }
 

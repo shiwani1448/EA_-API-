@@ -54,6 +54,7 @@ public class ApprovalsController : ControllerBase
     }
 
     [HttpGet]
+    [ProducesResponseType(typeof(List<ApprovalListItemDto>), 200)]
     public async Task<IActionResult> List([FromQuery] string? search, [FromQuery] string? status, [FromQuery] string? priority, [FromQuery] string? approver, [FromQuery] string? requestedBy, [FromQuery] string? department, [FromQuery] DateTime? createdFrom, [FromQuery] DateTime? createdTo, [FromQuery] DateTime? requiredFrom, [FromQuery] DateTime? requiredTo, [FromQuery] string? dueState, [FromQuery] int page = 1, [FromQuery] int pageSize = 50, CancellationToken ct = default)
     {
         var result = await _queries.ListAsync(search, status, priority, approver, requestedBy, department, createdFrom, createdTo, requiredFrom, requiredTo, dueState, page, pageSize, ct);
@@ -64,6 +65,7 @@ public class ApprovalsController : ControllerBase
     public async Task<IActionResult> Dashboard(CancellationToken ct) => Ok(await _queries.DashboardAsync(ct));
 
     [HttpGet("{id:long}")]
+    [ProducesResponseType(typeof(Jarvis5.Dtos.EaFms.ApprovalDetailDto), 200)]
     public async Task<IActionResult> Get(long id, CancellationToken ct) { var result = await _queries.DetailAsync(id, ct); return result is null ? NotFound() : Ok(result); }
 
     [HttpGet("{id:long}/cycles")]

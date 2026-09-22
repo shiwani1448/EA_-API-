@@ -1897,6 +1897,91 @@ namespace Studio5JarvisMasterApi.Migrations
                     b.ToTable("ea_statuses", "public");
                 });
 
+            modelBuilder.Entity("Jarvis5.Entities.EaFms.TaskReview", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<string>("CreatedBy")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<DateTime>("CreatedDate")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<long>("EaTaskId")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("ModifiedBy")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<DateTime?>("ModifiedDate")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("ReviewCycleNo")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("ReviewRemark")
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
+
+                    b.Property<string>("ReviewStatus")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)");
+
+                    b.Property<DateTime?>("ReviewedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("ReviewedById")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("ReviewedByName")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("ReviewerId")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("ReviewerName")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("ReworkRemark")
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
+
+                    b.Property<DateTime>("SubmittedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("SubmittedById")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("SubmittedByName")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("EaTaskId");
+
+                    b.HasIndex("EaTaskId", "ReviewCycleNo")
+                        .IsUnique()
+                        .HasDatabaseName("UX_ea_task_reviews_EaTaskId_ReviewCycleNo");
+
+                    b.ToTable("ea_task_reviews", "public", t =>
+                        {
+                            t.HasCheckConstraint("CK_ea_task_reviews_ReviewStatus", "\"ReviewStatus\" IN ('PendingReview', 'Approved', 'ReworkRequested')");
+                        });
+                });
+
             modelBuilder.Entity("Jarvis5.Entities.EaFms.TatRule", b =>
                 {
                     b.Property<long>("Id")
@@ -3367,6 +3452,17 @@ namespace Studio5JarvisMasterApi.Migrations
                         .IsRequired();
 
                     b.Navigation("Meeting");
+                });
+
+            modelBuilder.Entity("Jarvis5.Entities.EaFms.TaskReview", b =>
+                {
+                    b.HasOne("Jarvis5.Entities.EaFms.EaTask", "EaTask")
+                        .WithMany()
+                        .HasForeignKey("EaTaskId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("EaTask");
                 });
 
             modelBuilder.Entity("Jarvis5.Entities.EaFms.TatRule", b =>

@@ -32,4 +32,17 @@ public interface IDelegationService
     Task<DelegationResponseDto> PauseAsync(long delegationId, DelegationPauseRequestDto? request, CancellationToken ct = default);
     /// <summary>Closes the open WorkPause of an InProgress Delegation (isPaused=false). 409 when not paused.</summary>
     Task<DelegationResponseDto> ResumeAsync(long delegationId, CancellationToken ct = default);
+
+    /// <summary>
+    /// Task Review/Rework (Phase 1): resolves the Delegation's EaTask and delegates to the shared
+    /// ITaskReviewService. Review time counts toward existing TAT; no WorkPause is created; the
+    /// existing Start/Pause/Resume/Complete lifecycle above is entirely unaffected.
+    /// </summary>
+    Task<DelegationResponseDto> SubmitForReviewAsync(long delegationId, SubmitForReviewRequestDto dto, CancellationToken ct = default);
+    /// <summary>Requires the latest review cycle to be PendingReview. 409 otherwise (including double-approve).</summary>
+    Task<DelegationResponseDto> ApproveReviewAsync(long delegationId, ApproveTaskReviewRequestDto dto, CancellationToken ct = default);
+    /// <summary>Requires the latest review cycle to be PendingReview. Does not create the next cycle — the next SubmitForReview does.</summary>
+    Task<DelegationResponseDto> RequestReworkAsync(long delegationId, RequestTaskReworkRequestDto dto, CancellationToken ct = default);
+    /// <summary>Full review-cycle history, oldest (cycle 1) first.</summary>
+    Task<List<TaskReviewHistoryItemDto>> GetReviewHistoryAsync(long delegationId, CancellationToken ct = default);
 }

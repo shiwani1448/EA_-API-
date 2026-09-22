@@ -172,12 +172,13 @@ public sealed class MeetingListTatTests
                     return await transform(base_).ToListAsync(ct);
                 });
 
+        var auditForReview = new Mock<IAuditService>().Object;
         return new MeetingService(
             repo.Object,
             db,
             MakeMapperMock(db),
             MakeUser().Object,
-            new Mock<IAuditService>().Object,
+            auditForReview,
             new Mock<IWorkflowService>().Object,
             new Mock<IEaTaskService>().Object);
     }

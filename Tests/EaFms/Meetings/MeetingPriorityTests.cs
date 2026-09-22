@@ -62,9 +62,10 @@ public sealed class MeetingPriorityTests
         eaTasks.Setup(s => s.CreateAsync(It.IsAny<CreateEaTaskDto>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new EaTaskResponseDto());
 
+        var auditForReview = new Mock<IAuditService>().Object;
         return new MeetingService(
             new MeetingRepository(db), db, MakeMapperMock(), user.Object,
-            new Mock<IAuditService>().Object, workflow.Object, eaTasks.Object);
+            auditForReview, workflow.Object, eaTasks.Object);
     }
 
     [Theory]

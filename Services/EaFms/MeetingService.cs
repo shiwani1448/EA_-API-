@@ -184,7 +184,9 @@ public class MeetingService : IMeetingService
             var meeting = meetings.First(m => m.Id == item.MeetingId);
             item.Priority = meeting.Priority;
             if (taskSnapshots.TryGetValue(meeting.Id, out var task))
+            {
                 PopulateTaskSnapshot(item, task);
+            }
             if (!meeting.WorkflowInstanceId.HasValue) continue;
             var workflowId = meeting.WorkflowInstanceId.Value;
             if (currentAssignmentsByWorkflow.TryGetValue(workflowId, out var assignment)) { item.DoerId = assignment.DoerId; item.DoerName = assignment.DoerName; }
@@ -199,61 +201,27 @@ public class MeetingService : IMeetingService
                     : new List<WorkPause>();
                 item.IsPaused = pauses.Any(p => p.EndAt == null && WorkPauseClassifier.IsSimplePause(p));
 
-                // Populate TAT used/paused using the same formula as GetByIdAsync:
-                //   end  = CompletedAt when completed, otherwise current UTC time.
-                //   used = (end - TatStartedAt) - paused, clamped to zero.
-                //   paused = GetPausedDuration with IsSimplePause filter (same helper as detail).
-                // Only calculated when the task has an AllottedTatMinutes value (TAT exists).
-                if (task is not null && task.AllottedTatMinutes.HasValue && workflow.TatStartedAt.HasValue)
-                {
-                    var end = workflow.CompletedAt ?? now;
-                    var paused = GetPausedDuration(workflow.TatStartedAt.Value, end, pauses);
-                    var used = end - workflow.TatStartedAt.Value - paused;
-                    if (used < TimeSpan.Zero) used = TimeSpan.Zero;
-
-                    item.TatUsedMinutes = (int)used.TotalMinutes;
-                    item.TatPausedMinutes = (int)paused.TotalMinutes;
-                }
-                // When no TAT data exists (no task or no TatStartedAt), leave
-                // TatUsedMinutes/TatPausedMinutes as null — preserving existing
-                // "unavailable" behaviour and not converting nulls to 0.
-
-                // Full-precision TatSummary — identical calculation path to GetByIdAsync's
-                // dto.TatSummary (same GetPausedDuration helper, same end/paused/used/
-                // TatDifference/LastActiveTime/PauseCount formulas), sourced from the batch-
-                // loaded task/workflow/pauses above so no per-row query or detail call is
-                // introduced. Gated on task+AllottedTatMinutes only (not TatStartedAt), just
-                // like detail, so a not-yet-started meeting still gets Tat/PauseTime = zero
-                // (not null) — matching detail exactly instead of the whole-minute fields above.
+                // TAT summary — one canonical formula (TatSummaryCalculator), shared with
+                // GetByIdAsync and with Delegation's own Meeting-style TAT presentation.
+                // Gated on task+AllottedTatMinutes only (not TatStartedAt), so a not-yet-started
+                // meeting still gets Tat/PauseTime = zero (not null) — matching detail exactly.
                 if (task is not null && task.AllottedTatMinutes.HasValue)
                 {
-                    var totalTat = TimeSpan.FromMinutes(task.AllottedTatMinutes.Value);
-                    var end = workflow.CompletedAt ?? now;
-                    var paused = workflow.TatStartedAt.HasValue
-                        ? GetPausedDuration(workflow.TatStartedAt.Value, end, pauses)
-                        : TimeSpan.Zero;
-                    var used = workflow.TatStartedAt.HasValue
-                        ? end - workflow.TatStartedAt.Value - paused
-                        : TimeSpan.Zero;
-                    if (used < TimeSpan.Zero) used = TimeSpan.Zero;
+                    item.TatSummary = TatSummaryCalculator.Calculate(
+                        task.AllottedTatMinutes.Value, workflow.TatStartedAt, workflow.CompletedAt, pauses, now);
 
-                    var openSimplePause = pauses.FirstOrDefault(p => p.EndAt == null && WorkPauseClassifier.IsSimplePause(p));
-
-                    item.TatSummary = new MeetingTatSummaryDto
+                    // Whole-minute echo of TatSummary, but only once the clock has actually
+                    // started — preserving existing "unavailable" behaviour (null, not 0).
+                    if (workflow.TatStartedAt.HasValue)
                     {
-                        Tat = used,
-                        TotalTat = totalTat,
-                        TatDifference = totalTat - used,
-                        StartTime = workflow.TatStartedAt,
-                        EndTime = workflow.CompletedAt,
-                        LastActiveTime = workflow.CompletedAt ?? (openSimplePause?.StartAt ?? end),
-                        PauseTime = paused,
-                        PauseCount = pauses.Count(WorkPauseClassifier.IsSimplePause)
-                    };
+                        item.TatUsedMinutes = (int)item.TatSummary.Tat!.Value.TotalMinutes;
+                        item.TatPausedMinutes = (int)item.TatSummary.PauseTime.TotalMinutes;
+                    }
                 }
                 // When no task or no configured TAT exists, item.TatSummary keeps its default
                 // MeetingTatSummaryDto (Tat: null, TotalTat/PauseTime: zero, PauseCount: 0) —
-                // the same non-null "unavailable" shape GetByIdAsync falls back to.
+                // the same non-null "unavailable" shape GetByIdAsync falls back to, and
+                // TatUsedMinutes/TatPausedMinutes stay null.
             }
         }
 
@@ -273,7 +241,9 @@ public class MeetingService : IMeetingService
         dto.StartedAt = null;
         var task = await GetMeetingTaskSnapshotAsync(m.Id, ct);
         if (task is not null)
+        {
             PopulateTaskSnapshot(dto, task);
+        }
         // Populate assignment summary
         if (m.WorkflowInstanceId.HasValue)
         {
@@ -344,28 +314,9 @@ public class MeetingService : IMeetingService
                 {
                     if (!task.AllottedTatMinutes.HasValue)
                         throw new BusinessRuleException("Meeting task does not have an allotted TAT.");
-                    var totalTat = TimeSpan.FromMinutes(task.AllottedTatMinutes.Value);
-                    var end = wf.CompletedAt ?? Clock.UtcNowTz;
-                    var paused = wf.TatStartedAt.HasValue
-                        ? GetPausedDuration(wf.TatStartedAt.Value, end, pauses)
-                        : TimeSpan.Zero;
-                    var used = wf.TatStartedAt.HasValue
-                        ? end - wf.TatStartedAt.Value - paused
-                        : TimeSpan.Zero;
-                    if (used < TimeSpan.Zero) used = TimeSpan.Zero;
-
-                    dto.WaitingSummary.TotalPausedMinutes = (int)paused.TotalMinutes;
-                    dto.TatSummary = new MeetingTatSummaryDto
-                    {
-                        Tat = used,
-                        TotalTat = totalTat,
-                        TatDifference = totalTat - used,
-                        StartTime = wf.TatStartedAt,
-                        EndTime = wf.CompletedAt,
-                        LastActiveTime = wf.CompletedAt ?? (openSimplePause?.StartAt ?? end),
-                        PauseTime = paused,
-                        PauseCount = pauses.Count(WorkPauseClassifier.IsSimplePause)
-                    };
+                    dto.TatSummary = TatSummaryCalculator.Calculate(
+                        task.AllottedTatMinutes.Value, wf.TatStartedAt, wf.CompletedAt, pauses, Clock.UtcNowTz);
+                    dto.WaitingSummary.TotalPausedMinutes = (int)dto.TatSummary.PauseTime.TotalMinutes;
                 }
             }
         }

@@ -1,0 +1,130 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TestRun id="751aa1e4-c065-4be9-b360-c6ace1a1714a" name="Admin@PRATIKSHA 2026-09-22 15:18:01" runUser="PRATIKSHA\CodexSandboxOffline" xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010">
+  <Times creation="2026-09-22T15:18:01.5032711+05:30" queuing="2026-09-22T15:18:01.5032715+05:30" start="2026-09-22T15:17:50.0904455+05:30" finish="2026-09-22T15:18:02.3044589+05:30" />
+  <TestSettings name="default" id="39f418a4-ca80-4ebc-a56f-1563cf7dde88">
+    <Deployment runDeploymentRoot="Admin_PRATIKSHA_2026-09-22_15_18_01" />
+  </TestSettings>
+  <Results>
+    <UnitTestResult executionId="2a912cdd-3e46-4013-bd32-98783909a556" testId="8393513f-e34e-179f-264b-cab9b91e31d7" testName="Jarvis5.Tests.EaFms.TaskReview.TaskReviewServiceTests.Snapshots_History_Batch_AndExecutionFields_ArePreserved" computerName="PRATIKSHA" duration="00:00:02.0480104" startTime="2026-09-22T15:18:01.9938068+05:30" endTime="2026-09-22T15:18:01.9938070+05:30" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="2a912cdd-3e46-4013-bd32-98783909a556" />
+    <UnitTestResult executionId="a1bcd918-17d6-46c1-8e3d-60fa12499275" testId="ed959f57-88bf-1166-1ca2-43544cc4a21a" testName="Jarvis5.Tests.EaFms.TaskReview.DelegationTaskReviewTests.NoReviewYet_SummaryIsNullShaped_NotFakeZero" computerName="PRATIKSHA" duration="00:00:00.0322195" startTime="2026-09-22T15:18:02.1797670+05:30" endTime="2026-09-22T15:18:02.1797673+05:30" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="a1bcd918-17d6-46c1-8e3d-60fa12499275" />
+    <UnitTestResult executionId="7c8b629f-dcce-45c4-939f-21f7774d9260" testId="67ca67f7-7aa6-a927-9de1-d73cd0938001" testName="Jarvis5.Tests.EaFms.TaskReview.DelegationTaskReviewTests.Approve_Twice_SecondCallRejected" computerName="PRATIKSHA" duration="00:00:00.0182642" startTime="2026-09-22T15:18:02.0325614+05:30" endTime="2026-09-22T15:18:02.0325615+05:30" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="7c8b629f-dcce-45c4-939f-21f7774d9260" />
+    <UnitTestResult executionId="30c32daa-fa75-4c86-82e5-cdfabd567dd0" testId="82c1781f-ac89-c9af-428c-fc49a817dd3f" testName="Jarvis5.Tests.EaFms.TaskReview.ApprovalTaskReviewTests.FullCycle_Submit_Rework_Resubmit_Approve" computerName="PRATIKSHA" duration="00:00:00.0876370" startTime="2026-09-22T15:18:02.0060057+05:30" endTime="2026-09-22T15:18:02.0060058+05:30" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="30c32daa-fa75-4c86-82e5-cdfabd567dd0" />
+    <UnitTestResult executionId="2f076cfc-0ef0-4976-ab5b-57a16eaecd18" testId="30662c60-e890-4e7c-fde4-132607f337a9" testName="Jarvis5.Tests.EaFms.TaskReview.ApprovalTaskReviewTests.Approve_Twice_SecondCallRejected" computerName="PRATIKSHA" duration="00:00:01.9722698" startTime="2026-09-22T15:18:01.9184463+05:30" endTime="2026-09-22T15:18:01.9184465+05:30" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="2f076cfc-0ef0-4976-ab5b-57a16eaecd18" />
+    <UnitTestResult executionId="32cda97c-65e6-4ab8-bf88-7fee40c1162a" testId="799852c0-6589-3963-76ec-df5f544d6aa1" testName="Jarvis5.Tests.EaFms.TaskReview.ApprovalTaskReviewTests.Rework_WithoutPendingReview_Rejected" computerName="PRATIKSHA" duration="00:00:00.0054577" startTime="2026-09-22T15:18:02.0174277+05:30" endTime="2026-09-22T15:18:02.0174283+05:30" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="32cda97c-65e6-4ab8-bf88-7fee40c1162a" />
+    <UnitTestResult executionId="44dc1634-b175-4e38-badc-1e8467c90de3" testId="d5b48391-261f-2ed6-a770-6e55e4f88a8b" testName="Jarvis5.Tests.EaFms.TaskReview.TaskReviewSwaggerTests.GeneratedContract_ExposesModuleRoutes_AndReusesSummary" computerName="PRATIKSHA" duration="00:00:01.1654066" startTime="2026-09-22T15:18:01.1171794+05:30" endTime="2026-09-22T15:18:01.1172025+05:30" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="44dc1634-b175-4e38-badc-1e8467c90de3" />
+    <UnitTestResult executionId="891e8da9-a20e-4f9c-97ec-898c7fc8394a" testId="465b572a-a020-f871-8f84-6991205dbf77" testName="Jarvis5.Tests.EaFms.TaskReview.TaskReviewServiceTests.MissingTask_IsNotFound" computerName="PRATIKSHA" duration="00:00:00.0021821" startTime="2026-09-22T15:18:02.0080397+05:30" endTime="2026-09-22T15:18:02.0080399+05:30" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="891e8da9-a20e-4f9c-97ec-898c7fc8394a" />
+    <UnitTestResult executionId="4f563788-bf4c-4e16-80f0-027a2d5946e5" testId="4b5a5de5-eccd-6056-d97a-bd0c1f35e98c" testName="Jarvis5.Tests.EaFms.TaskReview.DelegationTaskReviewTests.PendingReview_TatKeepsRunning_AndCompleteRemainsIndependent" computerName="PRATIKSHA" duration="00:00:00.0792283" startTime="2026-09-22T15:18:02.1261360+05:30" endTime="2026-09-22T15:18:02.1261363+05:30" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="4f563788-bf4c-4e16-80f0-027a2d5946e5" />
+    <UnitTestResult executionId="59b93313-9986-4d37-8387-0c101faf24f2" testId="55510339-9d9f-1428-d787-5a341843222c" testName="Jarvis5.Tests.EaFms.TaskReview.ApprovalTaskReviewTests.SubmitForReview_WhilePendingReview_Rejected" computerName="PRATIKSHA" duration="00:00:00.0067936" startTime="2026-09-22T15:18:02.0243431+05:30" endTime="2026-09-22T15:18:02.0243432+05:30" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="59b93313-9986-4d37-8387-0c101faf24f2" />
+    <UnitTestResult executionId="ffcd1f6e-bd07-4471-8b3e-d1b518b4a5c7" testId="58c4c64e-c24c-48f0-b76d-1b89aaf5382a" testName="Jarvis5.Tests.EaFms.TaskReview.DelegationTaskReviewTests.Approve_WithoutPendingReview_Rejected" computerName="PRATIKSHA" duration="00:00:00.0107736" startTime="2026-09-22T15:18:02.1370333+05:30" endTime="2026-09-22T15:18:02.1370334+05:30" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="ffcd1f6e-bd07-4471-8b3e-d1b518b4a5c7" />
+    <UnitTestResult executionId="bdba6f57-cd8e-41ba-b23d-f77e35db7226" testId="1901eb35-d907-e392-e44e-a927679d0498" testName="Jarvis5.Tests.EaFms.TaskReview.TaskReviewServiceTests.TerminalTask_CannotSubmit(status: &quot;Completed&quot;)" computerName="PRATIKSHA" duration="00:00:00.0099494" startTime="2026-09-22T15:18:02.0038839+05:30" endTime="2026-09-22T15:18:02.0038841+05:30" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="bdba6f57-cd8e-41ba-b23d-f77e35db7226" />
+    <UnitTestResult executionId="a2f7ddd5-e616-4c46-bb05-8b1d78d8e232" testId="01f6c6db-ed6c-7ab9-92fe-7880ae26ec45" testName="Jarvis5.Tests.EaFms.TaskReview.DelegationTaskReviewTests.FullCycle_Submit_Rework_Resubmit_Approve" computerName="PRATIKSHA" duration="00:00:02.0684988" startTime="2026-09-22T15:18:02.0142161+05:30" endTime="2026-09-22T15:18:02.0142164+05:30" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="a2f7ddd5-e616-4c46-bb05-8b1d78d8e232" />
+    <UnitTestResult executionId="7e19f705-9817-4861-ba25-713368eef39a" testId="6667dd0d-689c-4013-2584-cca121fad5f5" testName="Jarvis5.Tests.EaFms.TaskReview.DelegationTaskReviewTests.Rework_WithoutPendingReview_Rejected" computerName="PRATIKSHA" duration="00:00:00.0102660" startTime="2026-09-22T15:18:02.1474429+05:30" endTime="2026-09-22T15:18:02.1474430+05:30" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="7e19f705-9817-4861-ba25-713368eef39a" />
+    <UnitTestResult executionId="8bc349a1-2810-4567-8879-823397e576dc" testId="fe665bf2-cc91-156c-617f-a32215f45fde" testName="Jarvis5.Tests.EaFms.TaskReview.TaskReviewServiceTests.TerminalTask_CannotSubmit(status: &quot;Cancelled&quot;)" computerName="PRATIKSHA" duration="00:00:00.0017564" startTime="2026-09-22T15:18:02.0057481+05:30" endTime="2026-09-22T15:18:02.0057482+05:30" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="8bc349a1-2810-4567-8879-823397e576dc" />
+    <UnitTestResult executionId="a2339659-dd27-4ebe-90c2-d6840775fdc5" testId="9e0c3293-e8ea-eacb-0614-bec62fd51b57" testName="Jarvis5.Tests.EaFms.TaskReview.ApprovalTaskReviewTests.Approve_WithoutPendingReview_Rejected" computerName="PRATIKSHA" duration="00:00:00.0057260" startTime="2026-09-22T15:18:02.0118396+05:30" endTime="2026-09-22T15:18:02.0118398+05:30" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="a2339659-dd27-4ebe-90c2-d6840775fdc5" />
+    <UnitTestResult executionId="8af5c593-eb4d-4698-9539-be71122db90e" testId="1a3f7f9a-8e7e-0f4c-4d9b-bfa164d398fd" testName="Jarvis5.Tests.EaFms.TaskReview.DelegationTaskReviewTests.SubmitForReview_WhilePendingReview_Rejected" computerName="PRATIKSHA" duration="00:00:00.0140824" startTime="2026-09-22T15:18:02.0467642+05:30" endTime="2026-09-22T15:18:02.0467643+05:30" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="8af5c593-eb4d-4698-9539-be71122db90e" />
+  </Results>
+  <TestDefinitions>
+    <UnitTest name="Jarvis5.Tests.EaFms.TaskReview.ApprovalTaskReviewTests.Approve_WithoutPendingReview_Rejected" storage="c:\users\admin\documents\db_jarvis_api\studio5jarvis_master_api-main\tests\bin\taskreviewscope\studio5jarvis.tests.dll" id="9e0c3293-e8ea-eacb-0614-bec62fd51b57">
+      <Execution id="a2339659-dd27-4ebe-90c2-d6840775fdc5" />
+      <TestMethod codeBase="C:\Users\Admin\Documents\DB_JARVIS_API\Studio5Jarvis_Master_API-main\Tests\bin\TaskReviewScope\Studio5Jarvis.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="Jarvis5.Tests.EaFms.TaskReview.ApprovalTaskReviewTests" name="Approve_WithoutPendingReview_Rejected" />
+    </UnitTest>
+    <UnitTest name="Jarvis5.Tests.EaFms.TaskReview.ApprovalTaskReviewTests.Approve_Twice_SecondCallRejected" storage="c:\users\admin\documents\db_jarvis_api\studio5jarvis_master_api-main\tests\bin\taskreviewscope\studio5jarvis.tests.dll" id="30662c60-e890-4e7c-fde4-132607f337a9">
+      <Execution id="2f076cfc-0ef0-4976-ab5b-57a16eaecd18" />
+      <TestMethod codeBase="C:\Users\Admin\Documents\DB_JARVIS_API\Studio5Jarvis_Master_API-main\Tests\bin\TaskReviewScope\Studio5Jarvis.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="Jarvis5.Tests.EaFms.TaskReview.ApprovalTaskReviewTests" name="Approve_Twice_SecondCallRejected" />
+    </UnitTest>
+    <UnitTest name="Jarvis5.Tests.EaFms.TaskReview.TaskReviewServiceTests.Snapshots_History_Batch_AndExecutionFields_ArePreserved" storage="c:\users\admin\documents\db_jarvis_api\studio5jarvis_master_api-main\tests\bin\taskreviewscope\studio5jarvis.tests.dll" id="8393513f-e34e-179f-264b-cab9b91e31d7">
+      <Execution id="2a912cdd-3e46-4013-bd32-98783909a556" />
+      <TestMethod codeBase="C:\Users\Admin\Documents\DB_JARVIS_API\Studio5Jarvis_Master_API-main\Tests\bin\TaskReviewScope\Studio5Jarvis.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="Jarvis5.Tests.EaFms.TaskReview.TaskReviewServiceTests" name="Snapshots_History_Batch_AndExecutionFields_ArePreserved" />
+    </UnitTest>
+    <UnitTest name="Jarvis5.Tests.EaFms.TaskReview.ApprovalTaskReviewTests.Rework_WithoutPendingReview_Rejected" storage="c:\users\admin\documents\db_jarvis_api\studio5jarvis_master_api-main\tests\bin\taskreviewscope\studio5jarvis.tests.dll" id="799852c0-6589-3963-76ec-df5f544d6aa1">
+      <Execution id="32cda97c-65e6-4ab8-bf88-7fee40c1162a" />
+      <TestMethod codeBase="C:\Users\Admin\Documents\DB_JARVIS_API\Studio5Jarvis_Master_API-main\Tests\bin\TaskReviewScope\Studio5Jarvis.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="Jarvis5.Tests.EaFms.TaskReview.ApprovalTaskReviewTests" name="Rework_WithoutPendingReview_Rejected" />
+    </UnitTest>
+    <UnitTest name="Jarvis5.Tests.EaFms.TaskReview.TaskReviewServiceTests.TerminalTask_CannotSubmit(status: &quot;Cancelled&quot;)" storage="c:\users\admin\documents\db_jarvis_api\studio5jarvis_master_api-main\tests\bin\taskreviewscope\studio5jarvis.tests.dll" id="fe665bf2-cc91-156c-617f-a32215f45fde">
+      <Execution id="8bc349a1-2810-4567-8879-823397e576dc" />
+      <TestMethod codeBase="C:\Users\Admin\Documents\DB_JARVIS_API\Studio5Jarvis_Master_API-main\Tests\bin\TaskReviewScope\Studio5Jarvis.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="Jarvis5.Tests.EaFms.TaskReview.TaskReviewServiceTests" name="TerminalTask_CannotSubmit" />
+    </UnitTest>
+    <UnitTest name="Jarvis5.Tests.EaFms.TaskReview.DelegationTaskReviewTests.Approve_WithoutPendingReview_Rejected" storage="c:\users\admin\documents\db_jarvis_api\studio5jarvis_master_api-main\tests\bin\taskreviewscope\studio5jarvis.tests.dll" id="58c4c64e-c24c-48f0-b76d-1b89aaf5382a">
+      <Execution id="ffcd1f6e-bd07-4471-8b3e-d1b518b4a5c7" />
+      <TestMethod codeBase="C:\Users\Admin\Documents\DB_JARVIS_API\Studio5Jarvis_Master_API-main\Tests\bin\TaskReviewScope\Studio5Jarvis.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="Jarvis5.Tests.EaFms.TaskReview.DelegationTaskReviewTests" name="Approve_WithoutPendingReview_Rejected" />
+    </UnitTest>
+    <UnitTest name="Jarvis5.Tests.EaFms.TaskReview.DelegationTaskReviewTests.Approve_Twice_SecondCallRejected" storage="c:\users\admin\documents\db_jarvis_api\studio5jarvis_master_api-main\tests\bin\taskreviewscope\studio5jarvis.tests.dll" id="67ca67f7-7aa6-a927-9de1-d73cd0938001">
+      <Execution id="7c8b629f-dcce-45c4-939f-21f7774d9260" />
+      <TestMethod codeBase="C:\Users\Admin\Documents\DB_JARVIS_API\Studio5Jarvis_Master_API-main\Tests\bin\TaskReviewScope\Studio5Jarvis.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="Jarvis5.Tests.EaFms.TaskReview.DelegationTaskReviewTests" name="Approve_Twice_SecondCallRejected" />
+    </UnitTest>
+    <UnitTest name="Jarvis5.Tests.EaFms.TaskReview.ApprovalTaskReviewTests.SubmitForReview_WhilePendingReview_Rejected" storage="c:\users\admin\documents\db_jarvis_api\studio5jarvis_master_api-main\tests\bin\taskreviewscope\studio5jarvis.tests.dll" id="55510339-9d9f-1428-d787-5a341843222c">
+      <Execution id="59b93313-9986-4d37-8387-0c101faf24f2" />
+      <TestMethod codeBase="C:\Users\Admin\Documents\DB_JARVIS_API\Studio5Jarvis_Master_API-main\Tests\bin\TaskReviewScope\Studio5Jarvis.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="Jarvis5.Tests.EaFms.TaskReview.ApprovalTaskReviewTests" name="SubmitForReview_WhilePendingReview_Rejected" />
+    </UnitTest>
+    <UnitTest name="Jarvis5.Tests.EaFms.TaskReview.DelegationTaskReviewTests.NoReviewYet_SummaryIsNullShaped_NotFakeZero" storage="c:\users\admin\documents\db_jarvis_api\studio5jarvis_master_api-main\tests\bin\taskreviewscope\studio5jarvis.tests.dll" id="ed959f57-88bf-1166-1ca2-43544cc4a21a">
+      <Execution id="a1bcd918-17d6-46c1-8e3d-60fa12499275" />
+      <TestMethod codeBase="C:\Users\Admin\Documents\DB_JARVIS_API\Studio5Jarvis_Master_API-main\Tests\bin\TaskReviewScope\Studio5Jarvis.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="Jarvis5.Tests.EaFms.TaskReview.DelegationTaskReviewTests" name="NoReviewYet_SummaryIsNullShaped_NotFakeZero" />
+    </UnitTest>
+    <UnitTest name="Jarvis5.Tests.EaFms.TaskReview.TaskReviewServiceTests.TerminalTask_CannotSubmit(status: &quot;Completed&quot;)" storage="c:\users\admin\documents\db_jarvis_api\studio5jarvis_master_api-main\tests\bin\taskreviewscope\studio5jarvis.tests.dll" id="1901eb35-d907-e392-e44e-a927679d0498">
+      <Execution id="bdba6f57-cd8e-41ba-b23d-f77e35db7226" />
+      <TestMethod codeBase="C:\Users\Admin\Documents\DB_JARVIS_API\Studio5Jarvis_Master_API-main\Tests\bin\TaskReviewScope\Studio5Jarvis.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="Jarvis5.Tests.EaFms.TaskReview.TaskReviewServiceTests" name="TerminalTask_CannotSubmit" />
+    </UnitTest>
+    <UnitTest name="Jarvis5.Tests.EaFms.TaskReview.TaskReviewSwaggerTests.GeneratedContract_ExposesModuleRoutes_AndReusesSummary" storage="c:\users\admin\documents\db_jarvis_api\studio5jarvis_master_api-main\tests\bin\taskreviewscope\studio5jarvis.tests.dll" id="d5b48391-261f-2ed6-a770-6e55e4f88a8b">
+      <Execution id="44dc1634-b175-4e38-badc-1e8467c90de3" />
+      <TestMethod codeBase="C:\Users\Admin\Documents\DB_JARVIS_API\Studio5Jarvis_Master_API-main\Tests\bin\TaskReviewScope\Studio5Jarvis.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="Jarvis5.Tests.EaFms.TaskReview.TaskReviewSwaggerTests" name="GeneratedContract_ExposesModuleRoutes_AndReusesSummary" />
+    </UnitTest>
+    <UnitTest name="Jarvis5.Tests.EaFms.TaskReview.DelegationTaskReviewTests.PendingReview_TatKeepsRunning_AndCompleteRemainsIndependent" storage="c:\users\admin\documents\db_jarvis_api\studio5jarvis_master_api-main\tests\bin\taskreviewscope\studio5jarvis.tests.dll" id="4b5a5de5-eccd-6056-d97a-bd0c1f35e98c">
+      <Execution id="4f563788-bf4c-4e16-80f0-027a2d5946e5" />
+      <TestMethod codeBase="C:\Users\Admin\Documents\DB_JARVIS_API\Studio5Jarvis_Master_API-main\Tests\bin\TaskReviewScope\Studio5Jarvis.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="Jarvis5.Tests.EaFms.TaskReview.DelegationTaskReviewTests" name="PendingReview_TatKeepsRunning_AndCompleteRemainsIndependent" />
+    </UnitTest>
+    <UnitTest name="Jarvis5.Tests.EaFms.TaskReview.TaskReviewServiceTests.MissingTask_IsNotFound" storage="c:\users\admin\documents\db_jarvis_api\studio5jarvis_master_api-main\tests\bin\taskreviewscope\studio5jarvis.tests.dll" id="465b572a-a020-f871-8f84-6991205dbf77">
+      <Execution id="891e8da9-a20e-4f9c-97ec-898c7fc8394a" />
+      <TestMethod codeBase="C:\Users\Admin\Documents\DB_JARVIS_API\Studio5Jarvis_Master_API-main\Tests\bin\TaskReviewScope\Studio5Jarvis.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="Jarvis5.Tests.EaFms.TaskReview.TaskReviewServiceTests" name="MissingTask_IsNotFound" />
+    </UnitTest>
+    <UnitTest name="Jarvis5.Tests.EaFms.TaskReview.ApprovalTaskReviewTests.FullCycle_Submit_Rework_Resubmit_Approve" storage="c:\users\admin\documents\db_jarvis_api\studio5jarvis_master_api-main\tests\bin\taskreviewscope\studio5jarvis.tests.dll" id="82c1781f-ac89-c9af-428c-fc49a817dd3f">
+      <Execution id="30c32daa-fa75-4c86-82e5-cdfabd567dd0" />
+      <TestMethod codeBase="C:\Users\Admin\Documents\DB_JARVIS_API\Studio5Jarvis_Master_API-main\Tests\bin\TaskReviewScope\Studio5Jarvis.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="Jarvis5.Tests.EaFms.TaskReview.ApprovalTaskReviewTests" name="FullCycle_Submit_Rework_Resubmit_Approve" />
+    </UnitTest>
+    <UnitTest name="Jarvis5.Tests.EaFms.TaskReview.DelegationTaskReviewTests.FullCycle_Submit_Rework_Resubmit_Approve" storage="c:\users\admin\documents\db_jarvis_api\studio5jarvis_master_api-main\tests\bin\taskreviewscope\studio5jarvis.tests.dll" id="01f6c6db-ed6c-7ab9-92fe-7880ae26ec45">
+      <Execution id="a2f7ddd5-e616-4c46-bb05-8b1d78d8e232" />
+      <TestMethod codeBase="C:\Users\Admin\Documents\DB_JARVIS_API\Studio5Jarvis_Master_API-main\Tests\bin\TaskReviewScope\Studio5Jarvis.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="Jarvis5.Tests.EaFms.TaskReview.DelegationTaskReviewTests" name="FullCycle_Submit_Rework_Resubmit_Approve" />
+    </UnitTest>
+    <UnitTest name="Jarvis5.Tests.EaFms.TaskReview.DelegationTaskReviewTests.Rework_WithoutPendingReview_Rejected" storage="c:\users\admin\documents\db_jarvis_api\studio5jarvis_master_api-main\tests\bin\taskreviewscope\studio5jarvis.tests.dll" id="6667dd0d-689c-4013-2584-cca121fad5f5">
+      <Execution id="7e19f705-9817-4861-ba25-713368eef39a" />
+      <TestMethod codeBase="C:\Users\Admin\Documents\DB_JARVIS_API\Studio5Jarvis_Master_API-main\Tests\bin\TaskReviewScope\Studio5Jarvis.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="Jarvis5.Tests.EaFms.TaskReview.DelegationTaskReviewTests" name="Rework_WithoutPendingReview_Rejected" />
+    </UnitTest>
+    <UnitTest name="Jarvis5.Tests.EaFms.TaskReview.DelegationTaskReviewTests.SubmitForReview_WhilePendingReview_Rejected" storage="c:\users\admin\documents\db_jarvis_api\studio5jarvis_master_api-main\tests\bin\taskreviewscope\studio5jarvis.tests.dll" id="1a3f7f9a-8e7e-0f4c-4d9b-bfa164d398fd">
+      <Execution id="8af5c593-eb4d-4698-9539-be71122db90e" />
+      <TestMethod codeBase="C:\Users\Admin\Documents\DB_JARVIS_API\Studio5Jarvis_Master_API-main\Tests\bin\TaskReviewScope\Studio5Jarvis.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="Jarvis5.Tests.EaFms.TaskReview.DelegationTaskReviewTests" name="SubmitForReview_WhilePendingReview_Rejected" />
+    </UnitTest>
+  </TestDefinitions>
+  <TestEntries>
+    <TestEntry testId="8393513f-e34e-179f-264b-cab9b91e31d7" executionId="2a912cdd-3e46-4013-bd32-98783909a556" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="ed959f57-88bf-1166-1ca2-43544cc4a21a" executionId="a1bcd918-17d6-46c1-8e3d-60fa12499275" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="67ca67f7-7aa6-a927-9de1-d73cd0938001" executionId="7c8b629f-dcce-45c4-939f-21f7774d9260" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="82c1781f-ac89-c9af-428c-fc49a817dd3f" executionId="30c32daa-fa75-4c86-82e5-cdfabd567dd0" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="30662c60-e890-4e7c-fde4-132607f337a9" executionId="2f076cfc-0ef0-4976-ab5b-57a16eaecd18" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="799852c0-6589-3963-76ec-df5f544d6aa1" executionId="32cda97c-65e6-4ab8-bf88-7fee40c1162a" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="d5b48391-261f-2ed6-a770-6e55e4f88a8b" executionId="44dc1634-b175-4e38-badc-1e8467c90de3" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="465b572a-a020-f871-8f84-6991205dbf77" executionId="891e8da9-a20e-4f9c-97ec-898c7fc8394a" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="4b5a5de5-eccd-6056-d97a-bd0c1f35e98c" executionId="4f563788-bf4c-4e16-80f0-027a2d5946e5" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="55510339-9d9f-1428-d787-5a341843222c" executionId="59b93313-9986-4d37-8387-0c101faf24f2" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="58c4c64e-c24c-48f0-b76d-1b89aaf5382a" executionId="ffcd1f6e-bd07-4471-8b3e-d1b518b4a5c7" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="1901eb35-d907-e392-e44e-a927679d0498" executionId="bdba6f57-cd8e-41ba-b23d-f77e35db7226" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="01f6c6db-ed6c-7ab9-92fe-7880ae26ec45" executionId="a2f7ddd5-e616-4c46-bb05-8b1d78d8e232" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="6667dd0d-689c-4013-2584-cca121fad5f5" executionId="7e19f705-9817-4861-ba25-713368eef39a" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="fe665bf2-cc91-156c-617f-a32215f45fde" executionId="8bc349a1-2810-4567-8879-823397e576dc" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="9e0c3293-e8ea-eacb-0614-bec62fd51b57" executionId="a2339659-dd27-4ebe-90c2-d6840775fdc5" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="1a3f7f9a-8e7e-0f4c-4d9b-bfa164d398fd" executionId="8af5c593-eb4d-4698-9539-be71122db90e" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+  </TestEntries>
+  <TestLists>
+    <TestList name="Results Not in a List" id="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestList name="All Loaded Results" id="19431567-8539-422a-85d7-44ee4e166bda" />
+  </TestLists>
+  <ResultSummary outcome="Completed">
+    <Counters total="17" executed="17" passed="17" failed="0" error="0" timeout="0" aborted="0" inconclusive="0" passedButRunAborted="0" notRunnable="0" notExecuted="0" disconnected="0" warning="0" completed="0" inProgress="0" pending="0" />
+    <Output>
+      <StdOut>[xUnit.net 00:00:00.00] xUnit.net VSTest Adapter v2.4.3+1b45f5407b (64-bit .NET 8.0.31)&#xD;
+[xUnit.net 00:00:06.85]   Discovering: Studio5Jarvis.Tests&#xD;
+[xUnit.net 00:00:07.23]   Discovered:  Studio5Jarvis.Tests&#xD;
+[xUnit.net 00:00:07.25]   Starting:    Studio5Jarvis.Tests&#xD;
+[xUnit.net 00:00:09.54]   Finished:    Studio5Jarvis.Tests&#xD;
+</StdOut>
+    </Output>
+  </ResultSummary>
+</TestRun>

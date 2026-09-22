@@ -50,6 +50,9 @@ builder.Services.AddEndpointsApiExplorer();
 
 builder.Services.AddSwaggerGen(options =>
 {
+    var defaultSchemaId = new Swashbuckle.AspNetCore.SwaggerGen.SchemaGeneratorOptions().SchemaIdSelector;
+    options.CustomSchemaIds(type => type == typeof(Jarvis5.Dtos.EaFms.ApprovalDetailDto)
+        ? "EaApprovalDetailDto" : defaultSchemaId(type));
     options.SchemaFilter<Jarvis5.Filters.EaCreateRequestSchemaFilter>();
     options.OperationFilter<Jarvis5.Filters.WorkflowOperationFilter>();
     options.SchemaFilter<Jarvis5.Filters.WorkflowRequestSchemaFilter>();
@@ -336,6 +339,7 @@ builder.Services.AddScoped<Jarvis5.Services.EaFms.ITatRuleService, Jarvis5.Servi
 builder.Services.AddScoped<Jarvis5.Services.EaFms.IBusinessModuleService, Jarvis5.Services.EaFms.BusinessModuleService>();
 builder.Services.AddScoped<Jarvis5.Services.EaFms.IEaTaskService, Jarvis5.Services.EaFms.EaTaskService>();
 builder.Services.AddScoped<Jarvis5.Services.EaFms.IEmReportService, Jarvis5.Services.EaFms.EmReportService>();
+builder.Services.AddScoped<Jarvis5.Services.EaFms.IDocumentRegisterService, Jarvis5.Services.EaFms.DocumentRegisterService>();
 builder.Services.AddScoped<Jarvis5.Repositories.EaFms.IIntakeRepository, Jarvis5.Repositories.EaFms.IntakeRepository>();
 builder.Services.AddScoped<Jarvis5.Services.EaFms.IIntakeService, Jarvis5.Services.EaFms.IntakeService>();
 builder.Services.AddScoped<Jarvis5.Repositories.EaFms.IWorkflowRepository, Jarvis5.Repositories.EaFms.WorkflowRepository>();
@@ -349,6 +353,9 @@ builder.Services.AddScoped<Jarvis5.Services.EaFms.IFollowupCycleService, Jarvis5
 builder.Services.AddScoped<Jarvis5.Services.EaFms.IFollowupSourceResolver, Jarvis5.Services.EaFms.FollowupSourceResolver>();
 builder.Services.AddScoped<Jarvis5.Repositories.EaFms.IEscalationRepository, Jarvis5.Repositories.EaFms.EscalationRepository>();
 builder.Services.AddScoped<Jarvis5.Services.EaFms.IEscalationService, Jarvis5.Services.EaFms.EscalationService>();
+// Central Task Review/Rework engine (EaTask-anchored, shared by Delegation/Approval)
+builder.Services.AddScoped<Jarvis5.Repositories.EaFms.ITaskReviewRepository, Jarvis5.Repositories.EaFms.TaskReviewRepository>();
+builder.Services.AddScoped<Jarvis5.Services.EaFms.ITaskReviewService, Jarvis5.Services.EaFms.TaskReviewService>();
 // EA audit service
 builder.Services.AddScoped<Jarvis5.Repositories.EaFms.IMeetingRepository, Jarvis5.Repositories.EaFms.MeetingRepository>();
 builder.Services.AddScoped<Jarvis5.Services.EaFms.IMeetingService, Jarvis5.Services.EaFms.MeetingService>();

@@ -39,6 +39,7 @@ public class DelegationService : IDelegationService
     private readonly IDelegationNumberRepository _numbers;
     private readonly IEaTaskService _eaTaskService;
     private readonly IWebHostEnvironment _env;
+    private readonly ITaskReviewService _taskReview;
 
     public DelegationService(
         EaFmsDbContext db,
@@ -46,7 +47,8 @@ public class DelegationService : IDelegationService
         IAuditService audit,
         IDelegationNumberRepository numbers,
         IEaTaskService eaTaskService,
-        IWebHostEnvironment env)
+        IWebHostEnvironment env,
+        ITaskReviewService taskReview)
     {
         _db = db;
         _user = user;
@@ -54,6 +56,7 @@ public class DelegationService : IDelegationService
         _numbers = numbers;
         _eaTaskService = eaTaskService;
         _env = env;
+        _taskReview = taskReview;
     }
 
     // ============================================================
@@ -207,7 +210,7 @@ public class DelegationService : IDelegationService
             "Delegation created");
         await _db.SaveChangesAsync(ct);
 
-        return ToDto(entity, sourceModule?.Name, null, await LoadTatViewAsync(entity, ct));
+        return await ToDtoAsync(entity, sourceModule?.Name, null, ct);
     }
 
     // ============================================================
@@ -222,7 +225,7 @@ public class DelegationService : IDelegationService
             ?? throw new NotFoundException($"Delegation {delegationId} not found.");
 
         var pdfIds = await LoadCompletionPdfIdsAsync(new[] { entity.Id }, ct);
-        return ToDto(entity, entity.SourceBusinessModule?.Name, PdfId(pdfIds, entity.Id), await LoadTatViewAsync(entity, ct));
+        return await ToDtoAsync(entity, entity.SourceBusinessModule?.Name, PdfId(pdfIds, entity.Id), ct);
     }
 
     // ============================================================
@@ -297,7 +300,7 @@ public class DelegationService : IDelegationService
         await _db.SaveChangesAsync(ct);
         await transaction.CommitAsync(ct);
 
-        return ToDto(entity, sourceModule?.Name, null, await LoadTatViewAsync(entity, ct));
+        return await ToDtoAsync(entity, sourceModule?.Name, null, ct);
     }
 
     // ============================================================
@@ -335,7 +338,7 @@ public class DelegationService : IDelegationService
         await transaction.CommitAsync(ct);
 
         var sourceModuleName = await ResolveSourceModuleNameAsync(entity.SourceBusinessModuleId, ct);
-        return ToDto(entity, sourceModuleName, null, await LoadTatViewAsync(entity, ct));
+        return await ToDtoAsync(entity, sourceModuleName, null, ct);
     }
 
     public async Task<DelegationResponseDto> CompleteAsync(long delegationId, IFormFile? completionPdf, CancellationToken ct = default)
@@ -434,7 +437,7 @@ public class DelegationService : IDelegationService
         }
 
         var sourceModuleName = await ResolveSourceModuleNameAsync(entity.SourceBusinessModuleId, ct);
-        return ToDto(entity, sourceModuleName, attachment?.Id, await LoadTatViewAsync(entity, ct));
+        return await ToDtoAsync(entity, sourceModuleName, attachment?.Id, ct);
     }
 
     // ============================================================
@@ -540,6 +543,43 @@ public class DelegationService : IDelegationService
         return await BuildResponseAsync(entity, ct);
     }
 
+    // ============================================================
+    // TASK REVIEW / REWORK (Phase 1) — resolves EaTaskId, delegates to the shared engine.
+    // Review time counts toward existing TAT; no WorkPause is created; ExecutionStatus,
+    // StartedAt, CompletedAt and TatUsedMinutes are never touched by these methods.
+    // ============================================================
+
+    public async Task<DelegationResponseDto> SubmitForReviewAsync(long delegationId, SubmitForReviewRequestDto dto, CancellationToken ct = default)
+    {
+        var entity = await RequireDelegationAsync(delegationId, ct);
+        await _taskReview.SubmitForReviewAsync(entity.EaTaskId, dto, ct);
+        return await GetByIdAsync(delegationId, ct);
+    }
+
+    public async Task<DelegationResponseDto> ApproveReviewAsync(long delegationId, ApproveTaskReviewRequestDto dto, CancellationToken ct = default)
+    {
+        var entity = await RequireDelegationAsync(delegationId, ct);
+        await _taskReview.ApproveAsync(entity.EaTaskId, dto, ct);
+        return await GetByIdAsync(delegationId, ct);
+    }
+
+    public async Task<DelegationResponseDto> RequestReworkAsync(long delegationId, RequestTaskReworkRequestDto dto, CancellationToken ct = default)
+    {
+        var entity = await RequireDelegationAsync(delegationId, ct);
+        await _taskReview.RequestReworkAsync(entity.EaTaskId, dto, ct);
+        return await GetByIdAsync(delegationId, ct);
+    }
+
+    public async Task<List<TaskReviewHistoryItemDto>> GetReviewHistoryAsync(long delegationId, CancellationToken ct = default)
+    {
+        var entity = await RequireDelegationAsync(delegationId, ct);
+        return await _taskReview.GetHistoryAsync(entity.EaTaskId, ct);
+    }
+
+    private async Task<Delegation> RequireDelegationAsync(long delegationId, CancellationToken ct) =>
+        await _db.Delegations.AsNoTracking().FirstOrDefaultAsync(d => d.Id == delegationId && !d.IsDeleted, ct)
+            ?? throw new NotFoundException($"Delegation {delegationId} not found.");
+
     private static void RequireInProgress(Delegation entity, string action)
     {
         if (entity.Status != DelegationStatus.InProgress)
@@ -550,7 +590,15 @@ public class DelegationService : IDelegationService
     {
         var sourceModuleName = await ResolveSourceModuleNameAsync(entity.SourceBusinessModuleId, ct);
         var pdfIds = await LoadCompletionPdfIdsAsync(new[] { entity.Id }, ct);
-        return ToDto(entity, sourceModuleName, PdfId(pdfIds, entity.Id), await LoadTatViewAsync(entity, ct));
+        return await ToDtoAsync(entity, sourceModuleName, PdfId(pdfIds, entity.Id), ct);
+    }
+
+    /// <summary>Adds the Task Review summary (batched-per-entity here; ListAsync uses the true batch path instead) to the shared TAT-view-based ToDto mapping.</summary>
+    private async Task<DelegationResponseDto> ToDtoAsync(Delegation entity, string? sourceModuleName, long? completionPdfAttachmentId, CancellationToken ct)
+    {
+        var tat = await LoadTatViewAsync(entity, ct);
+        var review = await _taskReview.GetCurrentAsync(entity.EaTaskId, ct);
+        return ToDto(entity, sourceModuleName, completionPdfAttachmentId, tat, review);
     }
 
     /// <summary>Returns the Delegation's pause anchor, creating and linking it on first use.</summary>
@@ -634,13 +682,27 @@ public class DelegationService : IDelegationService
         });
 
     /// <summary>
-    /// Execution/TAT values shown on a Delegation response. Every value comes from the central EaTask and its WorkPauses —
-    /// the same rows and the same canonical calculation (EaTaskService.CalculateCurrentTatUsedMinutes) the EaTask API and the
-    /// EM Report use — so nothing is duplicated onto ea_delegations and the three views always reconcile.
+    /// Execution/TAT values shown on a Delegation response. Every value comes from the central EaTask and its
+    /// WorkPauses via the shared TatSummaryCalculator — the exact same formula Meeting itself uses — so
+    /// nothing is duplicated onto ea_delegations. The public tatUsedMinutes here is the strict Meeting-
+    /// aligned live value (matches tatSummary.tat in whole minutes); it is a different figure from the
+    /// EaTask API's own internal CurrentTatUsedMinutes/TatUsedMinutes split, which stays untouched for the
+    /// EaTask API and EM Report and is not surfaced on this response.
     /// </summary>
     private sealed record DelegationTatView(
         string ExecutionStatus, bool IsPaused, DateTime? StartedAt, DateTime? CompletedAt,
-        int? AllottedTatMinutes, int? CurrentTatUsedMinutes, int? TatUsedMinutes);
+        int? AllottedTatMinutes, int? TatUsedMinutes,
+        int? TatPausedMinutes, MeetingTatSummaryDto TatSummary);
+
+    /// <summary>
+    /// Meeting's own exact "unavailable TAT" fallback shape (MeetingService.GetByIdAsync's
+    /// dto.TatSummary ??= ...): Tat null, TotalTat/PauseTime zero, PauseCount 0, no start/end/last-active.
+    /// Reused verbatim for a Delegation with no delegationType (no TAT) rather than inventing a new shape.
+    /// </summary>
+    private static MeetingTatSummaryDto NoTatSummary() => new()
+    {
+        Tat = null, TotalTat = TimeSpan.Zero, TatDifference = TimeSpan.Zero, PauseTime = TimeSpan.Zero, PauseCount = 0
+    };
 
     private async Task<DelegationTatView?> LoadTatViewAsync(Delegation delegation, CancellationToken ct) =>
         (await LoadTatViewsAsync(new[] { delegation }, ct)).GetValueOrDefault(delegation.EaTaskId);
@@ -663,8 +725,35 @@ public class DelegationService : IDelegationService
         {
             var pauses = t.WorkflowInstanceId.HasValue && pausesByWorkflow.TryGetValue(t.WorkflowInstanceId.Value, out var p) ? p : new List<WorkPause>();
             var isPaused = t.ExecutionStatus == EaTaskExecutionStatus.InProgress && pauses.Any(x => x.EndAt == null);
+
+            // Strict Meeting-aligned public TAT contract: tatUsedMinutes/tatPausedMinutes/tatSummary all
+            // come from the one shared TatSummaryCalculator formula Meeting itself uses (elapsed-minus-
+            // paused, anchored on the central EaTask's StartedAt/CompletedAt rather than a WorkflowInstance),
+            // gated and echoed in whole minutes exactly the way Meeting's own list flat fields are: null
+            // until AllottedTatMinutes exists and the clock has started, live afterwards (including frozen-
+            // while-paused, since an open pause's own formula holds "used" steady), stable once Completed
+            // because tatSummary's end anchor becomes CompletedAt. No separate "current" value is computed
+            // or exposed here — the central EaTask keeps its own internal frozen EaTask.TatUsedMinutes
+            // column for the EaTask API and EM Report; that is untouched and is not part of this response.
+            int? tatUsedMinutes = null;
+            int? tatPausedMinutes = null;
+            MeetingTatSummaryDto tatSummary;
+            if (t.AllottedTatMinutes.HasValue)
+            {
+                tatSummary = TatSummaryCalculator.Calculate(t.AllottedTatMinutes.Value, t.StartedAt, t.CompletedAt, pauses, now);
+                if (t.StartedAt.HasValue)
+                {
+                    tatUsedMinutes = (int)tatSummary.Tat!.Value.TotalMinutes;
+                    tatPausedMinutes = (int)tatSummary.PauseTime.TotalMinutes;
+                }
+            }
+            else
+            {
+                tatSummary = NoTatSummary();
+            }
+
             return new DelegationTatView(t.ExecutionStatus, isPaused, t.StartedAt, t.CompletedAt, t.AllottedTatMinutes,
-                EaTaskService.CalculateCurrentTatUsedMinutes(t, pauses, now), t.TatUsedMinutes);
+                tatUsedMinutes, tatPausedMinutes, tatSummary);
         });
     }
 
@@ -829,9 +918,10 @@ public class DelegationService : IDelegationService
         // One batched lookup for the page (no per-row query).
         var pdfIds = await LoadCompletionPdfIdsAsync(items.Where(d => d.Status == DelegationStatus.Completed).Select(d => d.Id).ToList(), ct);
         var tatViews = await LoadTatViewsAsync(items, ct);
+        var reviewSummaries = await _taskReview.BatchGetCurrentAsync(items.Select(d => d.EaTaskId).Distinct().ToList(), ct) ?? new();
         return new PagedResult<DelegationResponseDto>
         {
-            Items = items.Select(d => ToDto(d, d.SourceBusinessModule?.Name, PdfId(pdfIds, d.Id), tatViews.GetValueOrDefault(d.EaTaskId))).ToArray(),
+            Items = items.Select(d => ToDto(d, d.SourceBusinessModule?.Name, PdfId(pdfIds, d.Id), tatViews.GetValueOrDefault(d.EaTaskId), reviewSummaries.GetValueOrDefault(d.EaTaskId))).ToArray(),
             PageNumber = page,
             PageSize = pageSize,
             TotalCount = totalCount
@@ -970,7 +1060,7 @@ public class DelegationService : IDelegationService
             throw new BadRequestException($"view '{view}' conflicts with status '{status}' (Completed is excluded from {view}).");
     }
 
-    private static DelegationResponseDto ToDto(Delegation d, string? sourceModuleName, long? completionPdfAttachmentId = null, DelegationTatView? tat = null)
+    private static DelegationResponseDto ToDto(Delegation d, string? sourceModuleName, long? completionPdfAttachmentId = null, DelegationTatView? tat = null, TaskReviewSummaryDto? reviewSummary = null)
     {
         var today = IndiaBusinessCalendar.Today;
         // Compiled from the exact same expressions used for the register view filter and
@@ -1017,8 +1107,10 @@ public class DelegationService : IDelegationService
             IsPaused = tat?.IsPaused ?? false,
             ExecutionStatus = tat?.ExecutionStatus ?? EaTaskExecutionStatus.NotStarted,
             AllottedTatMinutes = tat?.AllottedTatMinutes,
-            CurrentTatUsedMinutes = tat?.CurrentTatUsedMinutes,
             TatUsedMinutes = tat?.TatUsedMinutes,
+            TatPausedMinutes = tat?.TatPausedMinutes,
+            TatSummary = tat?.TatSummary ?? NoTatSummary(),
+            ReviewSummary = reviewSummary ?? new TaskReviewSummaryDto(),
 
             IsDueToday = isDueToday,
             IsOverdue = isOverdue,

@@ -33,4 +33,39 @@ public class ApprovalsLifecycleController : ControllerBase
     public async Task<IActionResult> Resubmit(long approvalRequestId, CancellationToken ct)
         => Ok(await _lifecycle.ResubmitAsync(approvalRequestId, ct));
 
+    // ============================================================
+    // TASK REVIEW / REWORK (Phase 1) — entirely separate from submit/approve/reject/
+    // request-changes/resubmit above (the existing WorkflowStatus/ApprovalCycle gate).
+    // ============================================================
+
+    /// <summary>Submit the Approval Request's central task for review. 409 if Cancelled, already Completed, or a review is already pending.</summary>
+    [HttpPost("submit-for-review")]
+    [ProducesResponseType(typeof(TaskReviewSummaryDto), 200)]
+    [ProducesResponseType(typeof(ProblemDetails), 404)]
+    [ProducesResponseType(typeof(ProblemDetails), 409)]
+    public async Task<IActionResult> SubmitForReview(long approvalRequestId, [FromBody] SubmitForReviewRequestDto? dto, CancellationToken ct)
+        => Ok(await _lifecycle.SubmitForReviewAsync(approvalRequestId, dto ?? new SubmitForReviewRequestDto(), ct));
+
+    /// <summary>Approve the current pending review cycle. 409 if no review is currently pending.</summary>
+    [HttpPost("review/approve")]
+    [ProducesResponseType(typeof(TaskReviewSummaryDto), 200)]
+    [ProducesResponseType(typeof(ProblemDetails), 404)]
+    [ProducesResponseType(typeof(ProblemDetails), 409)]
+    public async Task<IActionResult> ApproveReview(long approvalRequestId, [FromBody] ApproveTaskReviewRequestDto? dto, CancellationToken ct)
+        => Ok(await _lifecycle.ApproveReviewAsync(approvalRequestId, dto ?? new ApproveTaskReviewRequestDto(), ct));
+
+    /// <summary>Send the current pending review cycle back for rework. 409 if no review is currently pending.</summary>
+    [HttpPost("review/rework")]
+    [ProducesResponseType(typeof(TaskReviewSummaryDto), 200)]
+    [ProducesResponseType(typeof(ProblemDetails), 404)]
+    [ProducesResponseType(typeof(ProblemDetails), 409)]
+    public async Task<IActionResult> RequestRework(long approvalRequestId, [FromBody] RequestTaskReworkRequestDto? dto, CancellationToken ct)
+        => Ok(await _lifecycle.RequestTaskReworkAsync(approvalRequestId, dto ?? new RequestTaskReworkRequestDto(), ct));
+
+    /// <summary>Full review-cycle history, oldest (cycle 1) first. EaTask-based — no WorkflowInstanceId is exposed.</summary>
+    [HttpGet("review/history")]
+    [ProducesResponseType(typeof(List<TaskReviewHistoryItemDto>), 200)]
+    [ProducesResponseType(typeof(ProblemDetails), 404)]
+    public async Task<IActionResult> ReviewHistory(long approvalRequestId, CancellationToken ct)
+        => Ok(await _lifecycle.GetReviewHistoryAsync(approvalRequestId, ct));
 }

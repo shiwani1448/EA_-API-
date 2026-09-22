@@ -48,6 +48,7 @@ public class TravelActionResponseDto
     public DateTime? StartedAt { get; set; }
     public DateTime? CompletedAt { get; set; }
     public TravelCurrentCycleDto? CurrentCycle { get; set; }
+
 }
 
 public class TravelCurrentCycleDto

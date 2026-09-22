@@ -90,7 +90,9 @@ public class DelegationCompletionPdfTests : IDisposable
                 return new EaTaskResponseDto { EaTaskId = t.Id, ModuleId = 1, ModuleName = t.ModuleName, BusinessRecordId = t.BusinessRecordId,
                     Task = t.Task, ExecutionStatus = t.ExecutionStatus, IsActive = true, CreatedBy = t.CreatedBy, CreatedDate = t.CreatedDate };
             });
-        var svc = new DelegationService(db, user, (audit ?? new Mock<IAuditService>()).Object, numbers.Object, tasks.Object, env);
+        var auditObj = (audit ?? new Mock<IAuditService>()).Object;
+        var svc = new DelegationService(db, user, auditObj, numbers.Object, tasks.Object, env,
+            new TaskReviewService(db, new TaskReviewRepository(db), user, auditObj));
         var created = await svc.CreateAsync(new DelegationCreateRequestDto { Title = "Prepare deck", DoerId = "emp-1", EndDate = DateTime.UtcNow.AddDays(5) });
         if (start) await svc.StartAsync(created.DelegationId);
         return new Fx { Db = db, Svc = svc, Root = root, DelegationId = created.DelegationId, EaTaskId = created.EaTaskId };
@@ -126,7 +128,7 @@ public class DelegationCompletionPdfTests : IDisposable
         Assert.DoesNotContain(actions, a => (a.Template ?? "").Contains("evidence", StringComparison.OrdinalIgnoreCase) || a.Name.Contains("Evidence"));
         Assert.DoesNotContain(actions, a => (a.Template ?? "").Contains("completion-pdf", StringComparison.OrdinalIgnoreCase) || a.Name.Contains("CompletionPdf"));
         Assert.DoesNotContain(actions, a => a.Name.Contains("Upload") || a.Name.Contains("Document") || a.Name.Contains("Attachment"));
-        Assert.Equal(new[] { "GET ", "GET summary", "GET {delegationId:long}", "POST ", "POST {delegationId:long}/complete", "POST {delegationId:long}/pause", "POST {delegationId:long}/resume", "POST {delegationId:long}/start", "PUT {delegationId:long}" },
+        Assert.Equal(new[] { "GET ", "GET summary", "GET {delegationId:long}", "GET {delegationId:long}/review/history", "POST ", "POST {delegationId:long}/complete", "POST {delegationId:long}/pause", "POST {delegationId:long}/resume", "POST {delegationId:long}/review/approve", "POST {delegationId:long}/review/rework", "POST {delegationId:long}/start", "POST {delegationId:long}/submit-for-review", "PUT {delegationId:long}" },
             actions.Select(a => $"{a.Verb} {a.Template}").OrderBy(x => x, StringComparer.Ordinal));
         Assert.Null(typeof(DelegationResponseDto).Assembly.GetType("Jarvis5.Dtos.EaFms.DelegationEvidenceDto"));
         Assert.DoesNotContain(typeof(IDelegationService).GetMethods(), m => m.Name.Contains("CompletionPdf") || m.Name.Contains("Evidence"));
