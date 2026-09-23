@@ -19,18 +19,32 @@ public class TravelBookingService(EaFmsDbContext db, ICurrentUserService user, I
         var status = dto.BookingStatus ?? TravelBookingRules.Requested;
         if (status is not (TravelBookingRules.Requested or TravelBookingRules.NotRequired))
             throw new BusinessRuleException("New bookings must start as Requested or NotRequired.");
-        await using var tx = await db.Database.BeginTransactionAsync(ct);
-        var parent = await ParentAsync(travelRequestId, true, ct);
-        EnsureReady(parent);
-        var booking = new TravelBooking { TravelRequestId = parent.Id, BookingType = dto.BookingType,
-            BookingStatus = status, CreatedBy = Actor, CreatedDate = Clock.UtcNowTz };
-        Apply(booking, dto);
-        db.TravelBookings.Add(booking);
-        await db.SaveChangesAsync(ct); // obtain BookingId before adding its audit, in the same transaction
-        AddAudit("TRAVEL_BOOKING_CREATE", parent, booking, null);
-        await db.SaveChangesAsync(ct);
-        await tx.CommitAsync(ct);
-        return ToDto(booking, parent.ReferenceNo);
+
+        // Reentrant: if a caller (e.g. TravelAiService confirming several options in one
+        // request) already opened a transaction on this same DbContext, join it instead of
+        // starting a nested one (EF Core does not support that) — only whoever actually
+        // started the transaction commits/rolls it back, so a single option failing partway
+        // through a multi-option confirm still undoes every booking in that same call.
+        var ownsTransaction = db.Database.CurrentTransaction is null;
+        var tx = ownsTransaction ? await db.Database.BeginTransactionAsync(ct) : null;
+        try
+        {
+            var parent = await ParentAsync(travelRequestId, true, ct);
+            EnsureReady(parent);
+            var booking = new TravelBooking { TravelRequestId = parent.Id, BookingType = dto.BookingType,
+                BookingStatus = status, CreatedBy = Actor, CreatedDate = Clock.UtcNowTz };
+            Apply(booking, dto);
+            db.TravelBookings.Add(booking);
+            await db.SaveChangesAsync(ct); // obtain BookingId before adding its audit, in the same transaction
+            AddAudit("TRAVEL_BOOKING_CREATE", parent, booking, null);
+            await db.SaveChangesAsync(ct);
+            if (ownsTransaction) await tx!.CommitAsync(ct);
+            return ToDto(booking, parent.ReferenceNo);
+        }
+        finally
+        {
+            if (tx != null) await tx.DisposeAsync();
+        }
     }
 
     public async Task<List<TravelBookingResponseDto>> ListAsync(long travelRequestId, CancellationToken ct = default)
@@ -76,10 +90,17 @@ public class TravelBookingService(EaFmsDbContext db, ICurrentUserService user, I
         return ToDto(booking, parent.ReferenceNo);
     }
 
+    /// <summary>The single source of truth for "can a booking be created right now" —
+    /// exactly BusinessState "Upcoming" plus approval satisfied. Exposed publicly so
+    /// callers that only need to ask the question (e.g. TravelAiService, to tell the
+    /// frontend whether to show a Confirm button) never re-derive this rule themselves.</summary>
+    public static bool IsReadyForBooking(TravelRequest parent) =>
+        parent.BusinessState == "Upcoming" && (parent.ApprovalRequired
+            ? parent.ApprovalState == "Approved" : parent.ApprovalState == "NotRequired");
+
     private static void EnsureReady(TravelRequest parent)
     {
-        if (parent.BusinessState != "Upcoming" || (parent.ApprovalRequired
-                ? parent.ApprovalState != "Approved" : parent.ApprovalState != "NotRequired"))
+        if (!IsReadyForBooking(parent))
             throw new BusinessRuleException("Travel request is not ready for booking execution.");
     }
 

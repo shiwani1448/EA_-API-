@@ -361,6 +361,11 @@ builder.Services.AddScoped<Jarvis5.Repositories.EaFms.IMeetingRepository, Jarvis
 builder.Services.AddScoped<Jarvis5.Services.EaFms.IMeetingService, Jarvis5.Services.EaFms.MeetingService>();
 builder.Services.AddScoped<Jarvis5.Services.EaFms.IMeetingCompletionFileStore, Jarvis5.Services.EaFms.MeetingCompletionFileStore>();
 builder.Services.AddScoped<Jarvis5.Services.EaFms.IMeetingLifecycleService, Jarvis5.Services.EaFms.MeetingLifecycleService>();
+// Meeting AI action-point extraction (preview only) — reuses the shared IClaudeClient/
+// AiJsonResponseParser/IDocumentExtractionService registered below; only the Meeting-
+// specific prompt builder and orchestrator are new.
+builder.Services.AddScoped<Jarvis5.Services.EaFms.IMeetingActionExtractionPromptBuilder, Jarvis5.Services.EaFms.MeetingActionExtractionPromptBuilder>();
+builder.Services.AddScoped<Jarvis5.Services.EaFms.IMeetingAiService, Jarvis5.Services.EaFms.MeetingAiService>();
 builder.Services.AddScoped<Jarvis5.Services.EaFms.IAuditService, Jarvis5.Services.EaFms.AuditService>();
 // EA notifications
 builder.Services.AddScoped<Jarvis5.Services.EaFms.INotificationService, Jarvis5.Services.EaFms.NotificationService>();
@@ -369,6 +374,11 @@ builder.Services.AddScoped<Jarvis5.Repositories.EaFms.IApprovalNumberRepository,
 builder.Services.AddScoped<Jarvis5.Services.EaFms.ApprovalService>();
 builder.Services.AddScoped<Jarvis5.Services.EaFms.ApprovalQueryService>();
 // Ensure ITatRuleService is available for ApprovalService TAT resolution (already registered above)
+// Approval AI assistance (preview only) — reuses the shared IClaudeClient/AiJsonResponseParser
+// and the existing ApprovalQueryService (readiness/status-summary read its already-assembled
+// ApprovalDetailDto directly); only the Approval-specific prompt builder and orchestrator are new.
+builder.Services.AddScoped<Jarvis5.Services.EaFms.IApprovalAiPromptBuilder, Jarvis5.Services.EaFms.ApprovalAiPromptBuilder>();
+builder.Services.AddScoped<Jarvis5.Services.EaFms.IApprovalAiService, Jarvis5.Services.EaFms.ApprovalAiService>();
 
 // Travel services
 // Resolves a frontend-supplied HRMS User.Id to a display name for CreatedBy/UploadedBy
@@ -381,6 +391,12 @@ builder.Services.AddScoped<Jarvis5.Services.EaFms.ITravelApprovalQueryService, J
 builder.Services.AddScoped<Jarvis5.Services.EaFms.ITravelBookingService, Jarvis5.Services.EaFms.TravelBookingService>();
 builder.Services.AddScoped<Jarvis5.Services.EaFms.ITravelArrangementService, Jarvis5.Services.EaFms.TravelArrangementService>();
 builder.Services.AddScoped<Jarvis5.Services.EaFms.ITravelExpenseService, Jarvis5.Services.EaFms.TravelExpenseService>();
+// Travel AI assistance (preview only) — reuses the shared IClaudeClient/AiJsonResponseParser
+// and the existing ITravelBookingService (confirm calls its CreateAsync directly, no
+// parallel booking-creation path); only the Travel-specific prompt builder and orchestrator
+// are new.
+builder.Services.AddScoped<Jarvis5.Services.EaFms.ITravelAiPromptBuilder, Jarvis5.Services.EaFms.TravelAiPromptBuilder>();
+builder.Services.AddScoped<Jarvis5.Services.EaFms.ITravelAiService, Jarvis5.Services.EaFms.TravelAiService>();
 
 // Delegation services
 builder.Services.AddScoped<Jarvis5.Repositories.EaFms.IDelegationNumberRepository, Jarvis5.Repositories.EaFms.DelegationRepository>();

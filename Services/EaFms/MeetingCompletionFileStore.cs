@@ -7,6 +7,11 @@ public interface IMeetingCompletionFileStore
     Task<byte[]> ValidateAsync(IFormFile file, CancellationToken ct);
     Task<string> SaveAsync(long meetingId, byte[] content, CancellationToken ct);
     void Delete(string objectKey);
+
+    /// <summary>Resolves a stored completion-PDF object key to its safe, contained
+    /// physical path for reading (e.g. AI text extraction). Same containment rules
+    /// as writes — throws if the key resolves outside the completion storage root.</summary>
+    string Resolve(string objectKey);
 }
 
 // Uses the existing local Content storage convention, with an isolated completion folder.
@@ -54,7 +59,7 @@ public class MeetingCompletionFileStore(IWebHostEnvironment environment) : IMeet
         catch { if (File.Exists(path)) File.Delete(path); throw; }
     }
     public void Delete(string objectKey) { var path = Resolve(objectKey); if (File.Exists(path)) File.Delete(path); }
-    private string Resolve(string key)
+    public string Resolve(string key)
     {
         var root = Path.GetFullPath(Path.Combine(environment.ContentRootPath, "Content", "MeetingCompletion")) + Path.DirectorySeparatorChar;
         var path = Path.GetFullPath(Path.Combine(environment.ContentRootPath, key.Replace('/', Path.DirectorySeparatorChar)));
