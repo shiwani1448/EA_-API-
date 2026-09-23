@@ -175,6 +175,15 @@ public class DelegationResponseDto
     /// </summary>
     public TaskReviewSummaryDto ReviewSummary { get; set; } = new();
 
+    /// <summary>
+    /// Every TAT phase this Delegation has been through, oldest first: exactly one Actual (the
+    /// doer's original work), then a Review/Rework pair per review cycle. Each phase has its own
+    /// Allotted/Used/Paused/PauseCount, resolved against its own (DelegationType, TaskType) TAT
+    /// Rule — see DelegationPhaseTat. The last entry is the current phase if the Delegation is not
+    /// yet Completed (endedAt null, live-ticking values); every other entry is frozen.
+    /// </summary>
+    public List<DelegationPhaseTatDto> PhaseTat { get; set; } = new();
+
     /// <summary>Server-computed, not persisted: Status != Completed AND endDate's calendar date == today.</summary>
     public bool IsDueToday { get; set; }
     /// <summary>Server-computed, not persisted: Status != Completed AND endDate's calendar date &lt; today.</summary>
@@ -251,4 +260,67 @@ public class DelegationPauseRequestDto
     /// <summary>Optional pause reason (max 2000). Defaults to "Delegation paused" when omitted or blank.</summary>
     [System.ComponentModel.DataAnnotations.MaxLength(2000)]
     public string? PauseReason { get; set; }
+}
+
+/// <summary>
+/// multipart/form-data body for POST /api/ea/delegations/{delegationId}/review/approve. The optional
+/// attachment lets the assignee attach their own document (sign-off notes, an annotated file, etc.)
+/// to the approval — separate from the doer's own completion PDF uploaded at Complete/submit time.
+/// </summary>
+public class DelegationApproveReviewRequestDto
+{
+    public string? ReviewedById { get; set; }
+    public string? ReviewedByName { get; set; }
+    public string? ReviewRemark { get; set; }
+
+    /// <summary>Optional attachment (.pdf, application/pdf, max 25 MiB, must be a readable PDF).</summary>
+    [Microsoft.AspNetCore.Mvc.FromForm(Name = "attachment")]
+    public Microsoft.AspNetCore.Http.IFormFile? Attachment { get; set; }
+}
+
+/// <summary>
+/// multipart/form-data body for POST /api/ea/delegations/{delegationId}/review/rework. The optional
+/// attachment lets the assignee attach their own document (marked-up feedback, a reference file)
+/// explaining what needs to be redone.
+/// </summary>
+public class DelegationRequestReworkRequestDto
+{
+    public string? ReviewedById { get; set; }
+    public string? ReviewedByName { get; set; }
+    public string? ReworkRemark { get; set; }
+
+    /// <summary>Optional attachment (.pdf, application/pdf, max 25 MiB, must be a readable PDF).</summary>
+    [Microsoft.AspNetCore.Mvc.FromForm(Name = "attachment")]
+    public Microsoft.AspNetCore.Http.IFormFile? Attachment { get; set; }
+}
+
+/// <summary>
+/// One TAT phase of a Delegation's lifecycle — see DelegationPhaseTat's own doc comment for the
+/// full model. TatUsedMinutes/TatPausedMinutes/PauseCount/TatDifferenceMinutes are null only when
+/// no TAT Rule is configured for this phase's (DelegationType, TaskType); PauseTime/PauseCount
+/// still reflect real pause activity even then, the same "still meaningful without a budget"
+/// convention the whole-delegation TatSummary already uses.
+/// </summary>
+public class DelegationPhaseTatDto
+{
+    /// <summary>Actual | Review | Rework.</summary>
+    public string TaskType { get; set; } = string.Empty;
+    /// <summary>0 for Actual; the review cycle number for Review/Rework.</summary>
+    public int ReviewCycleNumber { get; set; }
+    public DateTime StartedAt { get; set; }
+    /// <summary>Null when this is the current, still-open phase (live-ticking values).</summary>
+    public DateTime? EndedAt { get; set; }
+    public int? AllottedTatMinutes { get; set; }
+    public int? TatUsedMinutes { get; set; }
+    public int? TatPausedMinutes { get; set; }
+    public int? PauseCount { get; set; }
+    /// <summary>AllottedTatMinutes - TatUsedMinutes; null whenever either side is null.</summary>
+    public int? TatDifferenceMinutes { get; set; }
+
+    /// <summary>Decimal seconds, computed live or frozen on closure. Null without a budget or for legacy snapshots.</summary>
+    public decimal? TatUsedSeconds { get; set; }
+    /// <summary>Decimal paused seconds, including sub-minute pauses. Null for legacy closed snapshots.</summary>
+    public decimal? TatPausedSeconds { get; set; }
+    /// <summary>AllottedTatMinutes * 60 - TatUsedSeconds at the same calculation instant; may be negative.</summary>
+    public decimal? TatDifferenceSeconds { get; set; }
 }

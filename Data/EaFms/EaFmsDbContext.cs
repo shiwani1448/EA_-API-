@@ -52,6 +52,8 @@ public class EaFmsDbContext : DbContext
 
     // Delegation (EA-specific) — Step 1 foundation
     public DbSet<Delegation> Delegations { get; set; } = null!;
+    // Per-phase TAT records (Actual / Review N / Rework N) — see DelegationPhaseTat's own doc comment.
+    public DbSet<DelegationPhaseTat> DelegationPhaseTats { get; set; } = null!;
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -980,6 +982,7 @@ public class EaFmsDbContext : DbContext
             entity.Property(e => e.ModuleName).IsRequired().HasMaxLength(200);
             entity.Property(e => e.Type).HasMaxLength(200);
             entity.Property(e => e.Subtype).HasMaxLength(200);
+            entity.Property(e => e.TaskType).HasMaxLength(20);
             entity.Property(e => e.TatMinutes).HasColumnType("integer").IsRequired();
             entity.Property(e => e.IsActive);
             entity.Property(e => e.CreatedBy).IsRequired().HasMaxLength(100);
@@ -993,6 +996,27 @@ public class EaFmsDbContext : DbContext
             // Keep it out of EF's raw-column indexes: lower(btrim(...)) must be identical to lookup.
             entity.HasOne(e => e.BusinessModule).WithMany().HasForeignKey(e => e.BusinessModuleId)
                 .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<DelegationPhaseTat>(entity =>
+        {
+            entity.ToTable("ea_delegation_phase_tat", "public");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).UseIdentityByDefaultColumn();
+            entity.Property(e => e.TaskType).IsRequired().HasMaxLength(20);
+            entity.Property(e => e.StartedAt).HasColumnType("timestamp with time zone").IsRequired();
+            entity.Property(e => e.EndedAt).HasColumnType("timestamp with time zone");
+            entity.Property(e => e.TatUsedSeconds).HasPrecision(20, 7);
+            entity.Property(e => e.TatPausedSeconds).HasPrecision(20, 7);
+            entity.Property(e => e.CreatedBy).IsRequired().HasMaxLength(100);
+            entity.Property(e => e.CreatedDate).HasColumnType("timestamp with time zone");
+            entity.Property(e => e.ModifiedBy).HasMaxLength(100);
+            entity.Property(e => e.ModifiedDate).HasColumnType("timestamp with time zone");
+            entity.HasOne(e => e.Delegation).WithMany().HasForeignKey(e => e.DelegationId)
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasIndex(e => new { e.DelegationId, e.TaskType, e.ReviewCycleNumber }).IsUnique();
+            entity.HasIndex(e => e.DelegationId).IsUnique()
+                .HasFilter("\"EndedAt\" IS NULL").HasDatabaseName("UX_ea_delegation_phase_tat_OpenPhase");
         });
 
         modelBuilder.Entity<EaTask>(entity =>

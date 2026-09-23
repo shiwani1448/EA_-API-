@@ -54,7 +54,7 @@ public class MeetingCompleteOptionalFieldsTests : IClassFixture<ScratchTatDataba
         var execution = new WorkflowExecutionService(db, workflows, wfRepo, User, audit, Mapper);
         var eaTasks = new EaTaskService(db, new EaTaskRepository(db), new TatRuleRepository(db), new CreateEaTaskDtoValidator(), User, audit);
         var taskReview = new TaskReviewService(db, new TaskReviewRepository(db), User, audit);
-        var delegations = new DelegationService(db, User, audit, new DelegationRepository(db), eaTasks, env, taskReview);
+        var delegations = new DelegationService(db, User, audit, new DelegationRepository(db), eaTasks, env, taskReview, new TatRuleRepository(db));
         var meetings = new Mock<IMeetingService>();
         meetings.Setup(m => m.GetByIdAsync(It.IsAny<long>(), It.IsAny<CancellationToken>())).ReturnsAsync(new MeetingDetailResponseDto { TatSummary = new MeetingTatSummaryDto() });
         return new MeetingLifecycleService(db, execution, User, audit, meetings.Object, new MeetingCompletionFileStore(env), delegations, NullLogger<MeetingLifecycleService>.Instance);

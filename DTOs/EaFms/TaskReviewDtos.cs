@@ -57,6 +57,14 @@ public class TaskReviewSummaryDto
     public DateTime? ReviewedAt { get; set; }
     public string? ReviewRemark { get; set; }
     public string? ReworkRemark { get; set; }
+    /// <summary>
+    /// ea_attachments.Id of the file the assignee attached to this cycle's Approve/Rework decision,
+    /// or null when none was uploaded. The shared TaskReviewService never sets this — it operates
+    /// purely on EaTaskId and knows nothing about attachments; only Delegation (the one module that
+    /// currently offers this upload) populates it, after the fact, by matching its own ea_attachments
+    /// rows to this cycle. Always null for Approval Management.
+    /// </summary>
+    public long? AttachmentId { get; set; }
 }
 
 /// <summary>One row of review-cycle history, oldest (CycleNo 1) first. EaTask-based — WorkflowInstanceId is never exposed.</summary>
@@ -74,4 +82,6 @@ public class TaskReviewHistoryItemDto
     public DateTime? ReviewedAt { get; set; }
     public string? ReviewRemark { get; set; }
     public string? ReworkRemark { get; set; }
+    /// <summary>Same Delegation-only, post-hoc-populated field as TaskReviewSummaryDto.AttachmentId — see there.</summary>
+    public long? AttachmentId { get; set; }
 }

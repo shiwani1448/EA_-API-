@@ -11,6 +11,8 @@ public class SaveTatRuleDto
     public string? Type { get; set; }
     /// <summary>Required for every module except Delegation, whose only classification is Type (Subtype must be omitted there).</summary>
     public string? Subtype { get; set; }
+    /// <summary>Required for Delegation (Actual | Review | Rework), must be omitted for every other module.</summary>
+    public string? TaskType { get; set; }
     public int TatMinutes { get; set; }
     // Nullable so omission cannot silently become false.
     [System.ComponentModel.DataAnnotations.Required]
@@ -29,6 +31,7 @@ public class TatRuleDto
     public string ModuleName { get; set; } = null!;
     public string? Type { get; set; }
     public string? Subtype { get; set; }
+    public string? TaskType { get; set; }
     public int TatMinutes { get; set; }
     public bool IsActive { get; set; }
     public string? CreatedBy { get; set; }

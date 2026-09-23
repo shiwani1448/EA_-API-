@@ -20,9 +20,11 @@ public interface IDelegationService
     /// <summary>Pending -> InProgress. Synchronizes the linked EaTask atomically. 409 if not currently Pending.</summary>
     Task<DelegationResponseDto> StartAsync(long delegationId, CancellationToken ct = default);
     /// <summary>
-    /// InProgress -> Completed. Synchronizes the linked EaTask atomically. 409 if not currently InProgress.
-    /// <paramref name="completionPdf"/> is optional: when supplied it must be a valid PDF and is stored in
-    /// ea_attachments inside the same transaction, so a failure rolls back the whole completion.
+    /// Doer's "I'm done" action. Despite the name this no longer finalizes the Delegation directly —
+    /// it uploads the optional completion PDF (stored in ea_attachments in the same transaction, so a
+    /// failure rolls back the whole call) and opens a Task Review cycle (see ApproveReviewAsync/
+    /// RequestReworkAsync below). The Delegation stays InProgress until the assignee approves it.
+    /// 409 if not currently InProgress, or if a review cycle is already pending.
     /// </summary>
     Task<DelegationResponseDto> CompleteAsync(long delegationId, IFormFile? completionPdf, CancellationToken ct = default);
     /// <summary>
@@ -34,15 +36,26 @@ public interface IDelegationService
     Task<DelegationResponseDto> ResumeAsync(long delegationId, CancellationToken ct = default);
 
     /// <summary>
-    /// Task Review/Rework (Phase 1): resolves the Delegation's EaTask and delegates to the shared
-    /// ITaskReviewService. Review time counts toward existing TAT; no WorkPause is created; the
-    /// existing Start/Pause/Resume/Complete lifecycle above is entirely unaffected.
+    /// Standalone Task Review/Rework submit, independent of CompleteAsync's own internal call to the
+    /// same shared ITaskReviewService method (e.g. flagging InProgress work for an early look).
     /// </summary>
     Task<DelegationResponseDto> SubmitForReviewAsync(long delegationId, SubmitForReviewRequestDto dto, CancellationToken ct = default);
-    /// <summary>Requires the latest review cycle to be PendingReview. 409 otherwise (including double-approve).</summary>
-    Task<DelegationResponseDto> ApproveReviewAsync(long delegationId, ApproveTaskReviewRequestDto dto, CancellationToken ct = default);
-    /// <summary>Requires the latest review cycle to be PendingReview. Does not create the next cycle — the next SubmitForReview does.</summary>
-    Task<DelegationResponseDto> RequestReworkAsync(long delegationId, RequestTaskReworkRequestDto dto, CancellationToken ct = default);
+    /// <summary>
+    /// Requires the latest review cycle to be PendingReview. 409 otherwise (including double-approve).
+    /// Unlike the shared engine's own Approve, this one finalizes the Delegation as Completed too —
+    /// CompleteAsync above only opened the review cycle; this is what actually closes it out.
+    /// <paramref name="attachment"/> is optional: the assignee's own document for this decision,
+    /// stored in ea_attachments and surfaced back as reviewSummary.attachmentId.
+    /// </summary>
+    Task<DelegationResponseDto> ApproveReviewAsync(long delegationId, ApproveTaskReviewRequestDto dto, IFormFile? attachment, CancellationToken ct = default);
+    /// <summary>
+    /// Requires the latest review cycle to be PendingReview. Does not create the next cycle (the next
+    /// CompleteAsync/SubmitForReview does) and leaves the Delegation exactly as it was — still
+    /// InProgress, since CompleteAsync never marked it Completed in the first place.
+    /// <paramref name="attachment"/> is optional: the assignee's own document for this decision,
+    /// stored in ea_attachments and surfaced back as reviewSummary.attachmentId.
+    /// </summary>
+    Task<DelegationResponseDto> RequestReworkAsync(long delegationId, RequestTaskReworkRequestDto dto, IFormFile? attachment, CancellationToken ct = default);
     /// <summary>Full review-cycle history, oldest (cycle 1) first.</summary>
     Task<List<TaskReviewHistoryItemDto>> GetReviewHistoryAsync(long delegationId, CancellationToken ct = default);
 }

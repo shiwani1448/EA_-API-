@@ -172,9 +172,12 @@ public class EaTaskService(EaFmsDbContext db, IEaTaskRepository repository, ITat
             subtype = null;
             if (string.IsNullOrWhiteSpace(type))
                 throw new BusinessRuleException("Type is required to resolve a TAT rule.");
-            var applicable = await rules.GetApplicableByTypeOnlyAsync(dto.ModuleId, type, ct);
-            if (applicable.Count == 0) throw new BusinessRuleException("No active TAT rule is configured for this module/type combination.");
-            if (applicable.Count != 1) throw new BusinessRuleException("Multiple active TAT rules are configured for this module/type combination.");
+            // Every Delegation EaTask is only ever created once, for the initial ("Actual") doer work
+            // window — Review/Rework phases reuse this same EaTask and resolve their own TAT rules
+            // separately (see DelegationService's phase tracking), never creating a second EaTask.
+            var applicable = await rules.GetApplicableByTypeOnlyAsync(dto.ModuleId, type, Common.EaFms.DelegationTaskType.Actual, ct);
+            if (applicable.Count == 0) throw new BusinessRuleException("No active TAT rule is configured for this module/type/taskType combination.");
+            if (applicable.Count != 1) throw new BusinessRuleException("Multiple active TAT rules are configured for this module/type/taskType combination.");
             if (applicable[0].TatMinutes <= 0) throw new BusinessRuleException("The module TAT must be greater than zero.");
             allottedTatMinutes = applicable[0].TatMinutes;
             tatRuleId = applicable[0].Id;

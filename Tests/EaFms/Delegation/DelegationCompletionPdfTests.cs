@@ -92,7 +92,7 @@ public class DelegationCompletionPdfTests : IDisposable
             });
         var auditObj = (audit ?? new Mock<IAuditService>()).Object;
         var svc = new DelegationService(db, user, auditObj, numbers.Object, tasks.Object, env,
-            new TaskReviewService(db, new TaskReviewRepository(db), user, auditObj));
+            new TaskReviewService(db, new TaskReviewRepository(db), user, auditObj), new TatRuleRepository(db));
         var created = await svc.CreateAsync(new DelegationCreateRequestDto { Title = "Prepare deck", DoerId = "emp-1", EndDate = DateTime.UtcNow.AddDays(5) });
         if (start) await svc.StartAsync(created.DelegationId);
         return new Fx { Db = db, Svc = svc, Root = root, DelegationId = created.DelegationId, EaTaskId = created.EaTaskId };
@@ -150,7 +150,7 @@ public class DelegationCompletionPdfTests : IDisposable
     {
         var f = await NewAsync();
 
-        var result = await f.Svc.CompleteAsync(f.DelegationId, null);
+        var result = await f.Svc.CompleteAndApproveAsync(f.DelegationId, null);
 
         Assert.Equal("Completed", result.Status);
         Assert.Null(result.CompletionPdfAttachmentId);
@@ -165,7 +165,7 @@ public class DelegationCompletionPdfTests : IDisposable
         var f = await NewAsync();
         var other = await f.Svc.CreateAsync(new DelegationCreateRequestDto { Title = "Other", DoerId = "emp-2" });
 
-        var result = await f.Svc.CompleteAsync(f.DelegationId, Pdf());
+        var result = await f.Svc.CompleteAndApproveAsync(f.DelegationId, Pdf());
 
         Assert.Equal("Completed", result.Status);
         Assert.Equal("Completed", (await f.Db.Tasks.AsNoTracking().SingleAsync(t => t.Id == f.EaTaskId)).ExecutionStatus);

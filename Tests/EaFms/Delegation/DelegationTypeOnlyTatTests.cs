@@ -30,7 +30,9 @@ namespace Jarvis5.Tests.EaFms.Delegation;
 /// </summary>
 public sealed class ScratchTatDatabase : IAsyncLifetime
 {
-    private const string Server = "Host=localhost;Port=5432;Username=postgres;Password=123456";
+    private static readonly string Server = Environment.GetEnvironmentVariable("EA_DELEGATION_TEST_SERVER")
+        ?? throw new InvalidOperationException("Set EA_DELEGATION_TEST_SERVER to a PostgreSQL connection with CREATE DATABASE permission. Tests only write a generated scratch database.");
+    private bool _created;
     private readonly string _name = "scratch_deleg_tat_" + Guid.NewGuid().ToString("N")[..12];
     public string Connection => $"{Server};Database={_name}";
     public long DelegationModuleId { get; private set; }
@@ -45,6 +47,7 @@ public sealed class ScratchTatDatabase : IAsyncLifetime
             await admin.OpenAsync();
             await using var create = new NpgsqlCommand($"CREATE DATABASE \"{_name}\"", admin);
             await create.ExecuteNonQueryAsync();
+            _created = true;
         }
         await using var db = Db();
         await db.Database.MigrateAsync();
@@ -61,6 +64,7 @@ public sealed class ScratchTatDatabase : IAsyncLifetime
 
     public async Task DisposeAsync()
     {
+        if (!_created) return;
         NpgsqlConnection.ClearAllPools();
         await using var admin = new NpgsqlConnection($"{Server};Database=postgres");
         await admin.OpenAsync();
@@ -95,16 +99,23 @@ public class DelegationTypeOnlyTatTests : IClassFixture<ScratchTatDatabase>, IDi
         var eaTasks = new EaTaskService(db, new EaTaskRepository(db), new TatRuleRepository(db), new CreateEaTaskDtoValidator(), User, audit);
         return new DelegationService(db, User, audit, new DelegationRepository(db), eaTasks,
             Mock.Of<Microsoft.AspNetCore.Hosting.IWebHostEnvironment>(e => e.ContentRootPath == _root),
-            new TaskReviewService(db, new TaskReviewRepository(db), User, audit));
+            new TaskReviewService(db, new TaskReviewRepository(db), User, audit), new TatRuleRepository(db));
     }
 
-    private async Task<TatRule> AddRuleAsync(string? type, string? subtype, int minutes, bool active = true, bool deleted = false, long? moduleId = null)
+    private async Task<TatRule> AddRuleAsync(string? type, string? subtype, int minutes, bool active = true, bool deleted = false, long? moduleId = null, string? taskType = null)
     {
         await using var db = _fx.Db();
         var id = moduleId ?? _fx.DelegationModuleId;
+        var isDelegation = id != _fx.MeetingModuleId;
         var rule = new TatRule
         {
-            BusinessModuleId = id, ModuleName = id == _fx.MeetingModuleId ? "Meeting" : "Delegation", Type = type, Subtype = subtype,
+            // This whole file predates the Review/Rework phase split and is exclusively about the
+            // original single-rule-per-delegation-type flow, which is now specifically the Actual
+            // phase's rule (resolved once at Delegation creation/Start) — TaskType is Delegation-only.
+            // An explicit taskType always wins (used by the repository-level type-only-vs-exact split
+            // test below, which deliberately seeds Meeting's moduleId as a neutral second module).
+            BusinessModuleId = id, ModuleName = isDelegation ? "Delegation" : "Meeting", Type = type, Subtype = subtype,
+            TaskType = taskType ?? (isDelegation ? DelegationTaskType.Actual : null),
             TatMinutes = minutes, IsActive = active, IsDeleted = deleted, CreatedBy = "seed", CreatedDate = DateTime.UtcNow
         };
         db.TatRules.Add(rule);
@@ -262,15 +273,12 @@ public class DelegationTypeOnlyTatTests : IClassFixture<ScratchTatDatabase>, IDi
     }
 
     [Fact]
-    public async Task Create_TwoActiveRulesForTheSameType_IsRejectedAsAmbiguous()
+    public async Task DuplicateActiveRules_NormalizedIdentity_IsRejectedByDatabase()
     {
         var type = Unique("Dup");
         await AddRuleAsync(type, null, 30);
-        await AddRuleAsync(type, null, 40);
-
-        var ex = await Assert.ThrowsAsync<BusinessRuleException>(() => CreateAsync(type));
-
-        Assert.Contains("Multiple active TAT rules", ex.Message);
+        var ex = await Assert.ThrowsAsync<DbUpdateException>(() => AddRuleAsync(" " + type.ToUpperInvariant() + " ", null, 40));
+        Assert.Equal("UX_ea_tat_rules_ActiveDelegationClassification", Assert.IsType<PostgresException>(ex.InnerException).ConstraintName);
     }
 
     [Fact]
@@ -335,13 +343,16 @@ public class DelegationTypeOnlyTatTests : IClassFixture<ScratchTatDatabase>, IDi
     public async Task ExactLookup_DoesNotMatchTypeOnlyRules_AndTypeOnlyLookupDoesNotMatchSubtypedRules()
     {
         var type = Unique("Split");
-        var typeOnly = await AddRuleAsync(type, null, 10, moduleId: _fx.MeetingModuleId);
+        // TaskType is a Delegation-only concept, but GetApplicableByTypeOnlyAsync's type-only-vs-exact
+        // split is generic repository behavior — seed it explicitly here since this rule otherwise
+        // lives under Meeting's moduleId (used only as a neutral second module, not for Meeting semantics).
+        var typeOnly = await AddRuleAsync(type, null, 10, moduleId: _fx.MeetingModuleId, taskType: DelegationTaskType.Actual);
         var exact = await AddRuleAsync(type, "Review", 20, moduleId: _fx.MeetingModuleId);
         await using var db = _fx.Db();
         var repo = new TatRuleRepository(db);
 
         var exactMatch = Assert.Single(await repo.GetApplicableAsync(_fx.MeetingModuleId, type, "Review", default));
-        var typeOnlyMatch = Assert.Single(await repo.GetApplicableByTypeOnlyAsync(_fx.MeetingModuleId, type, default));
+        var typeOnlyMatch = Assert.Single(await repo.GetApplicableByTypeOnlyAsync(_fx.MeetingModuleId, type, DelegationTaskType.Actual, default));
 
         Assert.Equal(exact.Id, exactMatch.Id);
         Assert.Equal(typeOnly.Id, typeOnlyMatch.Id);
@@ -373,7 +384,7 @@ public class DelegationTypeOnlyTatTests : IClassFixture<ScratchTatDatabase>, IDi
         await using var db = _fx.Db();
 
         var saved = await NewRuleService(db).SaveAsync(null,
-            new SaveTatRuleDto { ModuleId = _fx.DelegationModuleId, Type = type, TatMinutes = 75, IsActive = true }, default);
+            new SaveTatRuleDto { ModuleId = _fx.DelegationModuleId, Type = type, TaskType = DelegationTaskType.Actual, TatMinutes = 75, IsActive = true }, default);
 
         Assert.Equal(type, saved.Type);
         Assert.Null(saved.Subtype);
@@ -388,11 +399,11 @@ public class DelegationTypeOnlyTatTests : IClassFixture<ScratchTatDatabase>, IDi
     {
         var type = Unique("Configured");
         await using (var db = _fx.Db())
-            await NewRuleService(db).SaveAsync(null, new SaveTatRuleDto { ModuleId = _fx.DelegationModuleId, Type = type.ToUpperInvariant(), TatMinutes = 10, IsActive = true }, default);
+            await NewRuleService(db).SaveAsync(null, new SaveTatRuleDto { ModuleId = _fx.DelegationModuleId, Type = type.ToUpperInvariant(), TaskType = DelegationTaskType.Actual, TatMinutes = 10, IsActive = true }, default);
 
         await using var db2 = _fx.Db();
         await Assert.ThrowsAsync<BusinessRuleException>(() => NewRuleService(db2).SaveAsync(null,
-            new SaveTatRuleDto { ModuleId = _fx.DelegationModuleId, Type = type, TatMinutes = 20, IsActive = true }, default));
+            new SaveTatRuleDto { ModuleId = _fx.DelegationModuleId, Type = type, TaskType = DelegationTaskType.Actual, TatMinutes = 20, IsActive = true }, default));
         await using var db3 = _fx.Db();
         await Assert.ThrowsAsync<BadRequestException>(() => NewRuleService(db3).SaveAsync(null,
             new SaveTatRuleDto { ModuleId = _fx.DelegationModuleId, Type = Unique(), Subtype = "General", TatMinutes = 20, IsActive = true }, default));
@@ -467,7 +478,7 @@ public class DelegationTypeOnlyTatTests : IClassFixture<ScratchTatDatabase>, IDi
             Assert.Equal(120, live.CurrentTatUsedMinutes);
         }
 
-        var completed = await Run(s => s.CompleteAsync(created.DelegationId, Pdf()));
+        var completed = await Run(s => s.CompleteAndApproveAsync(created.DelegationId, Pdf()));
 
         var task = await TaskOf(created.EaTaskId);
         Assert.Equal(EaTaskExecutionStatus.Completed, task.ExecutionStatus);
@@ -488,12 +499,12 @@ public class DelegationTypeOnlyTatTests : IClassFixture<ScratchTatDatabase>, IDi
 
         await Run(s => s.PauseAsync(created.DelegationId, null));
         var blocked = await Assert.ThrowsAsync<BusinessRuleException>(() => Run(s => s.CompleteAsync(created.DelegationId, null)));
-        Assert.Equal("Resume or continue open pauses/waiting before completion.", blocked.Message);
+        Assert.Equal("Resume or continue open pauses/waiting before a phase transition.", blocked.Message);
         Assert.Null((await TaskOf(created.EaTaskId)).TatUsedMinutes);
 
         await Run(s => s.ResumeAsync(created.DelegationId));
         await SetPauseWindowAsync(created.EaTaskId, 100, 100);   // zero-length pause: nothing to exclude
-        await Run(s => s.CompleteAsync(created.DelegationId, null));
+        await Run(s => s.CompleteAndApproveAsync(created.DelegationId, null));
 
         Assert.Equal(100, (await TaskOf(created.EaTaskId)).TatUsedMinutes);
     }
@@ -505,7 +516,7 @@ public class DelegationTypeOnlyTatTests : IClassFixture<ScratchTatDatabase>, IDi
         await Run(s => s.StartAsync(created.DelegationId));
         await BackdateStartAsync(created.DelegationId, created.EaTaskId, 50);
 
-        var completed = await Run(s => s.CompleteAsync(created.DelegationId, Pdf()));
+        var completed = await Run(s => s.CompleteAndApproveAsync(created.DelegationId, Pdf()));
 
         var task = await TaskOf(created.EaTaskId);
         Assert.Equal(DelegationStatus.Completed, completed.Status);
@@ -551,7 +562,7 @@ public class DelegationTypeOnlyTatTests : IClassFixture<ScratchTatDatabase>, IDi
         var created = await CreateAsync(type, endDate: IndiaBusinessCalendar.Today.AddDays(-30));
         await Run(s => s.StartAsync(created.DelegationId));
         await BackdateStartAsync(created.DelegationId, created.EaTaskId, 120);
-        await Run(s => s.CompleteAsync(created.DelegationId, null));
+        await Run(s => s.CompleteAndApproveAsync(created.DelegationId, null));
 
         var row = await RegisterRow(created);
 
@@ -569,7 +580,7 @@ public class DelegationTypeOnlyTatTests : IClassFixture<ScratchTatDatabase>, IDi
         var created = await CreateAsync(type, endDate: IndiaBusinessCalendar.Today.AddDays(30));
         await Run(s => s.StartAsync(created.DelegationId));
         await BackdateStartAsync(created.DelegationId, created.EaTaskId, 120);
-        await Run(s => s.CompleteAsync(created.DelegationId, null));
+        await Run(s => s.CompleteAndApproveAsync(created.DelegationId, null));
 
         Assert.Equal("Delayed", (await RegisterRow(created)).Performance);
     }
@@ -601,10 +612,10 @@ public class DelegationTypeOnlyTatTests : IClassFixture<ScratchTatDatabase>, IDi
     {
         var late = await CreateAsync(null, endDate: IndiaBusinessCalendar.Today.AddDays(-3));
         await Run(s => s.StartAsync(late.DelegationId));
-        await Run(s => s.CompleteAsync(late.DelegationId, null));
+        await Run(s => s.CompleteAndApproveAsync(late.DelegationId, null));
         var early = await CreateAsync(null, endDate: IndiaBusinessCalendar.Today.AddDays(30));
         await Run(s => s.StartAsync(early.DelegationId));
-        await Run(s => s.CompleteAsync(early.DelegationId, null));
+        await Run(s => s.CompleteAndApproveAsync(early.DelegationId, null));
         var noDate = await CreateAsync(null);
 
         Assert.Equal("Delayed", (await RegisterRow(late)).Performance);

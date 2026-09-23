@@ -108,10 +108,13 @@ public class DelegationsController : ControllerBase
         Ok(await _service.ResumeAsync(delegationId, ct));
 
     /// <summary>
-    /// Complete an InProgress Delegation (InProgress -> Completed). 409 if not currently InProgress or while an open pause exists (resume first).
+    /// Doer's "I'm done" action. Despite the name this does not finalize the Delegation (see
+    /// review/approve below) — it uploads the optional completion PDF and opens a Task Review cycle,
+    /// leaving the Delegation InProgress until the assignee approves it. 409 if not currently
+    /// InProgress, while an open pause exists (resume first), or if a review is already pending.
     /// multipart/form-data with an optional <c>completionPdf</c> file (same field name as Meeting complete).
     /// Unlike Meeting the PDF is optional. When supplied it must be a valid PDF (max 25 MiB); it is stored in
-    /// the same transaction as the completion, so a failure leaves the Delegation and its EaTask unchanged.
+    /// the same transaction as the review submission, so a failure leaves the Delegation and its EaTask unchanged.
     /// </summary>
     [HttpPost("{delegationId:long}/complete")]
     [Consumes("multipart/form-data")]
@@ -127,7 +130,7 @@ public class DelegationsController : ControllerBase
     // TASK REVIEW / REWORK (Phase 1)
     // ============================================================
 
-    /// <summary>Submit the Delegation's central task for review. 409 if Cancelled, already Completed, or a review is already pending.</summary>
+    /// <summary>Close the current Actual/Rework phase and open the next Review phase atomically. 409 if not InProgress, paused, already pending review, or phase history is inconsistent.</summary>
     [HttpPost("{delegationId:long}/submit-for-review")]
     [ProducesResponseType(typeof(DelegationResponseDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
@@ -135,21 +138,43 @@ public class DelegationsController : ControllerBase
     public async Task<IActionResult> SubmitForReview(long delegationId, [FromBody] SubmitForReviewRequestDto? dto, CancellationToken ct) =>
         Ok(await _service.SubmitForReviewAsync(delegationId, dto ?? new SubmitForReviewRequestDto(), ct));
 
-    /// <summary>Approve the current pending review cycle. 409 if no review is currently pending.</summary>
+    /// <summary>
+    /// Approve the current pending review cycle. This is what actually finalizes the Delegation as
+    /// Completed (freezes TAT, closes any pause anchor) — Complete only opened the review cycle.
+    /// multipart/form-data with an optional <c>attachment</c> file so the assignee can attach their
+    /// own document (sign-off notes, an annotated file) to the approval. 409 if no review is pending.
+    /// </summary>
     [HttpPost("{delegationId:long}/review/approve")]
+    [Consumes("multipart/form-data")]
+    [RequestSizeLimit(27 * 1024 * 1024)]
+    [RequestFormLimits(MultipartBodyLengthLimit = 27 * 1024 * 1024)]
     [ProducesResponseType(typeof(DelegationResponseDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
-    public async Task<IActionResult> ApproveReview(long delegationId, [FromBody] ApproveTaskReviewRequestDto? dto, CancellationToken ct) =>
-        Ok(await _service.ApproveReviewAsync(delegationId, dto ?? new ApproveTaskReviewRequestDto(), ct));
+    public async Task<IActionResult> ApproveReview(long delegationId, [FromForm] DelegationApproveReviewRequestDto request, CancellationToken ct) =>
+        Ok(await _service.ApproveReviewAsync(delegationId,
+            new ApproveTaskReviewRequestDto { ReviewedById = request.ReviewedById, ReviewedByName = request.ReviewedByName, ReviewRemark = request.ReviewRemark },
+            request.Attachment, ct));
 
-    /// <summary>Send the current pending review cycle back for rework. 409 if no review is currently pending.</summary>
+    /// <summary>
+    /// Send the current pending review cycle back for rework. No Delegation/EaTask state change —
+    /// it is still InProgress, since Complete never marked it Completed in the first place; the doer
+    /// simply calls Complete again once the rework is done, opening the next review cycle.
+    /// multipart/form-data with an optional <c>attachment</c> file so the assignee can attach their
+    /// own document (marked-up feedback, a reference file) explaining what needs to be redone.
+    /// 409 if no review is currently pending.
+    /// </summary>
     [HttpPost("{delegationId:long}/review/rework")]
+    [Consumes("multipart/form-data")]
+    [RequestSizeLimit(27 * 1024 * 1024)]
+    [RequestFormLimits(MultipartBodyLengthLimit = 27 * 1024 * 1024)]
     [ProducesResponseType(typeof(DelegationResponseDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
-    public async Task<IActionResult> RequestRework(long delegationId, [FromBody] RequestTaskReworkRequestDto? dto, CancellationToken ct) =>
-        Ok(await _service.RequestReworkAsync(delegationId, dto ?? new RequestTaskReworkRequestDto(), ct));
+    public async Task<IActionResult> RequestRework(long delegationId, [FromForm] DelegationRequestReworkRequestDto request, CancellationToken ct) =>
+        Ok(await _service.RequestReworkAsync(delegationId,
+            new RequestTaskReworkRequestDto { ReviewedById = request.ReviewedById, ReviewedByName = request.ReviewedByName, ReworkRemark = request.ReworkRemark },
+            request.Attachment, ct));
 
     /// <summary>Full review-cycle history, oldest (cycle 1) first. EaTask-based — no WorkflowInstanceId is exposed.</summary>
     [HttpGet("{delegationId:long}/review/history")]

@@ -96,7 +96,7 @@ public class DelegationPauseResumeTests : IDisposable
             });
         var audit = new Mock<IAuditService>();
         var svc = new DelegationService(db, user, audit.Object, numbers.Object, tasks.Object, env,
-            new TaskReviewService(db, new TaskReviewRepository(db), user, audit.Object));
+            new TaskReviewService(db, new TaskReviewRepository(db), user, audit.Object), new TatRuleRepository(db));
         Task<DelegationResponseDto> Create() => svc.CreateAsync(new DelegationCreateRequestDto { Title = "Prepare deck", DoerId = "emp-1", EndDate = DateTime.UtcNow.AddDays(5) });
         var created = await Create();
         if (start) await svc.StartAsync(created.DelegationId);
@@ -179,7 +179,7 @@ public class DelegationPauseResumeTests : IDisposable
     public async Task Pause_Completed_Is409()
     {
         var f = await NewAsync();
-        await f.Svc.CompleteAsync(f.DelegationId, null);
+        await f.Svc.CompleteAndApproveAsync(f.DelegationId, null);
 
         await Assert.ThrowsAsync<BusinessRuleException>(() => f.Svc.PauseAsync(f.DelegationId, null));
 
@@ -257,7 +257,7 @@ public class DelegationPauseResumeTests : IDisposable
         await Assert.ThrowsAsync<BusinessRuleException>(() => pending.Svc.ResumeAsync(pending.DelegationId));
 
         var done = await NewAsync();
-        await done.Svc.CompleteAsync(done.DelegationId, null);
+        await done.Svc.CompleteAndApproveAsync(done.DelegationId, null);
         await Assert.ThrowsAsync<BusinessRuleException>(() => done.Svc.ResumeAsync(done.DelegationId));
 
         await Assert.ThrowsAsync<NotFoundException>(() => done.Svc.ResumeAsync(9999));
@@ -297,7 +297,7 @@ public class DelegationPauseResumeTests : IDisposable
         var resumed = await f.Svc.ResumeAsync(f.DelegationId);
         Assert.Equal((DelegationStatus.InProgress, false), (resumed.Status, resumed.IsPaused));
 
-        var completed = await f.Svc.CompleteAsync(f.DelegationId, Pdf());
+        var completed = await f.Svc.CompleteAndApproveAsync(f.DelegationId, Pdf());
         Assert.Equal((DelegationStatus.Completed, false), (completed.Status, completed.IsPaused));
         Assert.Equal(EaTaskExecutionStatus.Completed, (await Task_(f)).ExecutionStatus);
         Assert.NotNull(completed.CompletionPdfAttachmentId);
@@ -312,7 +312,7 @@ public class DelegationPauseResumeTests : IDisposable
 
         var ex = await Assert.ThrowsAsync<BusinessRuleException>(() => f.Svc.CompleteAsync(f.DelegationId, Pdf()));
 
-        Assert.Equal("Resume or continue open pauses/waiting before completion.", ex.Message);
+        Assert.Equal("Resume or continue open pauses/waiting before a phase transition.", ex.Message);
         Assert.Equal(DelegationStatus.InProgress, (await Row(f)).Status);
         Assert.Equal(EaTaskExecutionStatus.InProgress, (await Task_(f)).ExecutionStatus);
         Assert.Null((await Task_(f)).CompletedAt);
@@ -327,7 +327,7 @@ public class DelegationPauseResumeTests : IDisposable
         await f.Svc.PauseAsync(f.DelegationId, null);
         await f.Svc.ResumeAsync(f.DelegationId);
 
-        await f.Svc.CompleteAsync(f.DelegationId, Pdf());
+        await f.Svc.CompleteAndApproveAsync(f.DelegationId, Pdf());
 
         Assert.DoesNotContain(await Pauses(f), p => p.EndAt == null);
         var wf = await f.Db.WorkflowInstances.AsNoTracking().SingleAsync();
@@ -341,7 +341,7 @@ public class DelegationPauseResumeTests : IDisposable
     {
         var f = await NewAsync();
 
-        var r = await f.Svc.CompleteAsync(f.DelegationId, null);
+        var r = await f.Svc.CompleteAndApproveAsync(f.DelegationId, null);
 
         Assert.Equal(DelegationStatus.Completed, r.Status);
         Assert.Empty(await f.Db.WorkflowInstances.ToListAsync());

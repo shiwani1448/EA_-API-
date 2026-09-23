@@ -94,7 +94,7 @@ public class DelegationServiceTests
         eaTasks ??= new Mock<IEaTaskService>();
         return (new DelegationService(db, user, auditSpy.Object, numbers.Object, eaTasks.Object,
             Mock.Of<Microsoft.AspNetCore.Hosting.IWebHostEnvironment>(),
-            new TaskReviewService(db, new TaskReviewRepository(db), user, auditSpy.Object)), auditSpy);
+            new TaskReviewService(db, new TaskReviewRepository(db), user, auditSpy.Object), new TatRuleRepository(db)), auditSpy);
     }
 
     private static DelegationCreateRequestDto MakeCreateDto(long sourceModuleId, string sourceEntityId = "51") => new()
@@ -752,7 +752,7 @@ public class DelegationServiceTests
     {
         var (db, service, created, _) = await SeedPendingDelegationAsync();
         await service.StartAsync(created.DelegationId);
-        await service.CompleteAsync(created.DelegationId, null);
+        await service.CompleteAndApproveAsync(created.DelegationId, null);
 
         await Assert.ThrowsAsync<BusinessRuleException>(() => service.StartAsync(created.DelegationId));
         _ = db;
@@ -776,7 +776,7 @@ public class DelegationServiceTests
         var (db, service, created, auditSpy) = await SeedPendingDelegationAsync();
         var started = await service.StartAsync(created.DelegationId);
 
-        var result = await service.CompleteAsync(created.DelegationId, null);
+        var result = await service.CompleteAndApproveAsync(created.DelegationId, null);
 
         Assert.Equal("Completed", result.Status);
         Assert.Equal(started.StartedAt, result.StartedAt); // original start preserved
@@ -811,7 +811,7 @@ public class DelegationServiceTests
     {
         var (db, service, created, _) = await SeedPendingDelegationAsync();
         await service.StartAsync(created.DelegationId);
-        await service.CompleteAsync(created.DelegationId, null);
+        await service.CompleteAndApproveAsync(created.DelegationId, null);
 
         await Assert.ThrowsAsync<BusinessRuleException>(() => service.CompleteAsync(created.DelegationId, null));
         Assert.Equal(1, (await db.AuditLogs.ToListAsync()).Count(a => a.ActionType == "DELEGATION_COMPLETE"));
@@ -848,7 +848,7 @@ public class DelegationServiceTests
         Assert.Empty((await service.ListAsync(new DelegationListQueryDto { View = "pending" })).Items);
         Assert.Single((await service.ListAsync(new DelegationListQueryDto { View = "inProgress" })).Items);
 
-        await service.CompleteAsync(created.DelegationId, null);
+        await service.CompleteAndApproveAsync(created.DelegationId, null);
 
         var afterComplete = await service.GetSummaryAsync();
         Assert.Equal(0, afterComplete.InProgress);
@@ -878,7 +878,7 @@ public class DelegationServiceTests
         Assert.True(beforeComplete.IsOverdue);
         Assert.Single((await service.ListAsync(new DelegationListQueryDto { View = "overdue" })).Items);
 
-        var completed = await service.CompleteAsync(created.DelegationId, null);
+        var completed = await service.CompleteAndApproveAsync(created.DelegationId, null);
 
         Assert.False(completed.IsOverdue);
         Assert.Empty((await service.ListAsync(new DelegationListQueryDto { View = "overdue" })).Items);
@@ -903,7 +903,7 @@ public class DelegationServiceTests
 
         Assert.Single((await service.ListAsync(new DelegationListQueryDto { View = "dueToday" })).Items);
 
-        var completed = await service.CompleteAsync(created.DelegationId, null);
+        var completed = await service.CompleteAndApproveAsync(created.DelegationId, null);
 
         Assert.False(completed.IsDueToday);
         Assert.Empty((await service.ListAsync(new DelegationListQueryDto { View = "dueToday" })).Items);

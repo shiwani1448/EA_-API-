@@ -50,7 +50,7 @@ public class MeetingToDelegationTests
             new CreateEaTaskDtoValidator(), user, audit);
         return new DelegationService(db, user, audit, new DelegationRepository(db), eaTasks,
             Mock.Of<Microsoft.AspNetCore.Hosting.IWebHostEnvironment>(),
-            new TaskReviewService(db, new TaskReviewRepository(db), user, audit));
+            new TaskReviewService(db, new TaskReviewRepository(db), user, audit), new TatRuleRepository(db));
     }
 
     private static Mock<IMeetingCompletionFileStore> MakeFileStoreMock()
@@ -570,7 +570,7 @@ public class MeetingToDelegationTests
             new CreateEaTaskDtoValidator(), user, audit);
         var delegations = new DelegationService(db, user, audit, mockNumbers.Object, eaTasks,
             Mock.Of<Microsoft.AspNetCore.Hosting.IWebHostEnvironment>(),
-            new TaskReviewService(db, new TaskReviewRepository(db), user, audit));
+            new TaskReviewService(db, new TaskReviewRepository(db), user, audit), new TatRuleRepository(db));
         var lifecycle = MakeLifecycleService(db, user, audit, delegations, out _);
 
         // ---- ACTION: CompleteAsync must throw (failure during second Delegation creation) ----

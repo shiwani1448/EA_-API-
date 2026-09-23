@@ -72,7 +72,7 @@ public class DelegationContractTests
             });
         var auditObj = new Mock<IAuditService>().Object;
         return new Fx { Db = db, Svc = new DelegationService(db, user, auditObj, numbers.Object, tasks.Object, env,
-            new TaskReviewService(db, new TaskReviewRepository(db), user, auditObj)) };
+            new TaskReviewService(db, new TaskReviewRepository(db), user, auditObj), new TatRuleRepository(db)) };
     }
 
     private static DelegationCreateRequestDto Request(string? type = "Director Delegation") => new()

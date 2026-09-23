@@ -12,26 +12,12 @@ using Xunit;
 
 namespace Jarvis5.Tests.EaFms.Delegation;
 
-/// <summary>
-/// Step 5B-2: proves DelegationService.CreateCoreAsync's transaction-composition contract
-/// (never begins/commits/rolls back its own transaction; fully participates in the
-/// caller's) against REAL PostgreSQL transaction semantics. EF InMemory does not
-/// implement transactions or rollback at all — every other test in this suite that needs
-/// real relational behavior (raw SQL locks, sequences, actual rollback) already works
-/// around that by mocking; this is the one place mocking cannot substitute for the real
-/// database, so unlike the rest of the suite, these four tests connect to the same local
-/// dev Postgres instance every `dotnet ef` command in this project already requires (the
-/// connection string is the one already committed in appsettings.json — not a secret).
-/// They depend on the "Delegation" and "Meeting" BusinessModule rows configured in Step
-/// 5B-1 already existing in that database. Every row created is clearly titled
-/// "(disposable Step 5B-2 test)" with a unique-per-run marker.
-/// </summary>
-public class DelegationCreateCoreTransactionTests
+/// <summary>Real PostgreSQL transaction composition, isolated from developer data in a migrated scratch database.</summary>
+public class DelegationCreateCoreTransactionTests : IClassFixture<ScratchTatDatabase>
 {
-    private const string ConnectionString = "Host=localhost;Port=5432;Database=DB_Studio5Jarvis;Username=postgres;Password=123456";
-
-    private static EaFmsDbContext MakeRealDb() =>
-        new(new DbContextOptionsBuilder<EaFmsDbContext>().UseNpgsql(ConnectionString).Options);
+    private readonly ScratchTatDatabase _fx;
+    public DelegationCreateCoreTransactionTests(ScratchTatDatabase fx) => _fx = fx;
+    private EaFmsDbContext MakeRealDb() => _fx.Db();
 
     private static DelegationService MakeRealService(EaFmsDbContext db)
     {
@@ -41,7 +27,7 @@ public class DelegationCreateCoreTransactionTests
             new CreateEaTaskDtoValidator(), user, audit);
         return new DelegationService(db, user, audit, new DelegationRepository(db), eaTasks,
             Mock.Of<Microsoft.AspNetCore.Hosting.IWebHostEnvironment>(),
-            new TaskReviewService(db, new TaskReviewRepository(db), user, audit));
+            new TaskReviewService(db, new TaskReviewRepository(db), user, audit), new TatRuleRepository(db));
     }
 
     private static async Task<long> ResolveMeetingModuleIdAsync(EaFmsDbContext db) =>

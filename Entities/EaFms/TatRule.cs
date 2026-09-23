@@ -10,6 +10,8 @@ public class TatRule
     public string ModuleName { get; set; } = null!;
     public string? Type { get; set; }
     public string? Subtype { get; set; }
+    /// <summary>Delegation-only classification dimension: Actual | Review | Rework. Null for every other module.</summary>
+    public string? TaskType { get; set; }
     public int TatMinutes { get; set; }
     public bool IsActive { get; set; }
 

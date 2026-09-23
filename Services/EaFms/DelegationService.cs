@@ -29,9 +29,14 @@ public class DelegationService : IDelegationService
     // Completion PDF: same limits as Meeting's completionPdf (PDF only, 25 MiB).
     private const long MaxCompletionPdfBytes = 25 * 1024 * 1024;
 
-    // ea_attachments association for the Delegation completion PDF (no dedicated table or column).
+    // ea_attachments association for every Delegation-owned attachment (no dedicated table or column).
+    // All three kinds share this same (RelatedModule, RelatedEntity, RelatedEntityId) triple — only
+    // Metadata.purpose (and, for review/rework, Metadata.reviewCycleNumber) tells them apart.
     private const string AttachmentRelatedModule = "Delegation";
     private const string AttachmentRelatedEntity = "Delegation";
+    private const string CompletionPdfPurpose = "DelegationCompletionPdf";
+    private const string ReviewAttachmentPurpose = "DelegationReviewAttachment";
+    private const string ReworkAttachmentPurpose = "DelegationReworkAttachment";
 
     private readonly EaFmsDbContext _db;
     private readonly ICurrentUserService _user;
@@ -40,6 +45,7 @@ public class DelegationService : IDelegationService
     private readonly IEaTaskService _eaTaskService;
     private readonly IWebHostEnvironment _env;
     private readonly ITaskReviewService _taskReview;
+    private readonly ITatRuleRepository _tatRules;
 
     public DelegationService(
         EaFmsDbContext db,
@@ -48,7 +54,8 @@ public class DelegationService : IDelegationService
         IDelegationNumberRepository numbers,
         IEaTaskService eaTaskService,
         IWebHostEnvironment env,
-        ITaskReviewService taskReview)
+        ITaskReviewService taskReview,
+        ITatRuleRepository tatRules)
     {
         _db = db;
         _user = user;
@@ -57,6 +64,7 @@ public class DelegationService : IDelegationService
         _eaTaskService = eaTaskService;
         _env = env;
         _taskReview = taskReview;
+        _tatRules = tatRules;
     }
 
     // ============================================================
@@ -315,6 +323,10 @@ public class DelegationService : IDelegationService
         if (entity.Status != DelegationStatus.Pending)
             throw new BusinessRuleException($"Delegation cannot be started from its current status '{entity.Status}'.");
 
+        if (await _db.DelegationPhaseTats.AnyAsync(p => p.DelegationId == delegationId, ct)
+            || await _db.TaskReviews.AnyAsync(r => r.EaTaskId == entity.EaTaskId, ct))
+            throw new BusinessRuleException("Cannot start a Delegation with existing phase or review history.");
+
         var now = Clock.UtcNowTz;
         entity.Status = DelegationStatus.InProgress;
         entity.StartedAt = now;
@@ -326,6 +338,15 @@ public class DelegationService : IDelegationService
         var eaTask = await _db.Tasks.FirstAsync(t => t.Id == entity.EaTaskId, ct);
         eaTask.ExecutionStatus = EaTaskExecutionStatus.InProgress;
         eaTask.StartedAt = now;
+
+        // The Actual phase's TAT rule already resolved (and was required to exist) at Delegation
+        // creation time — reuse EaTask's own resolved values rather than looking the rule up again.
+        _db.DelegationPhaseTats.Add(new DelegationPhaseTat
+        {
+            DelegationId = entity.Id, TaskType = DelegationTaskType.Actual, ReviewCycleNumber = 0,
+            StartedAt = now, AllottedTatMinutes = eaTask.AllottedTatMinutes, TatRuleId = eaTask.TatRuleId,
+            CreatedBy = Actor(), CreatedDate = now
+        });
 
         _audit.AddAudit(
             "DELEGATION_START", "Delegation", nameof(Delegation),
@@ -341,7 +362,23 @@ public class DelegationService : IDelegationService
         return await ToDtoAsync(entity, sourceModuleName, null, ct);
     }
 
-    public async Task<DelegationResponseDto> CompleteAsync(long delegationId, IFormFile? completionPdf, CancellationToken ct = default)
+    /// <summary>
+    /// Doer-facing "I'm done" action. Uploads the optional completion PDF exactly as before, but no
+    /// longer finalizes the Delegation itself — it now opens a Task Review cycle instead (see the
+    /// TASK REVIEW / REWORK region below). The Delegation stays InProgress; ApproveReviewAsync is
+    /// what actually transitions it to Completed. This lets an assignee send work back for rework
+    /// (the Delegation is simply never marked Completed until they approve it) without needing any
+    /// separate "reopen" capability. Rejects (via SubmitForReviewAsync) if a review is already
+    /// pending — i.e. this cannot be called twice in a row without an intervening Approve/Rework.
+    /// </summary>
+    public Task<DelegationResponseDto> CompleteAsync(long delegationId, IFormFile? completionPdf, CancellationToken ct = default) =>
+        SubmitWorkForReviewAsync(delegationId, completionPdf, new SubmitForReviewRequestDto
+        {
+            SubmittedById = Actor(), SubmittedByName = _user.UserName
+        }, ct);
+
+    private async Task<DelegationResponseDto> SubmitWorkForReviewAsync(long delegationId, IFormFile? completionPdf,
+        SubmitForReviewRequestDto request, CancellationToken ct)
     {
         // Validate the PDF before opening the transaction so a bad upload fails fast, leaving the
         // Delegation, its EaTask and the storage untouched.
@@ -353,50 +390,29 @@ public class DelegationService : IDelegationService
         if (entity.Status != DelegationStatus.InProgress)
             throw new BusinessRuleException($"Delegation cannot be completed from its current status '{entity.Status}'.");
 
-        // Same rule as Meeting's CompleteAsync: an open pause blocks completion (no auto-resume), so no
-        // orphan open WorkPause can ever survive a completed Delegation.
         var eaTask = await _db.Tasks.FirstAsync(t => t.Id == entity.EaTaskId, ct);
-        if (eaTask.WorkflowInstanceId.HasValue
-            && await _db.WorkPauses.AnyAsync(p => p.WorkflowInstanceId == eaTask.WorkflowInstanceId && !p.IsDeleted && p.EndAt == null, ct))
-            throw new BusinessRuleException("Resume or continue open pauses/waiting before completion.");
+        await RequireNoOpenPauseAsync(eaTask.WorkflowInstanceId, ct);
+        var currentReview = await _db.TaskReviews.AsNoTracking().Where(r => r.EaTaskId == entity.EaTaskId)
+            .OrderByDescending(r => r.ReviewCycleNo).FirstOrDefaultAsync(ct);
+        if (currentReview is not null && currentReview.ReviewStatus != TaskReviewStatus.ReworkRequested)
+            throw new BusinessRuleException("Work can only be submitted initially or after a rework request.");
+        var phase = await RequireOpenPhaseAsync(delegationId,
+            currentReview is null ? DelegationTaskType.Actual : DelegationTaskType.Rework,
+            currentReview?.ReviewCycleNo ?? 0, ct);
 
         var now = Clock.UtcNowTz;
-        entity.Status = DelegationStatus.Completed;
-        entity.CompletedAt = now;
-        // Same actor convention already established for AssignedBy at create time — never
-        // accepted from the request payload.
-        entity.CompletedById = Actor();
-        entity.CompletedByNameSnapshot = _user.UserName;
         entity.ModifiedBy = Actor();
         entity.ModifiedDate = now;
 
-        eaTask.ExecutionStatus = EaTaskExecutionStatus.Completed;
-        eaTask.CompletedAt = now;
-
-        // TAT-enabled Delegations only: freeze the final active TAT (actual StartedAt to now, simple pauses excluded)
-        // with the same shared calculation Meeting uses. No open pause can exist here (blocked above).
-        if (eaTask.AllottedTatMinutes.HasValue && eaTask.StartedAt.HasValue)
-        {
-            var pausesForTat = eaTask.WorkflowInstanceId.HasValue
-                ? await _db.WorkPauses.AsNoTracking()
-                    .Where(p => p.WorkflowInstanceId == eaTask.WorkflowInstanceId && !p.IsDeleted).ToListAsync(ct)
-                : new List<WorkPause>();
-            eaTask.TatUsedMinutes = EaTaskService.CalculateActiveTatMinutes(eaTask.StartedAt.Value, now, pausesForTat);
-        }
-
-        // A pause anchor exists only if the Delegation was ever paused; close it like Meeting closes its workflow.
-        if (eaTask.WorkflowInstanceId.HasValue)
-            await CompleteAnchorAsync(eaTask.WorkflowInstanceId.Value, now, ct);
-
-        // Delegation + EaTask + attachment metadata commit together. The file is written just before the
-        // commit; any failure from that point deletes it again so no orphan file or half state remains.
+        // Delegation + attachment metadata commit together, same as before. The file is written just
+        // before the commit; any failure from that point deletes it again so no orphan file remains.
         string? objectKey = null;
         Attachment? attachment = null;
         try
         {
             if (pdfBytes is not null)
             {
-                objectKey = await WriteCompletionPdfAsync(delegationId, pdfBytes, ct);
+                objectKey = await WriteDelegationAttachmentAsync("DelegationCompletion", delegationId, pdfBytes, ct);
                 var actor = Actor();
                 attachment = new Attachment
                 {
@@ -407,10 +423,10 @@ public class DelegationService : IDelegationService
                     ObjectKey = objectKey,
                     ContentType = "application/pdf",
                     Size = pdfBytes.LongLength,
-                    AccessUrl = null, // no storage path is exposed; download via GET /api/ea/delegations/{id}/completion-pdf
+                    AccessUrl = null, // no storage path is exposed; download via GET /api/ea/documents/{attachmentId}/download
                     UploadedBy = actor,
                     UploadedAt = now,
-                    Metadata = $"{{\"purpose\":\"DelegationCompletionPdf\",\"delegationId\":{delegationId}}}",
+                    Metadata = $"{{\"purpose\":\"{CompletionPdfPurpose}\",\"delegationId\":{delegationId}}}",
                     IsActive = true,
                     IsDeleted = false,
                     CreatedBy = actor,
@@ -419,13 +435,18 @@ public class DelegationService : IDelegationService
                 _db.Attachments.Add(attachment);
             }
 
+            // Opens (or, after a rework, re-opens) a review cycle for the doer's completed work.
+            // Throws if one is already pending — the caller must wait for Approve/Rework first.
+            var reviewSummary = await _taskReview.SubmitForReviewAsync(entity.EaTaskId, request, ct);
+            await ClosePhaseAsync(phase, eaTask.WorkflowInstanceId, now, ct);
+            await OpenPhaseAsync(delegationId, eaTask.BusinessModuleId, entity.DelegationType, DelegationTaskType.Review, reviewSummary.ReviewCycleNumber, now, ct);
+
             _audit.AddAudit(
-                "DELEGATION_COMPLETE", "Delegation", nameof(Delegation),
+                "DELEGATION_SUBMIT_FOR_REVIEW", "Delegation", nameof(Delegation),
                 entity.Id.ToString(CultureInfo.InvariantCulture),
-                new { Status = DelegationStatus.InProgress },
-                new { entity.Status, entity.CompletedAt, entity.CompletedById, entity.CompletedByNameSnapshot,
-                      HasCompletionPdf = attachment is not null },
-                "Delegation completed");
+                null,
+                new { HasCompletionPdf = attachment is not null },
+                "Delegation work submitted for review");
 
             await _db.SaveChangesAsync(ct);
             await transaction.CommitAsync(ct);
@@ -438,6 +459,40 @@ public class DelegationService : IDelegationService
 
         var sourceModuleName = await ResolveSourceModuleNameAsync(entity.SourceBusinessModuleId, ct);
         return await ToDtoAsync(entity, sourceModuleName, attachment?.Id, ct);
+    }
+
+    /// <summary>
+    /// The completion tail CompleteAsync used to run directly, now run from ApproveReviewAsync
+    /// instead: freezes TAT, closes the pause anchor and marks the Delegation/EaTask Completed.
+    /// Shared by ApproveReviewAsync only — CompleteAsync itself no longer calls this.
+    /// </summary>
+    private async Task FinalizeCompletionAsync(Delegation entity, EaTask eaTask, string? completedById, string? completedByName, DateTime now, CancellationToken ct)
+    {
+        entity.Status = DelegationStatus.Completed;
+        entity.CompletedAt = now;
+        entity.CompletedById = completedById ?? Actor();
+        entity.CompletedByNameSnapshot = completedByName;
+        entity.ModifiedBy = Actor();
+        entity.ModifiedDate = now;
+
+        eaTask.ExecutionStatus = EaTaskExecutionStatus.Completed;
+        eaTask.CompletedAt = now;
+
+        // TAT-enabled Delegations only: freeze the final active TAT (actual StartedAt to now, simple
+        // pauses excluded) with the same shared calculation Meeting uses. Review time counts toward
+        // this, same as the rest of the InProgress window — no separate carve-out for it.
+        if (eaTask.AllottedTatMinutes.HasValue && eaTask.StartedAt.HasValue)
+        {
+            var pausesForTat = eaTask.WorkflowInstanceId.HasValue
+                ? await _db.WorkPauses.AsNoTracking()
+                    .Where(p => p.WorkflowInstanceId == eaTask.WorkflowInstanceId && !p.IsDeleted).ToListAsync(ct)
+                : new List<WorkPause>();
+            eaTask.TatUsedMinutes = EaTaskService.CalculateActiveTatMinutes(eaTask.StartedAt.Value, now, pausesForTat);
+        }
+
+        // A pause anchor exists only if the Delegation was ever paused; close it like Meeting closes its workflow.
+        if (eaTask.WorkflowInstanceId.HasValue)
+            await CompleteAnchorAsync(eaTask.WorkflowInstanceId.Value, now, ct);
     }
 
     // ============================================================
@@ -544,36 +599,146 @@ public class DelegationService : IDelegationService
     }
 
     // ============================================================
-    // TASK REVIEW / REWORK (Phase 1) — resolves EaTaskId, delegates to the shared engine.
-    // Review time counts toward existing TAT; no WorkPause is created; ExecutionStatus,
-    // StartedAt, CompletedAt and TatUsedMinutes are never touched by these methods.
+    // TASK REVIEW / REWORK: Delegation owns phase transitions; the shared service owns review history.
+    // All transitions hold the Delegation lock and commit phase snapshots and review state together.
     // ============================================================
 
-    public async Task<DelegationResponseDto> SubmitForReviewAsync(long delegationId, SubmitForReviewRequestDto dto, CancellationToken ct = default)
+    /// <summary>Same phase transition as Complete, with caller-supplied review participants and no PDF.</summary>
+    public Task<DelegationResponseDto> SubmitForReviewAsync(long delegationId, SubmitForReviewRequestDto dto, CancellationToken ct = default) =>
+        SubmitWorkForReviewAsync(delegationId, null, dto, ct);
+
+    /// <summary>
+    /// Approving the pending review cycle is what finalizes the Delegation now (Complete only opens
+    /// the cycle — see CompleteAsync above). Runs the same completion tail CompleteAsync used to run
+    /// directly: freezes TAT, closes the pause anchor, marks Completed. completedBy reflects the doer
+    /// whose work was just approved (the review cycle's own submitter), not the approving assignee —
+    /// that identity already lives on the review cycle (reviewedById/reviewedByName) returned here.
+    /// </summary>
+    public async Task<DelegationResponseDto> ApproveReviewAsync(long delegationId, ApproveTaskReviewRequestDto dto, IFormFile? attachment, CancellationToken ct = default)
     {
-        var entity = await RequireDelegationAsync(delegationId, ct);
-        await _taskReview.SubmitForReviewAsync(entity.EaTaskId, dto, ct);
+        // Validate before opening the transaction so a bad upload fails fast, leaving everything unchanged.
+        var attachmentBytes = attachment is null ? null : await ReadValidatedPdfAsync(attachment, ct);
+
+        await using var transaction = await _db.Database.BeginTransactionAsync(ct);
+
+        var entity = await LockDelegationAsync(delegationId, ct);
+        if (entity.Status != DelegationStatus.InProgress)
+            throw new BusinessRuleException($"Delegation review cannot be approved from its current status '{entity.Status}'.");
+
+        var eaTask = await _db.Tasks.FirstAsync(t => t.Id == entity.EaTaskId, ct);
+        await RequireNoOpenPauseAsync(eaTask.WorkflowInstanceId, ct);
+        var phase = await RequireReviewPhaseAsync(entity, ct);
+        var summary = await _taskReview.ApproveAsync(entity.EaTaskId, dto, ct);
+        var now = Clock.UtcNowTz;
+        await FinalizeCompletionAsync(entity, eaTask, summary.SubmittedById, summary.SubmittedByName, now, ct);
+        // Close out this cycle's Review phase — approved, so nothing new opens after it.
+        await ClosePhaseAsync(phase, eaTask.WorkflowInstanceId, now, ct);
+
+        string? objectKey = null;
+        try
+        {
+            // The assignee's own optional document for this decision — separate ea_attachments row
+            // from the doer's completion PDF, tagged with this review cycle so it's traceable in history.
+            if (attachmentBytes is not null)
+                objectKey = await AddReviewAttachmentAsync(delegationId, ReviewAttachmentPurpose, summary.ReviewCycleNumber, attachment!, attachmentBytes, now, ct);
+
+            _audit.AddAudit(
+                "DELEGATION_COMPLETE", "Delegation", nameof(Delegation),
+                entity.Id.ToString(CultureInfo.InvariantCulture),
+                new { Status = DelegationStatus.InProgress },
+                new { entity.Status, entity.CompletedAt, entity.CompletedById, entity.CompletedByNameSnapshot, ReviewCycle = summary.ReviewCycleNumber },
+                "Delegation review approved and completed");
+
+            await _db.SaveChangesAsync(ct);
+            await transaction.CommitAsync(ct);
+        }
+        catch
+        {
+            if (objectKey is not null) TryDeleteFile(objectKey);
+            throw;
+        }
+
         return await GetByIdAsync(delegationId, ct);
     }
 
-    public async Task<DelegationResponseDto> ApproveReviewAsync(long delegationId, ApproveTaskReviewRequestDto dto, CancellationToken ct = default)
+    /// <summary>
+    /// Marks the current cycle ReworkRequested only — no Delegation/EaTask state change, because
+    /// CompleteAsync never marked it Completed in the first place. It is simply still InProgress, so
+    /// the doer can act on the rework remark and call Complete again for the next review cycle.
+    /// </summary>
+    public async Task<DelegationResponseDto> RequestReworkAsync(long delegationId, RequestTaskReworkRequestDto dto, IFormFile? attachment, CancellationToken ct = default)
     {
-        var entity = await RequireDelegationAsync(delegationId, ct);
-        await _taskReview.ApproveAsync(entity.EaTaskId, dto, ct);
+        var attachmentBytes = attachment is null ? null : await ReadValidatedPdfAsync(attachment, ct);
+
+        await using var transaction = await _db.Database.BeginTransactionAsync(ct);
+
+        var entity = await LockDelegationAsync(delegationId, ct);
+        RequireInProgress(entity, "sent for rework");
+        var eaTask = await _db.Tasks.FirstAsync(t => t.Id == entity.EaTaskId, ct);
+        await RequireNoOpenPauseAsync(eaTask.WorkflowInstanceId, ct);
+        var phase = await RequireReviewPhaseAsync(entity, ct);
+        var summary = await _taskReview.RequestReworkAsync(entity.EaTaskId, dto, ct);
+        var now = Clock.UtcNowTz;
+
+        // Close out this cycle's Review phase and open a Rework phase (same cycle number — a review
+        // cycle is either approved or reworked, never both) so the doer's redo has its own TAT window.
+        await ClosePhaseAsync(phase, eaTask.WorkflowInstanceId, now, ct);
+        await OpenPhaseAsync(delegationId, eaTask.BusinessModuleId, entity.DelegationType, DelegationTaskType.Rework, summary.ReviewCycleNumber, now, ct);
+
+        string? objectKey = null;
+        try
+        {
+            // The assignee's own optional document explaining what needs to be redone — separate
+            // ea_attachments row, tagged with this review cycle so it's traceable in history.
+            if (attachmentBytes is not null)
+                objectKey = await AddReviewAttachmentAsync(delegationId, ReworkAttachmentPurpose, summary.ReviewCycleNumber, attachment!, attachmentBytes, now, ct);
+
+            await _db.SaveChangesAsync(ct);
+            await transaction.CommitAsync(ct);
+        }
+        catch
+        {
+            if (objectKey is not null) TryDeleteFile(objectKey);
+            throw;
+        }
+
         return await GetByIdAsync(delegationId, ct);
     }
 
-    public async Task<DelegationResponseDto> RequestReworkAsync(long delegationId, RequestTaskReworkRequestDto dto, CancellationToken ct = default)
+    /// <summary>Adds (tracked, not yet saved) the assignee's review/rework decision attachment. Returns the object key for cleanup-on-failure.</summary>
+    private async Task<string> AddReviewAttachmentAsync(long delegationId, string purpose, int reviewCycleNumber, IFormFile file, byte[] bytes, DateTime now, CancellationToken ct)
     {
-        var entity = await RequireDelegationAsync(delegationId, ct);
-        await _taskReview.RequestReworkAsync(entity.EaTaskId, dto, ct);
-        return await GetByIdAsync(delegationId, ct);
+        var objectKey = await WriteDelegationAttachmentAsync("DelegationReview", delegationId, bytes, ct);
+        var actor = Actor();
+        _db.Attachments.Add(new Attachment
+        {
+            RelatedModule = AttachmentRelatedModule,
+            RelatedEntity = AttachmentRelatedEntity,
+            RelatedEntityId = delegationId.ToString(CultureInfo.InvariantCulture),
+            OriginalFileName = Path.GetFileName(file.FileName.Replace('\\', '/')),
+            ObjectKey = objectKey,
+            ContentType = "application/pdf",
+            Size = bytes.LongLength,
+            AccessUrl = null, // no storage path is exposed; download via GET /api/ea/documents/{attachmentId}/download
+            UploadedBy = actor,
+            UploadedAt = now,
+            Metadata = $"{{\"purpose\":\"{purpose}\",\"delegationId\":{delegationId},\"reviewCycleNumber\":{reviewCycleNumber}}}",
+            IsActive = true,
+            IsDeleted = false,
+            CreatedBy = actor,
+            CreatedDate = now
+        });
+        return objectKey;
     }
 
     public async Task<List<TaskReviewHistoryItemDto>> GetReviewHistoryAsync(long delegationId, CancellationToken ct = default)
     {
         var entity = await RequireDelegationAsync(delegationId, ct);
-        return await _taskReview.GetHistoryAsync(entity.EaTaskId, ct);
+        var history = await _taskReview.GetHistoryAsync(entity.EaTaskId, ct);
+        var reviewAttachmentIds = await LoadReviewAttachmentIdsAsync(new[] { delegationId }, ct);
+        foreach (var cycle in history)
+            cycle.AttachmentId = reviewAttachmentIds.TryGetValue((delegationId, cycle.ReviewCycleNumber), out var id) ? id : null;
+        return history;
     }
 
     private async Task<Delegation> RequireDelegationAsync(long delegationId, CancellationToken ct) =>
@@ -598,7 +763,11 @@ public class DelegationService : IDelegationService
     {
         var tat = await LoadTatViewAsync(entity, ct);
         var review = await _taskReview.GetCurrentAsync(entity.EaTaskId, ct);
-        return ToDto(entity, sourceModuleName, completionPdfAttachmentId, tat, review);
+        if (review.ReviewCycleNumber > 0)
+            ApplyReviewAttachment(review, entity.Id, await LoadReviewAttachmentIdsAsync(new[] { entity.Id }, ct));
+        var workflowInstanceId = await _db.Tasks.AsNoTracking().Where(t => t.Id == entity.EaTaskId).Select(t => t.WorkflowInstanceId).FirstAsync(ct);
+        var phaseTat = await BuildPhaseTatAsync(entity.Id, workflowInstanceId, ct);
+        return ToDto(entity, sourceModuleName, completionPdfAttachmentId, tat, review, phaseTat);
     }
 
     /// <summary>Returns the Delegation's pause anchor, creating and linking it on first use.</summary>
@@ -757,35 +926,248 @@ public class DelegationService : IDelegationService
         });
     }
 
+    // ============================================================
+    // PER-PHASE TAT (Actual / Review N / Rework N) — each phase has its own TAT window and its own
+    // Allotted/Used/Paused/PauseCount, resolved against its own (DelegationType, TaskType) TAT Rule.
+    // See DelegationPhaseTat's own doc comment for the full model. Reuses TatSummaryCalculator
+    // verbatim (never a second pause-math implementation), just scoped to each phase's own window —
+    // GetPausedDuration already clips any pause to whatever [start, end) it is given.
+    // ============================================================
+
+    /// <summary>
+    /// Soft lookup: null (no TAT for this phase) when nothing is configured, not an error — unlike the
+    /// Actual phase's rule, which is a hard requirement enforced once at Delegation creation, a
+    /// missing Review/Rework rule must never block Approve/Rework from proceeding.
+    /// </summary>
+    private async Task<(int? AllottedTatMinutes, long? TatRuleId)> ResolvePhaseTatAsync(long moduleId, string? delegationType, string taskType, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(delegationType)) return (null, null);
+        var applicable = await _tatRules.GetApplicableByTypeOnlyAsync(moduleId, delegationType, taskType, ct);
+        return applicable.Count == 1 ? (applicable[0].TatMinutes, applicable[0].Id) : (null, null);
+    }
+
+    /// <summary>Opens (tracked, not yet saved) a new phase, resolving its own TAT rule fresh.</summary>
+    private async Task OpenPhaseAsync(long delegationId, long moduleId, string? delegationType, string taskType, int reviewCycleNumber, DateTime now, CancellationToken ct)
+    {
+        var (allotted, ruleId) = await ResolvePhaseTatAsync(moduleId, delegationType, taskType, ct);
+        var actor = Actor();
+        _db.DelegationPhaseTats.Add(new DelegationPhaseTat
+        {
+            DelegationId = delegationId, TaskType = taskType, ReviewCycleNumber = reviewCycleNumber,
+            StartedAt = now, AllottedTatMinutes = allotted, TatRuleId = ruleId,
+            CreatedBy = actor, CreatedDate = now
+        });
+    }
+
+    private async Task RequireNoOpenPauseAsync(long? workflowInstanceId, CancellationToken ct)
+    {
+        if (workflowInstanceId.HasValue && await _db.WorkPauses.AnyAsync(p =>
+            p.WorkflowInstanceId == workflowInstanceId && !p.IsDeleted && p.EndAt == null, ct))
+            throw new BusinessRuleException("Resume or continue open pauses/waiting before a phase transition.");
+    }
+
+    private async Task<DelegationPhaseTat> RequireReviewPhaseAsync(Delegation entity, CancellationToken ct)
+    {
+        var review = await _db.TaskReviews.AsNoTracking().Where(r => r.EaTaskId == entity.EaTaskId)
+            .OrderByDescending(r => r.ReviewCycleNo).FirstOrDefaultAsync(ct);
+        if (review is null || review.ReviewStatus != TaskReviewStatus.PendingReview)
+            throw new BusinessRuleException("A pending review is required for this transition.");
+        return await RequireOpenPhaseAsync(entity.Id, DelegationTaskType.Review, review.ReviewCycleNo, ct);
+    }
+
+    private async Task<DelegationPhaseTat> RequireOpenPhaseAsync(long delegationId, string taskType, int cycle, CancellationToken ct)
+    {
+        var phases = await _db.DelegationPhaseTats.Where(p => p.DelegationId == delegationId && p.EndedAt == null)
+            .Take(2).ToListAsync(ct);
+        if (phases.Count != 1 || phases[0].TaskType != taskType || phases[0].ReviewCycleNumber != cycle)
+            throw new BusinessRuleException($"Delegation phase data is inconsistent: expected exactly one open {taskType} phase for cycle {cycle}. Historical data requires explicit repair.");
+        return phases[0];
+    }
+
+    private async Task ClosePhaseAsync(DelegationPhaseTat phase, long? workflowInstanceId, DateTime now, CancellationToken ct)
+    {
+        var pauses = PausesOverlapping(await LoadDelegationWorkPausesAsync(workflowInstanceId, ct), phase.StartedAt, now);
+        var summary = TatSummaryCalculator.Calculate(phase.AllottedTatMinutes ?? 0, phase.StartedAt, now, pauses, now);
+        phase.EndedAt = now;
+        phase.TatUsedMinutes = phase.AllottedTatMinutes.HasValue ? (int)summary.Tat!.Value.TotalMinutes : null;
+        phase.TatPausedMinutes = (int)summary.PauseTime.TotalMinutes;
+        phase.TatUsedSeconds = phase.AllottedTatMinutes.HasValue ? DurationSeconds(summary.Tat!.Value) : null;
+        phase.TatPausedSeconds = DurationSeconds(summary.PauseTime);
+        phase.PauseCount = summary.PauseCount;
+        phase.ModifiedBy = Actor();
+        phase.ModifiedDate = now;
+        // Release the single-open-phase index entry before inserting the successor, within the same transaction.
+        await _db.SaveChangesAsync(ct);
+    }
+
+    private async Task<List<WorkPause>> LoadDelegationWorkPausesAsync(long? workflowInstanceId, CancellationToken ct) =>
+        workflowInstanceId.HasValue
+            ? await _db.WorkPauses.AsNoTracking().Where(p => p.WorkflowInstanceId == workflowInstanceId && !p.IsDeleted).ToListAsync(ct)
+            : new List<WorkPause>();
+
+    /// <summary>Simple pauses overlapping [start, windowEnd) — an open pause (EndAt null) always overlaps since it has no upper bound yet.</summary>
+    private static List<WorkPause> PausesOverlapping(IReadOnlyCollection<WorkPause> pauses, DateTime start, DateTime windowEnd) =>
+        pauses.Where(p => WorkPauseClassifier.IsSimplePause(p) && p.StartAt < windowEnd && (p.EndAt ?? DateTime.MaxValue) > start).ToList();
+
+    /// <summary>Every phase this Delegation has been through, oldest first, frozen phases as stored and the current open one (if any) computed live.</summary>
+    private async Task<List<DelegationPhaseTatDto>> BuildPhaseTatAsync(long delegationId, long? workflowInstanceId, CancellationToken ct)
+    {
+        var phases = await _db.DelegationPhaseTats.AsNoTracking()
+            .Where(p => p.DelegationId == delegationId).OrderBy(p => p.Id).ToListAsync(ct);
+        if (phases.Count == 0) return new();
+        var pauses = await LoadDelegationWorkPausesAsync(workflowInstanceId, ct);
+        var now = Clock.UtcNowTz;
+        return phases.Select(p => ToPhaseTatDto(p, pauses, now)).ToList();
+    }
+
+    /// <summary>Batched version of BuildPhaseTatAsync for the register page — one query for every Delegation's phases, tasks and pauses, no per-row lookups.</summary>
+    private async Task<Dictionary<long, List<DelegationPhaseTatDto>>> BuildPhaseTatBatchAsync(IReadOnlyCollection<Delegation> delegations, CancellationToken ct)
+    {
+        var delegationIds = delegations.Select(d => d.Id).ToList();
+        if (delegationIds.Count == 0) return new();
+        var phases = await _db.DelegationPhaseTats.AsNoTracking()
+            .Where(p => delegationIds.Contains(p.DelegationId)).OrderBy(p => p.Id).ToListAsync(ct);
+        if (phases.Count == 0) return new();
+
+        var eaTaskIds = delegations.Select(d => d.EaTaskId).Distinct().ToList();
+        var workflowIdByEaTaskId = await _db.Tasks.AsNoTracking().Where(t => eaTaskIds.Contains(t.Id))
+            .Select(t => new { t.Id, t.WorkflowInstanceId }).ToDictionaryAsync(t => t.Id, t => t.WorkflowInstanceId, ct);
+        var eaTaskIdByDelegation = delegations.ToDictionary(d => d.Id, d => d.EaTaskId);
+
+        var workflowIds = workflowIdByEaTaskId.Values.Where(w => w.HasValue).Select(w => w!.Value).Distinct().ToList();
+        var pausesByWorkflow = workflowIds.Count == 0
+            ? new Dictionary<long, List<WorkPause>>()
+            : (await _db.WorkPauses.AsNoTracking()
+                .Where(p => p.WorkflowInstanceId != null && workflowIds.Contains(p.WorkflowInstanceId.Value) && !p.IsDeleted)
+                .ToListAsync(ct)).GroupBy(p => p.WorkflowInstanceId!.Value).ToDictionary(g => g.Key, g => g.ToList());
+
+        var now = Clock.UtcNowTz;
+        return phases.GroupBy(p => p.DelegationId).ToDictionary(g => g.Key, g =>
+        {
+            var workflowId = eaTaskIdByDelegation.TryGetValue(g.Key, out var eaTaskId) ? workflowIdByEaTaskId.GetValueOrDefault(eaTaskId) : null;
+            var pauses = workflowId.HasValue && pausesByWorkflow.TryGetValue(workflowId.Value, out var p) ? p : new List<WorkPause>();
+            return g.Select(phase => ToPhaseTatDto(phase, pauses, now)).ToList();
+        });
+    }
+
+    private static DelegationPhaseTatDto ToPhaseTatDto(DelegationPhaseTat phase, IReadOnlyCollection<WorkPause> pauses, DateTime now)
+    {
+        if (phase.EndedAt.HasValue)
+        {
+            return new DelegationPhaseTatDto
+            {
+                TaskType = phase.TaskType, ReviewCycleNumber = phase.ReviewCycleNumber,
+                StartedAt = phase.StartedAt, EndedAt = phase.EndedAt,
+                AllottedTatMinutes = phase.AllottedTatMinutes, TatUsedMinutes = phase.TatUsedMinutes,
+                TatPausedMinutes = phase.TatPausedMinutes, PauseCount = phase.PauseCount,
+                TatUsedSeconds = phase.TatUsedSeconds, TatPausedSeconds = phase.TatPausedSeconds,
+                TatDifferenceSeconds = phase.AllottedTatMinutes.HasValue && phase.TatUsedSeconds.HasValue
+                    ? phase.AllottedTatMinutes.Value * 60m - phase.TatUsedSeconds.Value : null,
+                TatDifferenceMinutes = phase.AllottedTatMinutes.HasValue && phase.TatUsedMinutes.HasValue
+                    ? phase.AllottedTatMinutes - phase.TatUsedMinutes : null,
+            };
+        }
+        // The current, still-open phase — live-ticking, same formula, window end is "now" instead of a frozen EndedAt.
+        var relevant = PausesOverlapping(pauses, phase.StartedAt, now);
+        var summary = TatSummaryCalculator.Calculate(phase.AllottedTatMinutes ?? 0, phase.StartedAt, null, relevant, now);
+        int? used = phase.AllottedTatMinutes.HasValue ? (int)summary.Tat!.Value.TotalMinutes : null;
+        decimal? usedSeconds = phase.AllottedTatMinutes.HasValue ? DurationSeconds(summary.Tat!.Value) : null;
+        return new DelegationPhaseTatDto
+        {
+            TaskType = phase.TaskType, ReviewCycleNumber = phase.ReviewCycleNumber,
+            StartedAt = phase.StartedAt, EndedAt = null,
+            AllottedTatMinutes = phase.AllottedTatMinutes, TatUsedMinutes = used,
+            TatPausedMinutes = (int)summary.PauseTime.TotalMinutes, PauseCount = summary.PauseCount,
+            TatUsedSeconds = usedSeconds, TatPausedSeconds = DurationSeconds(summary.PauseTime),
+            TatDifferenceSeconds = phase.AllottedTatMinutes.HasValue && usedSeconds.HasValue
+                ? phase.AllottedTatMinutes.Value * 60m - usedSeconds.Value : null,
+            TatDifferenceMinutes = phase.AllottedTatMinutes.HasValue && used.HasValue ? phase.AllottedTatMinutes - used : null,
+        };
+    }
+
+    // Decimal tick conversion avoids floating-point loss and retains TimeSpan's 100 ns precision.
+    private static decimal DurationSeconds(TimeSpan duration) => duration.Ticks / (decimal)TimeSpan.TicksPerSecond;
+
     private static long? PdfId(Dictionary<long, long> ids, long delegationId) => ids.TryGetValue(delegationId, out var id) ? id : null;
 
-    /// <summary>Latest completion-PDF attachment id per Delegation, in one query.</summary>
-    private async Task<Dictionary<long, long>> LoadCompletionPdfIdsAsync(IReadOnlyCollection<long> delegationIds, CancellationToken ct)
+    /// <summary>One ea_attachments row tied to a Delegation, with its purpose/reviewCycleNumber already parsed out of Metadata.</summary>
+    private sealed record DelegationAttachmentRow(long Id, long DelegationId, string? Purpose, int? ReviewCycleNumber);
+
+    /// <summary>
+    /// Every active ea_attachments row for the given Delegations, in one query — completion PDFs and
+    /// review/rework attachments alike (they share the same RelatedModule/RelatedEntity/RelatedEntityId
+    /// triple; only Metadata.purpose tells them apart, exactly like DocumentRegisterService's own
+    /// classification). Callers filter by Purpose for the specific kind they need.
+    /// </summary>
+    private async Task<List<DelegationAttachmentRow>> LoadDelegationAttachmentRowsAsync(IReadOnlyCollection<long> delegationIds, CancellationToken ct)
     {
         if (delegationIds.Count == 0) return new();
         var keys = delegationIds.Select(i => i.ToString(CultureInfo.InvariantCulture)).ToList();
         var rows = await _db.Attachments.AsNoTracking()
             .Where(a => a.RelatedModule == AttachmentRelatedModule && a.RelatedEntity == AttachmentRelatedEntity
                 && a.RelatedEntityId != null && keys.Contains(a.RelatedEntityId) && a.IsActive && !a.IsDeleted)
-            .Select(a => new { a.Id, a.RelatedEntityId }).ToListAsync(ct);
-        return rows.GroupBy(r => long.Parse(r.RelatedEntityId!, CultureInfo.InvariantCulture))
+            .Select(a => new { a.Id, a.RelatedEntityId, a.Metadata })
+            .ToListAsync(ct);
+        return rows.Select(r =>
+        {
+            var (purpose, cycle) = ParseAttachmentMetadata(r.Metadata);
+            return new DelegationAttachmentRow(r.Id, long.Parse(r.RelatedEntityId!, CultureInfo.InvariantCulture), purpose, cycle);
+        }).ToList();
+    }
+
+    /// <summary>Same best-effort JSON-metadata reading DocumentRegisterService uses — malformed/missing Metadata just yields nulls, never throws.</summary>
+    private static (string? Purpose, int? ReviewCycleNumber) ParseAttachmentMetadata(string? metadata)
+    {
+        if (string.IsNullOrWhiteSpace(metadata)) return (null, null);
+        try
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(metadata);
+            var purpose = doc.RootElement.TryGetProperty("purpose", out var p) ? p.GetString() : null;
+            var cycle = doc.RootElement.TryGetProperty("reviewCycleNumber", out var c) && c.TryGetInt32(out var n) ? (int?)n : null;
+            return (purpose, cycle);
+        }
+        catch (System.Text.Json.JsonException) { return (null, null); }
+    }
+
+    private static Dictionary<long, long> LatestIdPerDelegation(IEnumerable<DelegationAttachmentRow> rows) =>
+        rows.GroupBy(r => r.DelegationId).ToDictionary(g => g.Key, g => g.Max(r => r.Id));
+
+    /// <summary>Latest completion-PDF attachment id per Delegation.</summary>
+    private async Task<Dictionary<long, long>> LoadCompletionPdfIdsAsync(IReadOnlyCollection<long> delegationIds, CancellationToken ct) =>
+        LatestIdPerDelegation((await LoadDelegationAttachmentRowsAsync(delegationIds, ct)).Where(r => r.Purpose == CompletionPdfPurpose));
+
+    /// <summary>Latest review/rework decision attachment id per (Delegation, review cycle) — approve and rework share one id space per cycle since a cycle is only ever one or the other.</summary>
+    private async Task<Dictionary<(long DelegationId, int Cycle), long>> LoadReviewAttachmentIdsAsync(IReadOnlyCollection<long> delegationIds, CancellationToken ct)
+    {
+        var rows = await LoadDelegationAttachmentRowsAsync(delegationIds, ct);
+        return rows.Where(r => (r.Purpose == ReviewAttachmentPurpose || r.Purpose == ReworkAttachmentPurpose) && r.ReviewCycleNumber.HasValue)
+            .GroupBy(r => (r.DelegationId, Cycle: r.ReviewCycleNumber!.Value))
             .ToDictionary(g => g.Key, g => g.Max(r => r.Id));
+    }
+
+    /// <summary>Sets review.AttachmentId from the batch loaded above, for a single delegation's current cycle. No-op when never submitted (cycle 0).</summary>
+    private static void ApplyReviewAttachment(TaskReviewSummaryDto? review, long delegationId, Dictionary<(long DelegationId, int Cycle), long> reviewAttachmentIds)
+    {
+        if (review is null || review.ReviewCycleNumber <= 0) return;
+        review.AttachmentId = reviewAttachmentIds.TryGetValue((delegationId, review.ReviewCycleNumber), out var id) ? id : null;
     }
 
     /// <summary>
     /// Same rules as Meeting's completionPdf (MeetingCompletionFileStore.ValidateAsync): non-empty, at most 25 MiB,
-    /// .pdf and application/pdf, %PDF- signature and a readable document with at least one page.
+    /// .pdf and application/pdf, %PDF- signature and a readable document with at least one page. Shared by the
+    /// completion PDF and the review/rework decision attachment — all three are optional PDF uploads with
+    /// identical validation, just stored under a different purpose/folder.
     /// </summary>
     private static async Task<byte[]> ReadValidatedPdfAsync(IFormFile file, CancellationToken ct)
     {
         if (file.Length <= 0 || file.Length > MaxCompletionPdfBytes)
-            throw new BusinessRuleException("A nonempty completion PDF of at most 25 MiB is required.");
+            throw new BusinessRuleException("A nonempty PDF attachment of at most 25 MiB is required.");
         var originalFileName = Path.GetFileName(file.FileName?.Replace('\\', '/') ?? string.Empty);
         if (string.IsNullOrWhiteSpace(originalFileName) || originalFileName.Length > 500)
-            throw new BusinessRuleException("Completion PDF filename must contain 1 to 500 characters.");
+            throw new BusinessRuleException("PDF attachment filename must contain 1 to 500 characters.");
         if (!string.Equals(Path.GetExtension(originalFileName), ".pdf", StringComparison.OrdinalIgnoreCase)
             || !string.Equals(file.ContentType, "application/pdf", StringComparison.OrdinalIgnoreCase))
-            throw new BusinessRuleException("Completion file must be a PDF.");
+            throw new BusinessRuleException("Attachment must be a PDF.");
 
         await using var input = file.OpenReadStream();
         using var buffer = new MemoryStream();
@@ -793,22 +1175,22 @@ public class DelegationService : IDelegationService
         int count;
         while ((count = await input.ReadAsync(chunk, ct)) != 0)
         {
-            if (buffer.Length + count > MaxCompletionPdfBytes) throw new BusinessRuleException("Completion PDF exceeds 25 MiB.");
+            if (buffer.Length + count > MaxCompletionPdfBytes) throw new BusinessRuleException("PDF attachment exceeds 25 MiB.");
             await buffer.WriteAsync(chunk.AsMemory(0, count), ct);
         }
         var bytes = buffer.ToArray();
         if (bytes.Length < 5 || !bytes.AsSpan(0, 5).SequenceEqual("%PDF-"u8))
-            throw new BusinessRuleException("Completion PDF signature is invalid.");
+            throw new BusinessRuleException("PDF attachment signature is invalid.");
         try { using var pdf = UglyToad.PdfPig.PdfDocument.Open(bytes); if (pdf.NumberOfPages < 1) throw new InvalidDataException(); }
         catch (Exception ex) when (ex is not OperationCanceledException)
-        { throw new BusinessRuleException("Completion file is not a readable PDF."); }
+        { throw new BusinessRuleException("Attachment is not a readable PDF."); }
         return bytes;
     }
 
-    /// <summary>Writes the PDF to Content/DelegationCompletion/{delegationId}/ and returns the relative object key. Removes a partial file on failure.</summary>
-    private async Task<string> WriteCompletionPdfAsync(long delegationId, byte[] content, CancellationToken ct)
+    /// <summary>Writes the PDF to Content/{subfolder}/{delegationId}/ and returns the relative object key. Removes a partial file on failure.</summary>
+    private async Task<string> WriteDelegationAttachmentAsync(string subfolder, long delegationId, byte[] content, CancellationToken ct)
     {
-        var key = $"Content/DelegationCompletion/{delegationId.ToString(CultureInfo.InvariantCulture)}/{Guid.NewGuid():N}.pdf";
+        var key = $"Content/{subfolder}/{delegationId.ToString(CultureInfo.InvariantCulture)}/{Guid.NewGuid():N}.pdf";
         var absolute = ResolveStoragePath(key);
         Directory.CreateDirectory(Path.GetDirectoryName(absolute)!);
         try
@@ -915,13 +1297,28 @@ public class DelegationService : IDelegationService
             .Take(pageSize)
             .ToListAsync(ct);
 
-        // One batched lookup for the page (no per-row query).
-        var pdfIds = await LoadCompletionPdfIdsAsync(items.Where(d => d.Status == DelegationStatus.Completed).Select(d => d.Id).ToList(), ct);
+        // One batched attachment lookup for the whole page (no per-row query) — completion PDFs and
+        // review/rework decision attachments both come out of it. Not gated to Completed rows: Complete
+        // now uploads the PDF and opens a review cycle while the Delegation is still InProgress
+        // ("Pending Review"), so the document must already be visible before the assignee approves it.
+        var delegationIds = items.Select(d => d.Id).ToList();
+        var attachmentRows = await LoadDelegationAttachmentRowsAsync(delegationIds, ct);
+        var pdfIds = LatestIdPerDelegation(attachmentRows.Where(r => r.Purpose == CompletionPdfPurpose));
+        var reviewAttachmentIds = attachmentRows
+            .Where(r => (r.Purpose == ReviewAttachmentPurpose || r.Purpose == ReworkAttachmentPurpose) && r.ReviewCycleNumber.HasValue)
+            .GroupBy(r => (DelegationId: r.DelegationId, Cycle: r.ReviewCycleNumber!.Value))
+            .ToDictionary(g => g.Key, g => g.Max(r => r.Id));
         var tatViews = await LoadTatViewsAsync(items, ct);
         var reviewSummaries = await _taskReview.BatchGetCurrentAsync(items.Select(d => d.EaTaskId).Distinct().ToList(), ct) ?? new();
+        var phaseTatByDelegation = await BuildPhaseTatBatchAsync(items, ct);
         return new PagedResult<DelegationResponseDto>
         {
-            Items = items.Select(d => ToDto(d, d.SourceBusinessModule?.Name, PdfId(pdfIds, d.Id), tatViews.GetValueOrDefault(d.EaTaskId), reviewSummaries.GetValueOrDefault(d.EaTaskId))).ToArray(),
+            Items = items.Select(d =>
+            {
+                var review = reviewSummaries.GetValueOrDefault(d.EaTaskId);
+                ApplyReviewAttachment(review, d.Id, reviewAttachmentIds);
+                return ToDto(d, d.SourceBusinessModule?.Name, PdfId(pdfIds, d.Id), tatViews.GetValueOrDefault(d.EaTaskId), review, phaseTatByDelegation.GetValueOrDefault(d.Id));
+            }).ToArray(),
             PageNumber = page,
             PageSize = pageSize,
             TotalCount = totalCount
@@ -1060,7 +1457,7 @@ public class DelegationService : IDelegationService
             throw new BadRequestException($"view '{view}' conflicts with status '{status}' (Completed is excluded from {view}).");
     }
 
-    private static DelegationResponseDto ToDto(Delegation d, string? sourceModuleName, long? completionPdfAttachmentId = null, DelegationTatView? tat = null, TaskReviewSummaryDto? reviewSummary = null)
+    private static DelegationResponseDto ToDto(Delegation d, string? sourceModuleName, long? completionPdfAttachmentId = null, DelegationTatView? tat = null, TaskReviewSummaryDto? reviewSummary = null, List<DelegationPhaseTatDto>? phaseTat = null)
     {
         var today = IndiaBusinessCalendar.Today;
         // Compiled from the exact same expressions used for the register view filter and
@@ -1111,6 +1508,7 @@ public class DelegationService : IDelegationService
             TatPausedMinutes = tat?.TatPausedMinutes,
             TatSummary = tat?.TatSummary ?? NoTatSummary(),
             ReviewSummary = reviewSummary ?? new TaskReviewSummaryDto(),
+            PhaseTat = phaseTat ?? new List<DelegationPhaseTatDto>(),
 
             IsDueToday = isDueToday,
             IsOverdue = isOverdue,

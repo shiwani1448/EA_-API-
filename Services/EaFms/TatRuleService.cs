@@ -46,17 +46,25 @@ public class TatRuleService(EaFmsDbContext db, ITatRuleRepository repository,
             throw new BadRequestException("Subtype is required for this module.");
         if (subtype is not null && typeOnlyModule)
             throw new BadRequestException($"{module.Name} TAT rules are classified by Type only; Subtype must be omitted.");
+        // TaskType is the inverse of Subtype: required for Delegation (its rules are Type + TaskType), forbidden
+        // everywhere else. Format (one of Actual/Review/Rework) was already checked by the validator.
+        var taskType = string.IsNullOrWhiteSpace(dto.TaskType) ? null : dto.TaskType.Trim();
+        if (taskType is null && typeOnlyModule)
+            throw new BadRequestException("TaskType is required for Delegation TAT rules.");
+        if (taskType is not null && !typeOnlyModule)
+            throw new BadRequestException($"{module.Name} TAT rules do not use TaskType; it must be omitted.");
         if (dto.IsActive == true && subtype is not null && await db.TatRules.AnyAsync(x => x.BusinessModuleId == dto.ModuleId
             && x.Type != null && x.Subtype != null && TatClassification.TrimForMatch(x.Type).ToLower() == typeKey && TatClassification.TrimForMatch(x.Subtype).ToLower() == subtypeKey
             && x.IsActive && !x.IsDeleted && (!id.HasValue || x.Id != id.Value), ct))
             throw new BusinessRuleException("An active TAT rule already exists for this module/type/subtype combination.");
-        // Type-only rules (Delegation) have no partial unique index; the lookup's LIMIT 2 ambiguity check is the
-        // safety net, this is the friendly pre-check.
+        // The normalized Delegation partial unique index protects concurrent saves; this is the friendly pre-check. Classification is now Type + TaskType (e.g. "Follow-up" +
+        // "Review" is a distinct rule from "Follow-up" + "Actual"), so the duplicate check matches on both.
         if (dto.IsActive == true && subtype is null && await db.TatRules.AnyAsync(x => x.BusinessModuleId == dto.ModuleId
             && x.Type != null && TatClassification.TrimForMatch(x.Type).ToLower() == typeKey
+            && x.TaskType != null && x.TaskType.Trim().ToLower() == taskType!.ToLower()
             && (x.Subtype == null || TatClassification.TrimForMatch(x.Subtype) == "")
             && x.IsActive && !x.IsDeleted && (!id.HasValue || x.Id != id.Value), ct))
-            throw new BusinessRuleException("An active TAT rule already exists for this module/type combination.");
+            throw new BusinessRuleException("An active TAT rule already exists for this module/type/taskType combination.");
 
         var actor = EaActorSnapshot.From(dto.EmployeeId, dto.EmployeeName);
         var actorDisplay = actor.DisplayName ?? user.UserId.ToString(CultureInfo.InvariantCulture);
@@ -64,11 +72,12 @@ public class TatRuleService(EaFmsDbContext db, ITatRuleRepository repository,
         var rule = id.HasValue
             ? await repository.GetForUpdateAsync(id.Value, ct) ?? throw new NotFoundException($"TAT rule {id} not found.")
             : new TatRule { CreatedBy = actorDisplay, CreatedByEmployeeId = actor.EmployeeId, CreatedByEmployeeName = actor.EmployeeName, CreatedDate = now };
-        var previous = id.HasValue ? new { rule.BusinessModuleId, rule.Type, rule.Subtype, rule.TatMinutes, rule.IsActive } : null;
+        var previous = id.HasValue ? new { rule.BusinessModuleId, rule.Type, rule.Subtype, rule.TaskType, rule.TatMinutes, rule.IsActive } : null;
         rule.BusinessModuleId = dto.ModuleId;
         rule.ModuleName = module.Name;
         rule.Type = type;
         rule.Subtype = subtype;
+        rule.TaskType = taskType;
         rule.TatMinutes = dto.TatMinutes;
         rule.IsActive = dto.IsActive!.Value;
         if (id.HasValue)
@@ -82,7 +91,7 @@ public class TatRuleService(EaFmsDbContext db, ITatRuleRepository repository,
             await db.SaveChangesAsync(ct);
             audit.AddAudit(id.HasValue ? "TAT_RULE_UPDATE" : "TAT_RULE_CREATE", "TatRule", nameof(TatRule),
                 rule.Id.ToString(CultureInfo.InvariantCulture), previous,
-                new { rule.BusinessModuleId, rule.Type, rule.Subtype, rule.TatMinutes, rule.IsActive, Actor = actor });
+                new { rule.BusinessModuleId, rule.Type, rule.Subtype, rule.TaskType, rule.TatMinutes, rule.IsActive, Actor = actor });
             await db.SaveChangesAsync(ct);
             await transaction.CommitAsync(ct);
         }
@@ -91,6 +100,11 @@ public class TatRuleService(EaFmsDbContext db, ITatRuleRepository repository,
         {
             throw new BusinessRuleException("An active TAT rule already exists for this module/type/subtype combination.");
         }
+        catch (DbUpdateException ex) when (ex.InnerException is PostgresException
+            { SqlState: PostgresErrorCodes.UniqueViolation, ConstraintName: "UX_ea_tat_rules_ActiveDelegationClassification" })
+        {
+            throw new BusinessRuleException("An active TAT rule already exists for this module/type/taskType combination.");
+        }
         rule.BusinessModule = module;
         return ToDto(rule);
     }
@@ -98,7 +112,7 @@ public class TatRuleService(EaFmsDbContext db, ITatRuleRepository repository,
     private static TatRuleDto ToDto(TatRule rule) => new()
     {
         Id = rule.Id, ModuleId = rule.BusinessModuleId, ModuleName = rule.ModuleName,
-        Type = rule.Type, Subtype = rule.Subtype,
+        Type = rule.Type, Subtype = rule.Subtype, TaskType = rule.TaskType,
         TatMinutes = rule.TatMinutes, IsActive = rule.IsActive,
         CreatedBy = rule.CreatedBy, CreatedByEmployeeId = rule.CreatedByEmployeeId, CreatedByEmployeeName = rule.CreatedByEmployeeName,
         CreatedDate = rule.CreatedDate,

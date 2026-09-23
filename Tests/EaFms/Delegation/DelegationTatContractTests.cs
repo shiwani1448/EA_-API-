@@ -47,7 +47,7 @@ public class DelegationTatContractTests : IClassFixture<ScratchTatDatabase>, IDi
     private DelegationService NewService(EaFmsDbContext db) =>
         new(db, User, new AuditService(db, User), new DelegationRepository(db), NewEaTaskService(db),
             Mock.Of<Microsoft.AspNetCore.Hosting.IWebHostEnvironment>(e => e.ContentRootPath == _root),
-            new TaskReviewService(db, new TaskReviewRepository(db), User, new AuditService(db, User)));
+            new TaskReviewService(db, new TaskReviewRepository(db), User, new AuditService(db, User)), new TatRuleRepository(db));
 
     private async Task<DelegationResponseDto> Run(Func<DelegationService, Task<DelegationResponseDto>> action)
     {
@@ -59,7 +59,7 @@ public class DelegationTatContractTests : IClassFixture<ScratchTatDatabase>, IDi
     {
         var type = Unique("Contract Type");
         await using var db = _fx.Db();
-        db.TatRules.Add(new TatRule { BusinessModuleId = _fx.DelegationModuleId, ModuleName = "Delegation", Type = type, Subtype = null,
+        db.TatRules.Add(new TatRule { BusinessModuleId = _fx.DelegationModuleId, ModuleName = "Delegation", Type = type, Subtype = null, TaskType = DelegationTaskType.Actual,
             TatMinutes = minutes, IsActive = true, CreatedBy = "seed", CreatedDate = DateTime.UtcNow });
         await db.SaveChangesAsync();
         return type;
@@ -255,7 +255,7 @@ public class DelegationTatContractTests : IClassFixture<ScratchTatDatabase>, IDi
         await Run(s => s.ResumeAsync(created.DelegationId));
         await SetPauseWindowAsync(created, 30, 90);
 
-        var completed = await Run(s => s.CompleteAsync(created.DelegationId, Pdf()));
+        var completed = await Run(s => s.CompleteAndApproveAsync(created.DelegationId, Pdf()));
 
         Assert.Equal(DelegationStatus.Completed, completed.Status);
         Assert.Equal(EaTaskExecutionStatus.Completed, completed.ExecutionStatus);
@@ -288,7 +288,7 @@ public class DelegationTatContractTests : IClassFixture<ScratchTatDatabase>, IDi
         var running = await Get(created);
         var paused = await Run(s => s.PauseAsync(created.DelegationId, null));
         var resumed = await Run(s => s.ResumeAsync(created.DelegationId));
-        var completed = await Run(s => s.CompleteAsync(created.DelegationId, null));
+        var completed = await Run(s => s.CompleteAndApproveAsync(created.DelegationId, null));
 
         foreach (var step in new[] { started, running, paused, resumed, completed })
             Assert.Equal((null, null), (step.AllottedTatMinutes, step.TatUsedMinutes));
@@ -306,7 +306,7 @@ public class DelegationTatContractTests : IClassFixture<ScratchTatDatabase>, IDi
         var created = await CreateAsync(type, endDate: IndiaBusinessCalendar.Today.AddDays(-30));   // long past
         await Run(s => s.StartAsync(created.DelegationId));
         await BackdateStartAsync(created, 60);
-        var completed = await Run(s => s.CompleteAsync(created.DelegationId, null));
+        var completed = await Run(s => s.CompleteAndApproveAsync(created.DelegationId, null));
 
         Assert.True(completed.EndDate < DateTime.UtcNow);
         Assert.Equal(60, completed.TatUsedMinutes);                 // measured by TAT ...
@@ -528,7 +528,7 @@ public class DelegationTatContractTests : IClassFixture<ScratchTatDatabase>, IDi
         await Run(s => s.ResumeAsync(created.DelegationId));
         await SetPauseWindowAsync(created, 30, 90);
 
-        var completed = await Run(s => s.CompleteAsync(created.DelegationId, null));
+        var completed = await Run(s => s.CompleteAndApproveAsync(created.DelegationId, null));
 
         Assert.Equal(120, completed.TatUsedMinutes);                                      // stable once Completed
         Assert.Equal(120, (int)completed.TatSummary.Tat!.Value.TotalMinutes);              // matches tatSummary
@@ -571,7 +571,7 @@ public class DelegationTatContractTests : IClassFixture<ScratchTatDatabase>, IDi
         AssertUnavailable(paused);
         var resumed = await Run(s => s.ResumeAsync(created.DelegationId));
         AssertUnavailable(resumed);
-        var completed = await Run(s => s.CompleteAsync(created.DelegationId, null));
+        var completed = await Run(s => s.CompleteAndApproveAsync(created.DelegationId, null));
         AssertUnavailable(completed);
     }
 
