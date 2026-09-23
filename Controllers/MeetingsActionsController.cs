@@ -1,6 +1,7 @@
 using Jarvis5.Data.EaFms;
 using Jarvis5.Dtos.EaFms;
 using Jarvis5.Entities.EaFms;
+using Jarvis5.Services.EaFms;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
@@ -49,20 +50,7 @@ public class MeetingsActionsController : ControllerBase
         if (m is null) return NotFound();
 
         var now = Jarvis5.Common.Clock.UtcNowTz;
-        var a = new MeetingAction
-        {
-            MeetingId = meetingId,
-            Title = dto.Title,
-            Description = dto.Description,
-            DoerId = string.IsNullOrWhiteSpace(dto.DoerId) ? null : dto.DoerId.Trim(),
-            DoerName = dto.DoerName,
-            Priority = string.IsNullOrWhiteSpace(dto.Priority) ? null : dto.Priority.Trim(),
-            DueDate = dto.DueDate,
-            Status = dto.Status,
-            CreatedBy = User?.Identity?.Name ?? string.Empty,
-            CreatedDate = now,
-            IsDeleted = false
-        };
+        var a = MeetingActionFactory.Build(meetingId, dto, User?.Identity?.Name ?? string.Empty, now);
 
         await _context.MeetingActions.AddAsync(a, ct);
         await _context.SaveChangesAsync(ct);
