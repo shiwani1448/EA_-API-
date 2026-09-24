@@ -14,6 +14,11 @@ public interface IApprovalAiService
     /// no history to draw from. Never writes to the database.</summary>
     Task<ApprovalAiApproverSuggestionResponseDto> RecommendApproverAsync(long approvalRequestId, CancellationToken ct = default);
 
+    /// <summary>Writes the given approver (the EA's reviewed/edited choice, not re-derived
+    /// from Claude) onto the real request via ApprovalService.SetApproverAsync. Only allowed
+    /// while PendingApproval or ChangesRequested — 409 otherwise.</summary>
+    Task<ApprovalDetailDto> ApplyRecommendedApproverAsync(long approvalRequestId, ApplyApproverSuggestionRequestDto dto, CancellationToken ct = default);
+
     /// <summary>Preview-only: plain-English narrative built only from this request's own
     /// cycles/history/due-state. Never writes to the database.</summary>
     Task<ApprovalAiStatusSummaryResponseDto> SummarizeStatusAsync(long approvalRequestId, CancellationToken ct = default);

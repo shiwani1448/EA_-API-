@@ -109,7 +109,7 @@ public class ApprovalAiServiceTests
 
     private static ApprovalAiService Service(
         Harness h, Mock<IClaudeClient> claude, Mock<IApprovalAiPromptBuilder> prompts, int maxRetries = 2) =>
-        new(h.Db, MakeServiceProvider(claude.Object), prompts.Object, h.Queries,
+        new(h.Db, MakeServiceProvider(claude.Object), prompts.Object, h.Queries, h.Approvals, new ApprovalAiRepository(h.Db),
             NullLogger<ApprovalAiService>.Instance, Options.Create(new ClaudeOptions { MaxRetries = maxRetries }));
 
     private const string ValidReadinessJson = """{"isLikelyReady":false,"missingFields":["Justification"],"suggestedDocuments":["Invoice or quote"],"notes":"No supporting documents attached."}""";
@@ -134,6 +134,25 @@ public class ApprovalAiServiceTests
         Assert.Contains("Invoice or quote", result.SuggestedDocuments);
         Assert.NotNull(result.WarningMessage);
         Assert.Contains("cannot read the contents", result.WarningMessage, StringComparison.OrdinalIgnoreCase);
+    }
+
+    // Full audit trail: every generated suggestion is logged verbatim into its own
+    // per-module table, mirroring SCIH's separate SCIH_Analysis/SCIH_SolutionDesign tables
+    // — see ApprovalReadinessCheck's own doc comment.
+    [Fact]
+    public async Task CheckReadiness_WritesApprovalReadinessCheckRow()
+    {
+        var h = await NewHarnessAsync();
+        var created = await h.Approvals.CreateAsync(new ApprovalRequest { RequestTitle = "Capex", CreatedBy = "creator" });
+        var (claude, prompts) = Mocks();
+        claude.Setup(c => c.GenerateJsonAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync(ValidReadinessJson);
+
+        await Service(h, claude, prompts).CheckReadinessAsync(created.Id);
+
+        var log = Assert.Single(h.Db.ApprovalReadinessChecks);
+        Assert.Equal(created.Id, log.ApprovalRequestId);
+        Assert.False(log.IsLikelyReady);
+        Assert.Contains("Justification", log.MissingFieldsJson);
     }
 
     [Fact]
@@ -257,6 +276,68 @@ public class ApprovalAiServiceTests
         var h = await NewHarnessAsync();
         var (claude, prompts) = Mocks();
         await Assert.ThrowsAsync<NotFoundException>(() => Service(h, claude, prompts).RecommendApproverAsync(999999));
+    }
+
+    // ============================================================
+    // Apply recommended approver — writes the EA's reviewed/edited choice for real
+    // ============================================================
+
+    [Fact]
+    public async Task ApplyRecommendedApprover_WritesApproverOntoTheRealRequest()
+    {
+        var h = await NewHarnessAsync();
+        var created = await h.Approvals.CreateAsync(new ApprovalRequest { RequestTitle = "Capex", Department = "Ops", CreatedBy = "creator" });
+        var (claude, prompts) = Mocks();
+
+        var result = await Service(h, claude, prompts).ApplyRecommendedApproverAsync(
+            created.Id, new ApplyApproverSuggestionRequestDto { ApproverId = "emp-9", ApproverName = "Priya Sharma" });
+
+        Assert.Equal("Priya Sharma", result.Approver);
+        var persisted = await h.Db.ApprovalRequests.AsNoTracking().SingleAsync(a => a.Id == created.Id);
+        Assert.Equal("emp-9", persisted.ApproverId);
+        Assert.Equal("Priya Sharma", persisted.ApproverName);
+        claude.Verify(c => c.GenerateJsonAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never); // never re-derives, only persists what was sent
+    }
+
+    // Applying links back to whichever recommendation preceded it, marking that row IsApplied.
+    [Fact]
+    public async Task ApplyRecommendedApprover_AfterRecommend_MarksTheSuggestionApplied()
+    {
+        var h = await NewHarnessAsync();
+        var created = await h.Approvals.CreateAsync(new ApprovalRequest { RequestTitle = "Capex", Department = "Ops", CreatedBy = "creator" });
+        var (claude, prompts) = Mocks();
+        await Service(h, claude, prompts).RecommendApproverAsync(created.Id); // no history yet, logs a "no suggestion" row
+
+        await Service(h, claude, prompts).ApplyRecommendedApproverAsync(
+            created.Id, new ApplyApproverSuggestionRequestDto { ApproverId = "emp-9", ApproverName = "Priya Sharma" });
+
+        var suggestion = await h.Db.ApprovalApproverRecommendations.SingleAsync();
+        Assert.True(suggestion.IsApplied);
+        Assert.NotNull(suggestion.AppliedAt);
+        Assert.Equal("Priya Sharma", suggestion.AppliedApproverName);
+        Assert.Equal("emp-9", suggestion.AppliedApproverId);
+    }
+
+    [Fact]
+    public async Task ApplyRecommendedApprover_OnAlreadyApprovedRequest_ThrowsBusinessRuleException()
+    {
+        var h = await NewHarnessAsync();
+        var created = await h.Approvals.CreateAsync(new ApprovalRequest { RequestTitle = "Capex", CreatedBy = "creator" });
+        await h.Lifecycle.ApproveAsync(created.Id, new ApprovalDecisionDto { Comment = "ok" });
+        var (claude, prompts) = Mocks();
+
+        var ex = await Assert.ThrowsAsync<BusinessRuleException>(() => Service(h, claude, prompts).ApplyRecommendedApproverAsync(
+            created.Id, new ApplyApproverSuggestionRequestDto { ApproverName = "Someone" }));
+        Assert.Contains("Approved", ex.Message);
+    }
+
+    [Fact]
+    public async Task ApplyRecommendedApprover_UnknownApproval_ThrowsNotFound()
+    {
+        var h = await NewHarnessAsync();
+        var (claude, prompts) = Mocks();
+        await Assert.ThrowsAsync<NotFoundException>(() => Service(h, claude, prompts).ApplyRecommendedApproverAsync(
+            999999, new ApplyApproverSuggestionRequestDto { ApproverName = "Someone" }));
     }
 
     // ============================================================

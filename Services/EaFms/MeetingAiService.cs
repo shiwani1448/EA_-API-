@@ -112,7 +112,7 @@ public class MeetingAiService : IMeetingAiService
         var aiResult = await GenerateAndParseAsync<MeetingAiExtractionResultDto>(
             systemPrompt, userPrompt, "Meeting action extraction", ct);
 
-        return new MeetingAiAnalysisResponseDto
+        var response = new MeetingAiAnalysisResponseDto
         {
             MeetingId = meetingId,
             ProposedActions = aiResult.ProposedActions
@@ -130,6 +130,8 @@ public class MeetingAiService : IMeetingAiService
             PdfUsed = pdfUsed,
             WarningMessage = warning,
         };
+        await AiSuggestionWriters.LogMeetingActionExtractionAsync(_db, meetingId, response, ct);
+        return response;
     }
 
     public async Task<MeetingAiActionsConfirmResponseDto> ConfirmActionsAsync(
@@ -167,11 +169,16 @@ public class MeetingAiService : IMeetingAiService
             throw;
         }
 
-        return new MeetingAiActionsConfirmResponseDto
+        var response = new MeetingAiActionsConfirmResponseDto
         {
             MeetingId = meetingId,
             CreatedActions = created.Select(a => MeetingActionFactory.ToDto(a, now)).ToList(),
         };
+        // Links this confirmation back to the extraction suggestion it came from — if the EA
+        // never called /ai/actions/extract first (e.g. typed the actions manually), there is
+        // nothing to link and this is a no-op.
+        await AiSuggestionWriters.MarkMeetingActionExtractionAppliedAsync(_db, meetingId, response, ct);
+        return response;
     }
 
     // Same retry-on-malformed-JSON pattern as AnalysisService.GenerateAndParseAsync: reuses

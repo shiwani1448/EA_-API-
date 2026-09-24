@@ -48,6 +48,15 @@ public class ApprovalAiApproverSuggestionResponseDto
     public string? WarningMessage { get; set; }
 }
 
+/// <summary>Request for POST /api/ea/approvals/{approvalRequestId}/ai/recommend-approver/apply.
+/// The EA has reviewed the suggestion (or typed their own choice) and wants it written onto
+/// the real request — this never re-calls Claude, it only persists the value given here.</summary>
+public class ApplyApproverSuggestionRequestDto
+{
+    public string? ApproverId { get; set; }
+    public string ApproverName { get; set; } = string.Empty;
+}
+
 // ============================================================
 // Status summary (preview only — pure narrative over data the request already has)
 // ============================================================

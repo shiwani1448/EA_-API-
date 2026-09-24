@@ -28,6 +28,64 @@ namespace Studio5JarvisMasterApi.Migrations
 
             modelBuilder.HasSequence("ea_travel_no_seq");
 
+            modelBuilder.Entity("Jarvis5.Entities.EaFms.ApprovalApproverRecommendation", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<string>("AppliedApproverId")
+                        .HasColumnType("text");
+
+                    b.Property<string>("AppliedApproverName")
+                        .HasColumnType("text");
+
+                    b.Property<DateTime?>("AppliedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<long>("ApprovalRequestId")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<DateTime>("CreatedDate")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("HistoricalSampleSize")
+                        .HasColumnType("integer");
+
+                    b.Property<bool>("IsApplied")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("Reasoning")
+                        .HasColumnType("text");
+
+                    b.Property<string>("RecommendedApproverName")
+                        .HasColumnType("text");
+
+                    b.Property<string>("WarningMessage")
+                        .HasColumnType("text");
+
+                    b.Property<uint>("xmin")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ApprovalRequestId");
+
+                    b.HasIndex("CreatedDate");
+
+                    b.ToTable("ea_approval_approver_recommendations", "public");
+                });
+
             modelBuilder.Entity("Jarvis5.Entities.EaFms.ApprovalCycle", b =>
                 {
                     b.Property<long>("Id")
@@ -83,6 +141,51 @@ namespace Studio5JarvisMasterApi.Migrations
                         .HasDatabaseName("UX_ea_approval_cycles_ApprovalRequestId_CycleNo");
 
                     b.ToTable("ea_approval_cycles", "public");
+                });
+
+            modelBuilder.Entity("Jarvis5.Entities.EaFms.ApprovalReadinessCheck", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<long>("ApprovalRequestId")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<DateTime>("CreatedDate")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<bool>("IsLikelyReady")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("MissingFieldsJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb");
+
+                    b.Property<string>("Notes")
+                        .HasColumnType("text");
+
+                    b.Property<string>("SuggestedDocumentsJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb");
+
+                    b.Property<string>("WarningMessage")
+                        .HasColumnType("text");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ApprovalRequestId");
+
+                    b.HasIndex("CreatedDate");
+
+                    b.ToTable("ea_approval_readiness_checks", "public");
                 });
 
             modelBuilder.Entity("Jarvis5.Entities.EaFms.ApprovalRequest", b =>
@@ -209,6 +312,46 @@ namespace Studio5JarvisMasterApi.Migrations
                     b.HasIndex("WorkflowStatus");
 
                     b.ToTable("ea_approval_requests", "public");
+                });
+
+            modelBuilder.Entity("Jarvis5.Entities.EaFms.ApprovalStatusSummary", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<long>("ApprovalRequestId")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<DateTime>("CreatedDate")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("CurrentCycleNo")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("DueState")
+                        .HasColumnType("text");
+
+                    b.Property<string>("Summary")
+                        .HasColumnType("text");
+
+                    b.Property<string>("WorkflowStatus")
+                        .HasColumnType("text");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ApprovalRequestId");
+
+                    b.HasIndex("CreatedDate");
+
+                    b.ToTable("ea_approval_status_summaries", "public");
                 });
 
             modelBuilder.Entity("Jarvis5.Entities.EaFms.Attachment", b =>
@@ -429,6 +572,203 @@ namespace Studio5JarvisMasterApi.Migrations
                     b.ToTable("ea_business_modules", "public");
                 });
 
+            modelBuilder.Entity("Jarvis5.Entities.EaFms.CalendarConflictCheck", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<string>("ConflictsJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<DateTime>("CreatedDate")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime>("FromDate")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<bool>("HasConflicts")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("Summary")
+                        .HasColumnType("text");
+
+                    b.Property<DateTime>("ToDate")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("WarningMessage")
+                        .HasColumnType("text");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CreatedDate");
+
+                    b.ToTable("ea_calendar_conflict_checks", "public");
+                });
+
+            modelBuilder.Entity("Jarvis5.Entities.EaFms.CalendarEvent", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<DateTime>("CreatedDate")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(4000)
+                        .HasColumnType("character varying(4000)");
+
+                    b.Property<DateTime?>("EndDateTime")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("EventType")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.Property<bool>("IsAllDay")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("IsCompleted")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("Location")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<string>("ModifiedBy")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<DateTime?>("ModifiedDate")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Notes")
+                        .HasMaxLength(4000)
+                        .HasColumnType("character varying(4000)");
+
+                    b.Property<string>("OrganizerEmployeeId")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("OrganizerName")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("Priority")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<DateTime>("StartDateTime")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("EventType");
+
+                    b.HasIndex("IsDeleted");
+
+                    b.HasIndex("StartDateTime");
+
+                    b.ToTable("ea_calendar_events", "public");
+                });
+
+            modelBuilder.Entity("Jarvis5.Entities.EaFms.CalendarQuickAddSuggestion", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<DateTime?>("AppliedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<long?>("AppliedCalendarEventId")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<DateTime>("CreatedDate")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("InputText")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
+
+                    b.Property<bool>("IsApplied")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("Reasoning")
+                        .HasColumnType("text");
+
+                    b.Property<DateTime?>("SuggestedEndDateTime")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("SuggestedEventType")
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.Property<bool>("SuggestedIsAllDay")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("SuggestedLocation")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<DateTime?>("SuggestedStartDateTime")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("SuggestedTitle")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<string>("WarningMessage")
+                        .HasColumnType("text");
+
+                    b.Property<uint>("xmin")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AppliedCalendarEventId");
+
+                    b.HasIndex("CreatedDate");
+
+                    b.ToTable("ea_calendar_quick_add_suggestions", "public");
+                });
+
             modelBuilder.Entity("Jarvis5.Entities.EaFms.Delegation", b =>
                 {
                     b.Property<long>("Id")
@@ -560,6 +900,163 @@ namespace Studio5JarvisMasterApi.Migrations
                         {
                             t.HasCheckConstraint("CK_ea_delegations_Status", "\"Status\" IN ('Pending', 'InProgress', 'Completed')");
                         });
+                });
+
+            modelBuilder.Entity("Jarvis5.Entities.EaFms.DelegationDelayRiskCheck", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<DateTime>("CreatedDate")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<long>("DelegationId")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("Reasoning")
+                        .HasColumnType("text");
+
+                    b.Property<string>("RiskLevel")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<string>("SuggestedNudgeMessage")
+                        .HasColumnType("text");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CreatedDate");
+
+                    b.HasIndex("DelegationId");
+
+                    b.ToTable("ea_delegation_delay_risk_checks", "public");
+                });
+
+            modelBuilder.Entity("Jarvis5.Entities.EaFms.DelegationDueDatePrediction", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<DateTime?>("AppliedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("AppliedDueDate")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Basis")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<DateTime>("CreatedDate")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<long>("DelegationId")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("Explanation")
+                        .HasColumnType("text");
+
+                    b.Property<bool>("IsApplied")
+                        .HasColumnType("boolean");
+
+                    b.Property<DateTime?>("SuggestedDueDate")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("WarningMessage")
+                        .HasColumnType("text");
+
+                    b.Property<uint>("xmin")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CreatedDate");
+
+                    b.HasIndex("DelegationId");
+
+                    b.ToTable("ea_delegation_due_date_predictions", "public");
+                });
+
+            modelBuilder.Entity("Jarvis5.Entities.EaFms.DelegationOwnerSuggestion", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<DateTime?>("AppliedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("AppliedDoerId")
+                        .HasColumnType("text");
+
+                    b.Property<string>("AppliedDoerName")
+                        .HasColumnType("text");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<DateTime>("CreatedDate")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<long>("DelegationId")
+                        .HasColumnType("bigint");
+
+                    b.Property<int>("HistoricalSampleSize")
+                        .HasColumnType("integer");
+
+                    b.Property<bool>("IsApplied")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("Reasoning")
+                        .HasColumnType("text");
+
+                    b.Property<string>("SuggestedDoerId")
+                        .HasColumnType("text");
+
+                    b.Property<string>("SuggestedDoerName")
+                        .HasColumnType("text");
+
+                    b.Property<string>("WarningMessage")
+                        .HasColumnType("text");
+
+                    b.Property<uint>("xmin")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CreatedDate");
+
+                    b.HasIndex("DelegationId");
+
+                    b.ToTable("ea_delegation_owner_suggestions", "public");
                 });
 
             modelBuilder.Entity("Jarvis5.Entities.EaFms.DelegationPhaseTat", b =>
@@ -1076,6 +1573,45 @@ namespace Studio5JarvisMasterApi.Migrations
                     b.ToTable("ea_followups", "public");
                 });
 
+            modelBuilder.Entity("Jarvis5.Entities.EaFms.FollowupAtRiskCheck", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<DateTime>("CreatedDate")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<long>("FollowupId")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("Reasoning")
+                        .HasColumnType("text");
+
+                    b.Property<string>("RiskLevel")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<string>("SuggestedAction")
+                        .HasColumnType("text");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CreatedDate");
+
+                    b.HasIndex("FollowupId");
+
+                    b.ToTable("ea_followup_at_risk_checks", "public");
+                });
+
             modelBuilder.Entity("Jarvis5.Entities.EaFms.FollowupCycle", b =>
                 {
                     b.Property<long>("Id")
@@ -1129,6 +1665,160 @@ namespace Studio5JarvisMasterApi.Migrations
                         .IsUnique();
 
                     b.ToTable("ea_followup_cycles", "public");
+                });
+
+            modelBuilder.Entity("Jarvis5.Entities.EaFms.FollowupEscalationSuggestion", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<DateTime?>("AppliedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<long?>("AppliedEscalationId")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<DateTime>("CreatedDate")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<long>("FollowupId")
+                        .HasColumnType("bigint");
+
+                    b.Property<bool>("IsApplied")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("Reasoning")
+                        .HasColumnType("text");
+
+                    b.Property<int?>("RecommendedEscalationLevelId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("RecommendedEscalationLevelName")
+                        .HasColumnType("text");
+
+                    b.Property<string>("WarningMessage")
+                        .HasColumnType("text");
+
+                    b.Property<uint>("xmin")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AppliedEscalationId");
+
+                    b.HasIndex("CreatedDate");
+
+                    b.HasIndex("FollowupId");
+
+                    b.ToTable("ea_followup_escalation_suggestions", "public");
+                });
+
+            modelBuilder.Entity("Jarvis5.Entities.EaFms.FollowupReminderSuggestion", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<DateTime?>("AppliedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("AppliedRecipientEmail")
+                        .HasColumnType("text");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<DateTime>("CreatedDate")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<long>("FollowupId")
+                        .HasColumnType("bigint");
+
+                    b.Property<bool>("IsApplied")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("Reasoning")
+                        .HasColumnType("text");
+
+                    b.Property<string>("SuggestedBody")
+                        .HasColumnType("text");
+
+                    b.Property<string>("SuggestedSubject")
+                        .HasColumnType("text");
+
+                    b.Property<string>("WarningMessage")
+                        .HasColumnType("text");
+
+                    b.Property<uint>("xmin")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CreatedDate");
+
+                    b.HasIndex("FollowupId");
+
+                    b.ToTable("ea_followup_reminder_suggestions", "public");
+                });
+
+            modelBuilder.Entity("Jarvis5.Entities.EaFms.FollowupResolutionPrediction", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<string>("Basis")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<DateTime>("CreatedDate")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Explanation")
+                        .HasColumnType("text");
+
+                    b.Property<long>("FollowupId")
+                        .HasColumnType("bigint");
+
+                    b.Property<DateTime?>("PredictedResolutionDate")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("WarningMessage")
+                        .HasColumnType("text");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CreatedDate");
+
+                    b.HasIndex("FollowupId");
+
+                    b.ToTable("ea_followup_resolution_predictions", "public");
                 });
 
             modelBuilder.Entity("Jarvis5.Entities.EaFms.IntakeClassification", b =>
@@ -1508,6 +2198,62 @@ namespace Studio5JarvisMasterApi.Migrations
                     b.HasIndex("Status");
 
                     b.ToTable("ea_meeting_actions", "public");
+                });
+
+            modelBuilder.Entity("Jarvis5.Entities.EaFms.MeetingActionExtraction", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<string>("AppliedActionsJson")
+                        .HasColumnType("jsonb");
+
+                    b.Property<DateTime?>("AppliedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<DateTime>("CreatedDate")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<bool>("IsApplied")
+                        .HasColumnType("boolean");
+
+                    b.Property<long>("MeetingId")
+                        .HasColumnType("bigint");
+
+                    b.Property<bool>("MomUsed")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("PdfUsed")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("ProposedActionsJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb");
+
+                    b.Property<string>("WarningMessage")
+                        .HasColumnType("text");
+
+                    b.Property<uint>("xmin")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CreatedDate");
+
+                    b.HasIndex("MeetingId");
+
+                    b.ToTable("ea_meeting_action_extractions", "public");
                 });
 
             modelBuilder.Entity("Jarvis5.Entities.EaFms.MeetingAgenda", b =>
@@ -2221,6 +2967,38 @@ namespace Studio5JarvisMasterApi.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Jarvis5.Entities.EaFms.TravelChecklistDraft", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<string>("ChecklistItemsJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<DateTime>("CreatedDate")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<long>("TravelRequestId")
+                        .HasColumnType("bigint");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CreatedDate");
+
+                    b.HasIndex("TravelRequestId");
+
+                    b.ToTable("ea_travel_checklist_drafts", "public");
+                });
+
             modelBuilder.Entity("Jarvis5.Entities.EaFms.TravelExpense", b =>
                 {
                     b.Property<long>("Id")
@@ -2402,6 +3180,37 @@ namespace Studio5JarvisMasterApi.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Jarvis5.Entities.EaFms.TravelItineraryDraft", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<DateTime>("CreatedDate")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Itinerary")
+                        .HasColumnType("text");
+
+                    b.Property<long>("TravelRequestId")
+                        .HasColumnType("bigint");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CreatedDate");
+
+                    b.HasIndex("TravelRequestId");
+
+                    b.ToTable("ea_travel_itinerary_drafts", "public");
+                });
+
             modelBuilder.Entity("Jarvis5.Entities.EaFms.TravelLocalTransport", b =>
                 {
                     b.Property<long>("Id")
@@ -2488,6 +3297,109 @@ namespace Studio5JarvisMasterApi.Migrations
 
                             t.HasCheckConstraint("CK_ea_travel_local_transports_EstimatedCost", "\"EstimatedCost\" IS NULL OR \"EstimatedCost\" >= 0");
                         });
+                });
+
+            modelBuilder.Entity("Jarvis5.Entities.EaFms.TravelOptionComparison", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<DateTime?>("AppliedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("AppliedBookingIdsJson")
+                        .HasColumnType("jsonb");
+
+                    b.Property<bool>("CanCreateBooking")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("ComparedOptionsJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<DateTime>("CreatedDate")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<bool>("IsApplied")
+                        .HasColumnType("boolean");
+
+                    b.Property<long>("TravelRequestId")
+                        .HasColumnType("bigint");
+
+                    b.Property<uint>("xmin")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CreatedDate");
+
+                    b.HasIndex("TravelRequestId");
+
+                    b.ToTable("ea_travel_option_comparisons", "public");
+                });
+
+            modelBuilder.Entity("Jarvis5.Entities.EaFms.TravelOptionSuggestion", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<DateTime?>("AppliedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("AppliedBookingIdsJson")
+                        .HasColumnType("jsonb");
+
+                    b.Property<bool>("CanCreateBooking")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<DateTime>("CreatedDate")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<bool>("IsApplied")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("ProposedOptionsJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb");
+
+                    b.Property<long>("TravelRequestId")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("WarningMessage")
+                        .HasColumnType("text");
+
+                    b.Property<uint>("xmin")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CreatedDate");
+
+                    b.HasIndex("TravelRequestId");
+
+                    b.ToTable("ea_travel_option_suggestions", "public");
                 });
 
             modelBuilder.Entity("Jarvis5.Entities.EaFms.TravelRequest", b =>
@@ -3308,6 +4220,15 @@ namespace Studio5JarvisMasterApi.Migrations
                     b.ToTable("ea_workflow_instances", "public");
                 });
 
+            modelBuilder.Entity("Jarvis5.Entities.EaFms.ApprovalApproverRecommendation", b =>
+                {
+                    b.HasOne("Jarvis5.Entities.EaFms.ApprovalRequest", null)
+                        .WithMany()
+                        .HasForeignKey("ApprovalRequestId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("Jarvis5.Entities.EaFms.ApprovalCycle", b =>
                 {
                     b.HasOne("Jarvis5.Entities.EaFms.ApprovalRequest", "ApprovalRequest")
@@ -3319,6 +4240,15 @@ namespace Studio5JarvisMasterApi.Migrations
                     b.Navigation("ApprovalRequest");
                 });
 
+            modelBuilder.Entity("Jarvis5.Entities.EaFms.ApprovalReadinessCheck", b =>
+                {
+                    b.HasOne("Jarvis5.Entities.EaFms.ApprovalRequest", null)
+                        .WithMany()
+                        .HasForeignKey("ApprovalRequestId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("Jarvis5.Entities.EaFms.ApprovalRequest", b =>
                 {
                     b.HasOne("Jarvis5.Entities.EaFms.EaTask", "EaTask")
@@ -3328,6 +4258,23 @@ namespace Studio5JarvisMasterApi.Migrations
                         .IsRequired();
 
                     b.Navigation("EaTask");
+                });
+
+            modelBuilder.Entity("Jarvis5.Entities.EaFms.ApprovalStatusSummary", b =>
+                {
+                    b.HasOne("Jarvis5.Entities.EaFms.ApprovalRequest", null)
+                        .WithMany()
+                        .HasForeignKey("ApprovalRequestId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Jarvis5.Entities.EaFms.CalendarQuickAddSuggestion", b =>
+                {
+                    b.HasOne("Jarvis5.Entities.EaFms.CalendarEvent", null)
+                        .WithMany()
+                        .HasForeignKey("AppliedCalendarEventId")
+                        .OnDelete(DeleteBehavior.Restrict);
                 });
 
             modelBuilder.Entity("Jarvis5.Entities.EaFms.Delegation", b =>
@@ -3346,6 +4293,33 @@ namespace Studio5JarvisMasterApi.Migrations
                     b.Navigation("EaTask");
 
                     b.Navigation("SourceBusinessModule");
+                });
+
+            modelBuilder.Entity("Jarvis5.Entities.EaFms.DelegationDelayRiskCheck", b =>
+                {
+                    b.HasOne("Jarvis5.Entities.EaFms.Delegation", null)
+                        .WithMany()
+                        .HasForeignKey("DelegationId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Jarvis5.Entities.EaFms.DelegationDueDatePrediction", b =>
+                {
+                    b.HasOne("Jarvis5.Entities.EaFms.Delegation", null)
+                        .WithMany()
+                        .HasForeignKey("DelegationId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Jarvis5.Entities.EaFms.DelegationOwnerSuggestion", b =>
+                {
+                    b.HasOne("Jarvis5.Entities.EaFms.Delegation", null)
+                        .WithMany()
+                        .HasForeignKey("DelegationId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("Jarvis5.Entities.EaFms.DelegationPhaseTat", b =>
@@ -3422,6 +4396,15 @@ namespace Studio5JarvisMasterApi.Migrations
                     b.Navigation("WorkflowInstance");
                 });
 
+            modelBuilder.Entity("Jarvis5.Entities.EaFms.FollowupAtRiskCheck", b =>
+                {
+                    b.HasOne("Jarvis5.Entities.EaFms.Followup", null)
+                        .WithMany()
+                        .HasForeignKey("FollowupId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("Jarvis5.Entities.EaFms.FollowupCycle", b =>
                 {
                     b.HasOne("Jarvis5.Entities.EaFms.Followup", "Followup")
@@ -3431,6 +4414,38 @@ namespace Studio5JarvisMasterApi.Migrations
                         .IsRequired();
 
                     b.Navigation("Followup");
+                });
+
+            modelBuilder.Entity("Jarvis5.Entities.EaFms.FollowupEscalationSuggestion", b =>
+                {
+                    b.HasOne("Jarvis5.Entities.EaFms.Escalation", null)
+                        .WithMany()
+                        .HasForeignKey("AppliedEscalationId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("Jarvis5.Entities.EaFms.Followup", null)
+                        .WithMany()
+                        .HasForeignKey("FollowupId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Jarvis5.Entities.EaFms.FollowupReminderSuggestion", b =>
+                {
+                    b.HasOne("Jarvis5.Entities.EaFms.Followup", null)
+                        .WithMany()
+                        .HasForeignKey("FollowupId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Jarvis5.Entities.EaFms.FollowupResolutionPrediction", b =>
+                {
+                    b.HasOne("Jarvis5.Entities.EaFms.Followup", null)
+                        .WithMany()
+                        .HasForeignKey("FollowupId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("Jarvis5.Entities.EaFms.IntakeClassification", b =>
@@ -3499,6 +4514,15 @@ namespace Studio5JarvisMasterApi.Migrations
                         .IsRequired();
 
                     b.Navigation("Meeting");
+                });
+
+            modelBuilder.Entity("Jarvis5.Entities.EaFms.MeetingActionExtraction", b =>
+                {
+                    b.HasOne("Jarvis5.Entities.EaFms.Meeting", null)
+                        .WithMany()
+                        .HasForeignKey("MeetingId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("Jarvis5.Entities.EaFms.MeetingAgenda", b =>
@@ -3578,6 +4602,15 @@ namespace Studio5JarvisMasterApi.Migrations
                     b.Navigation("TravelRequest");
                 });
 
+            modelBuilder.Entity("Jarvis5.Entities.EaFms.TravelChecklistDraft", b =>
+                {
+                    b.HasOne("Jarvis5.Entities.EaFms.TravelRequest", null)
+                        .WithMany()
+                        .HasForeignKey("TravelRequestId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("Jarvis5.Entities.EaFms.TravelExpense", b =>
                 {
                     b.HasOne("Jarvis5.Entities.EaFms.Attachment", "ReceiptAttachment")
@@ -3607,6 +4640,15 @@ namespace Studio5JarvisMasterApi.Migrations
                     b.Navigation("TravelRequest");
                 });
 
+            modelBuilder.Entity("Jarvis5.Entities.EaFms.TravelItineraryDraft", b =>
+                {
+                    b.HasOne("Jarvis5.Entities.EaFms.TravelRequest", null)
+                        .WithMany()
+                        .HasForeignKey("TravelRequestId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("Jarvis5.Entities.EaFms.TravelLocalTransport", b =>
                 {
                     b.HasOne("Jarvis5.Entities.EaFms.TravelRequest", "TravelRequest")
@@ -3616,6 +4658,24 @@ namespace Studio5JarvisMasterApi.Migrations
                         .IsRequired();
 
                     b.Navigation("TravelRequest");
+                });
+
+            modelBuilder.Entity("Jarvis5.Entities.EaFms.TravelOptionComparison", b =>
+                {
+                    b.HasOne("Jarvis5.Entities.EaFms.TravelRequest", null)
+                        .WithMany()
+                        .HasForeignKey("TravelRequestId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Jarvis5.Entities.EaFms.TravelOptionSuggestion", b =>
+                {
+                    b.HasOne("Jarvis5.Entities.EaFms.TravelRequest", null)
+                        .WithMany()
+                        .HasForeignKey("TravelRequestId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("Jarvis5.Entities.EaFms.TravelRequest", b =>

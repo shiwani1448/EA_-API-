@@ -152,4 +152,37 @@ public class ApprovalService
 
         return existing;
     }
+
+    /// <summary>
+    /// Reassigns who should decide this request. There was previously no way to change
+    /// ApproverId/ApproverName once created — Create sets them once, and the only other
+    /// writer (UpdateDraftAsync) only runs while WorkflowStatus is Draft, which the wired
+    /// Create path never reaches. Added specifically so ApprovalAiService's
+    /// recommend-approver suggestion has somewhere real to write to; only allowed before a
+    /// decision is final (PendingApproval or ChangesRequested) so it can never silently
+    /// reassign an already-Approved/Rejected request.
+    /// </summary>
+    public async Task<ApprovalRequest> SetApproverAsync(long approvalRequestId, string? approverId, string approverName, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(approverName))
+            throw new BusinessRuleException("Approver name must not be empty.");
+
+        var existing = await _context.ApprovalRequests.FirstOrDefaultAsync(a => a.Id == approvalRequestId, ct);
+        if (existing is null || existing.IsDeleted) throw new NotFoundException($"Approval request {approvalRequestId} not found.");
+        if (existing.WorkflowStatus is not ("PendingApproval" or "ChangesRequested"))
+            throw new BusinessRuleException($"Approver can only be changed while PendingApproval or ChangesRequested (current status: '{existing.WorkflowStatus}').");
+
+        var old = new { existing.ApproverId, existing.ApproverName };
+        existing.ApproverId = string.IsNullOrWhiteSpace(approverId) ? null : approverId.Trim();
+        existing.ApproverName = approverName.Trim();
+        existing.UpdatedAt = DateTime.UtcNow;
+
+        _context.ApprovalRequests.Update(existing);
+        await _context.SaveChangesAsync(ct);
+
+        _audit.AddAudit("APPROVAL_SET_APPROVER", "EA.Approval", "ApprovalRequest", existing.Id.ToString(), old, new { existing.ApproverId, existing.ApproverName }, "Approver reassigned");
+        await _context.SaveChangesAsync(ct);
+
+        return existing;
+    }
 }

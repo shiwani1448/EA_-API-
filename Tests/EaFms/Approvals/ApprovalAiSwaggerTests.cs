@@ -40,6 +40,7 @@ public class ApprovalAiSwaggerTests
         {
             "/api/ea/approvals/{approvalRequestId}/ai/readiness",
             "/api/ea/approvals/{approvalRequestId}/ai/recommend-approver",
+            "/api/ea/approvals/{approvalRequestId}/ai/recommend-approver/apply",
             "/api/ea/approvals/{approvalRequestId}/ai/status-summary",
         }, aiPaths);
 
@@ -50,10 +51,16 @@ public class ApprovalAiSwaggerTests
         var statusResponseRef = paths["/api/ea/approvals/{approvalRequestId}/ai/status-summary"]!["post"]!["responses"]!["200"]!["content"]!["application/json"]!["schema"]!["$ref"]!.GetValue<string>();
         Assert.Equal("#/components/schemas/ApprovalAiStatusSummaryResponseDto", statusResponseRef);
 
-        // None of the three take a request body — all read existing state only.
+        // None of the three preview reads take a request body — they only read existing state.
         Assert.Null(paths["/api/ea/approvals/{approvalRequestId}/ai/readiness"]!["post"]!["requestBody"]);
         Assert.Null(paths["/api/ea/approvals/{approvalRequestId}/ai/recommend-approver"]!["post"]!["requestBody"]);
         Assert.Null(paths["/api/ea/approvals/{approvalRequestId}/ai/status-summary"]!["post"]!["requestBody"]);
+
+        // The apply (write) endpoint DOES take a request body and returns the real, updated ApprovalDetailDto.
+        var applyRequestRef = paths["/api/ea/approvals/{approvalRequestId}/ai/recommend-approver/apply"]!["post"]!["requestBody"]!["content"]!["application/json"]!["schema"]!["$ref"]!.GetValue<string>();
+        Assert.Equal("#/components/schemas/ApplyApproverSuggestionRequestDto", applyRequestRef);
+        var applyResponseRef = paths["/api/ea/approvals/{approvalRequestId}/ai/recommend-approver/apply"]!["post"]!["responses"]!["200"]!["content"]!["application/json"]!["schema"]!["$ref"]!.GetValue<string>();
+        Assert.Equal("#/components/schemas/EaApprovalDetailDto", applyResponseRef);
 
         // No API key/config/provider internals anywhere in the generated document.
         Assert.DoesNotContain("ApiKey", json);

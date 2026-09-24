@@ -353,6 +353,13 @@ builder.Services.AddScoped<Jarvis5.Services.EaFms.IFollowupCycleService, Jarvis5
 builder.Services.AddScoped<Jarvis5.Services.EaFms.IFollowupSourceResolver, Jarvis5.Services.EaFms.FollowupSourceResolver>();
 builder.Services.AddScoped<Jarvis5.Repositories.EaFms.IEscalationRepository, Jarvis5.Repositories.EaFms.EscalationRepository>();
 builder.Services.AddScoped<Jarvis5.Services.EaFms.IEscalationService, Jarvis5.Services.EaFms.EscalationService>();
+// Followup/Escalation AI assistance (reminder draft+send, escalation suggestion+apply,
+// resolution-time prediction, at-risk check) — reuses the shared IClaudeClient/
+// AiJsonResponseParser, the existing IFollowupService/IEscalationService/
+// IFollowupCycleRepository, and the real (previously unwired) IEaReminderEmailSender.
+builder.Services.AddScoped<Jarvis5.Repositories.EaFms.IFollowupAiRepository, Jarvis5.Repositories.EaFms.FollowupAiRepository>();
+builder.Services.AddScoped<Jarvis5.Services.EaFms.IFollowupAiPromptBuilder, Jarvis5.Services.EaFms.FollowupAiPromptBuilder>();
+builder.Services.AddScoped<Jarvis5.Services.EaFms.IFollowupAiService, Jarvis5.Services.EaFms.FollowupAiService>();
 // Central Task Review/Rework engine (EaTask-anchored, shared by Delegation/Approval)
 builder.Services.AddScoped<Jarvis5.Repositories.EaFms.ITaskReviewRepository, Jarvis5.Repositories.EaFms.TaskReviewRepository>();
 builder.Services.AddScoped<Jarvis5.Services.EaFms.ITaskReviewService, Jarvis5.Services.EaFms.TaskReviewService>();
@@ -377,6 +384,7 @@ builder.Services.AddScoped<Jarvis5.Services.EaFms.ApprovalQueryService>();
 // Approval AI assistance (preview only) — reuses the shared IClaudeClient/AiJsonResponseParser
 // and the existing ApprovalQueryService (readiness/status-summary read its already-assembled
 // ApprovalDetailDto directly); only the Approval-specific prompt builder and orchestrator are new.
+builder.Services.AddScoped<Jarvis5.Repositories.EaFms.IApprovalAiRepository, Jarvis5.Repositories.EaFms.ApprovalAiRepository>();
 builder.Services.AddScoped<Jarvis5.Services.EaFms.IApprovalAiPromptBuilder, Jarvis5.Services.EaFms.ApprovalAiPromptBuilder>();
 builder.Services.AddScoped<Jarvis5.Services.EaFms.IApprovalAiService, Jarvis5.Services.EaFms.ApprovalAiService>();
 
@@ -406,6 +414,21 @@ builder.Services.AddScoped<Jarvis5.Repositories.EaFms.IDelegationNumberRepositor
 // open transaction — the exact reuse path CreateCoreAsync's own XML doc anticipates.
 builder.Services.AddScoped<Jarvis5.Services.EaFms.DelegationService>();
 builder.Services.AddScoped<Jarvis5.Services.EaFms.IDelegationService>(sp => sp.GetRequiredService<Jarvis5.Services.EaFms.DelegationService>());
+// Delegation AI assistance (preview only) — reuses the shared IClaudeClient/AiJsonResponseParser,
+// the existing IDelegationService.GetByIdAsync (for the already-assembled DelegationResponseDto)
+// and ITatRuleRepository (the same TAT lookup DelegationService itself uses); only the
+// Delegation-specific prompt builder and orchestrator are new.
+builder.Services.AddScoped<Jarvis5.Repositories.EaFms.IDelegationAiRepository, Jarvis5.Repositories.EaFms.DelegationAiRepository>();
+builder.Services.AddScoped<Jarvis5.Services.EaFms.IDelegationAiPromptBuilder, Jarvis5.Services.EaFms.DelegationAiPromptBuilder>();
+builder.Services.AddScoped<Jarvis5.Services.EaFms.IDelegationAiService, Jarvis5.Services.EaFms.DelegationAiService>();
+
+// Calendar: a standalone tool, exactly like Google Calendar — the EA types every entry in
+// herself; never an aggregation of Meeting/Delegation/Approval/Travel/Followup.
+builder.Services.AddScoped<Jarvis5.Services.EaFms.ICalendarService, Jarvis5.Services.EaFms.CalendarService>();
+// Calendar AI assistance (quick-add free-text parse + apply, conflict-check) — reuses the
+// shared IClaudeClient/AiJsonResponseParser and ICalendarService for every actual read/write.
+builder.Services.AddScoped<Jarvis5.Services.EaFms.ICalendarAiPromptBuilder, Jarvis5.Services.EaFms.CalendarAiPromptBuilder>();
+builder.Services.AddScoped<Jarvis5.Services.EaFms.ICalendarAiService, Jarvis5.Services.EaFms.CalendarAiService>();
 
 // ============================================================
 // ANTHROPIC / CLAUDE

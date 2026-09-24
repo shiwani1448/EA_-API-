@@ -102,6 +102,25 @@ public class TravelAiServiceTests
         Assert.Contains("illustrative", result.WarningMessage, StringComparison.OrdinalIgnoreCase);
     }
 
+    // Full audit trail: every generated suggestion is logged verbatim into its own
+    // per-module table, mirroring SCIH's separate SCIH_Analysis/SCIH_SolutionDesign tables
+    // — see TravelOptionSuggestion's own doc comment.
+    [Fact]
+    public async Task SuggestOptions_WritesTravelOptionSuggestionRow()
+    {
+        await using var db = NewDb();
+        SeedTravelRequest(db, 30);
+        var (claude, prompts) = Mocks();
+        claude.Setup(c => c.GenerateJsonAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync(ValidOptionsJson);
+
+        await Service(db, claude, prompts).SuggestOptionsAsync(30);
+
+        var log = Assert.Single(db.TravelOptionSuggestions);
+        Assert.Equal(30, log.TravelRequestId);
+        Assert.False(log.IsApplied);
+        Assert.Contains("Flight", log.ProposedOptionsJson);
+    }
+
     // 2. No input at all -> business rule error, no Claude call
     [Fact]
     public async Task SuggestOptions_NoRouteDatesOrHotel_ThrowsBusinessRuleException()
@@ -277,6 +296,30 @@ public class TravelAiServiceTests
         Assert.Equal(5, saved.TravelRequestId);
         Assert.Equal(Jarvis5.Common.EaFms.TravelBookingRules.Requested, saved.BookingStatus); // starts Requested, same as manual create
         claude.Verify(c => c.GenerateJsonAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never); // 8. never calls Claude
+    }
+
+    // Confirming links back to whichever suggestion preceded it (Suggest or Compare,
+    // whichever is more recent), marking that row IsApplied.
+    [Fact]
+    public async Task ConfirmOptions_AfterSuggest_MarksTheSuggestionApplied()
+    {
+        await using var db = NewDb();
+        SeedTravelRequest(db, 40, businessState: "Upcoming", approvalState: "NotRequired");
+        var (claude, prompts) = Mocks();
+        claude.Setup(c => c.GenerateJsonAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync(ValidOptionsJson);
+        await Service(db, claude, prompts).SuggestOptionsAsync(40);
+        var request = new ConfirmTravelAiOptionsRequestDto
+        {
+            Options = { new CreateTravelBookingDto { BookingType = "Flight", Provider = "Air India", Cost = 12000m, Currency = "INR" } },
+        };
+
+        var confirmResult = await Service(db, claude, prompts).ConfirmOptionsAsync(40, request);
+
+        var suggestion = await db.TravelOptionSuggestions.SingleAsync();
+        Assert.True(suggestion.IsApplied);
+        Assert.NotNull(suggestion.AppliedAt);
+        var createdBookingId = confirmResult.CreatedBookings.Single().BookingId;
+        Assert.Contains(createdBookingId.ToString(), suggestion.AppliedBookingIdsJson);
     }
 
     // 7. Confirm on a request that is NOT ready surfaces the SAME existing business rule

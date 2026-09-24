@@ -26,6 +26,26 @@ public class EaFmsDbContext : DbContext
     public DbSet<EscalationLevel> EscalationLevels { get; set; } = null!;
     public DbSet<Notification> Notifications { get; set; } = null!;
     public DbSet<AuditLog> AuditLogs { get; set; } = null!;
+    public DbSet<CalendarEvent> CalendarEvents { get; set; } = null!;
+    // AI task-specific tables (one per real AI task, not a generic shared shape) are
+    // declared just above each one's ToTable(...) mapping below.
+    public DbSet<MeetingActionExtraction> MeetingActionExtractions { get; set; } = null!;
+    public DbSet<TravelOptionSuggestion> TravelOptionSuggestions { get; set; } = null!;
+    public DbSet<TravelOptionComparison> TravelOptionComparisons { get; set; } = null!;
+    public DbSet<TravelItineraryDraft> TravelItineraryDrafts { get; set; } = null!;
+    public DbSet<TravelChecklistDraft> TravelChecklistDrafts { get; set; } = null!;
+    public DbSet<ApprovalReadinessCheck> ApprovalReadinessChecks { get; set; } = null!;
+    public DbSet<ApprovalApproverRecommendation> ApprovalApproverRecommendations { get; set; } = null!;
+    public DbSet<ApprovalStatusSummary> ApprovalStatusSummaries { get; set; } = null!;
+    public DbSet<DelegationOwnerSuggestion> DelegationOwnerSuggestions { get; set; } = null!;
+    public DbSet<DelegationDueDatePrediction> DelegationDueDatePredictions { get; set; } = null!;
+    public DbSet<DelegationDelayRiskCheck> DelegationDelayRiskChecks { get; set; } = null!;
+    public DbSet<CalendarQuickAddSuggestion> CalendarQuickAddSuggestions { get; set; } = null!;
+    public DbSet<CalendarConflictCheck> CalendarConflictChecks { get; set; } = null!;
+    public DbSet<FollowupReminderSuggestion> FollowupReminderSuggestions { get; set; } = null!;
+    public DbSet<FollowupEscalationSuggestion> FollowupEscalationSuggestions { get; set; } = null!;
+    public DbSet<FollowupResolutionPrediction> FollowupResolutionPredictions { get; set; } = null!;
+    public DbSet<FollowupAtRiskCheck> FollowupAtRiskChecks { get; set; } = null!;
     public DbSet<Attachment> Attachments { get; set; } = null!;
     public DbSet<WorkPause> WorkPauses { get; set; } = null!;
     public DbSet<WorkAssignment> WorkAssignments { get; set; } = null!;
@@ -577,6 +597,241 @@ public class EaFmsDbContext : DbContext
             entity.HasIndex(e => e.ActionType);
             entity.HasIndex(e => e.Module);
             entity.HasIndex(e => e.EntityId);
+            entity.HasIndex(e => e.CreatedDate);
+        });
+
+        // Standalone calendar events — exactly like Google Calendar. The EA types every entry
+        // in herself; this is the only table the Calendar module reads or writes, never an
+        // aggregation over Meeting/Delegation/Approval/Travel/Followup.
+        modelBuilder.Entity<CalendarEvent>(entity =>
+        {
+            entity.ToTable("ea_calendar_events", "public");
+            entity.HasKey(e => e.Id);
+
+            entity.Property(e => e.Title).IsRequired().HasMaxLength(500);
+            entity.Property(e => e.Description).HasMaxLength(4000);
+            entity.Property(e => e.EventType).IsRequired().HasMaxLength(50);
+            entity.Property(e => e.Location).HasMaxLength(500);
+            entity.Property(e => e.Priority).HasMaxLength(100);
+            entity.Property(e => e.OrganizerEmployeeId).HasMaxLength(100);
+            entity.Property(e => e.OrganizerName).HasMaxLength(200);
+            entity.Property(e => e.Notes).HasMaxLength(4000);
+            entity.Property(e => e.CreatedBy).IsRequired().HasMaxLength(100);
+            entity.Property(e => e.ModifiedBy).HasMaxLength(100);
+
+            entity.HasIndex(e => e.StartDateTime);
+            entity.HasIndex(e => e.IsDeleted);
+            entity.HasIndex(e => e.EventType);
+        });
+
+        // AI task tables — one per real AI task (not one shared/generic shape per module),
+        // same convention SCIH already uses: SCIH_Analysis and SCIH_SolutionDesign are two
+        // separate tables, each with columns matching that task's own real fields. Every
+        // table below mirrors its response DTO field-for-field; jsonb is used only for a
+        // genuinely repeating list of structured sub-items (a list of proposed actions/
+        // options, a list of strings), exactly how SCIH/HRMS use jsonb for their own nested
+        // list fields while keeping every scalar field a real typed column.
+        // FK-only relationships (no navigation property added to keep these lean log
+        // tables exactly as designed) — real relational constraints, not just an indexed
+        // plain column, matching the convention every other child table in this file uses
+        // (e.g. ApprovalCycle -> ApprovalRequest, DelegationPhaseTat -> Delegation).
+        // Xmin-as-concurrency-token is applied only to the tables that ever get mutated
+        // after insert (the ones with an Apply/Confirm step) — the purely advisory,
+        // insert-once tables are never updated, so a concurrency token there would guard
+        // against a race that can never happen.
+        //
+        // UseXminAsConcurrencyToken() is marked obsolete in favor of the generic
+        // Property<uint>("xmin").IsRowVersion() pattern, but that generic pattern treats
+        // xmin as a brand-new shadow property and generates a migration that tries to
+        // ADD COLUMN "xmin" — which fails, because xmin already exists as a Postgres system
+        // column on every table. UseXminAsConcurrencyToken() is still the only correct way
+        // to map the existing system column without EF trying to create a duplicate.
+#pragma warning disable CS0618
+        modelBuilder.Entity<MeetingActionExtraction>(entity =>
+        {
+            entity.ToTable("ea_meeting_action_extractions", "public");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.ProposedActionsJson).IsRequired().HasColumnType("jsonb");
+            entity.Property(e => e.AppliedActionsJson).HasColumnType("jsonb");
+            entity.Property(e => e.CreatedBy).IsRequired().HasMaxLength(100);
+            entity.HasOne<Meeting>().WithMany().HasForeignKey(e => e.MeetingId).OnDelete(DeleteBehavior.Cascade);
+            entity.HasIndex(e => e.CreatedDate);
+            entity.UseXminAsConcurrencyToken();
+        });
+
+        modelBuilder.Entity<TravelOptionSuggestion>(entity =>
+        {
+            entity.ToTable("ea_travel_option_suggestions", "public");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.ProposedOptionsJson).IsRequired().HasColumnType("jsonb");
+            entity.Property(e => e.AppliedBookingIdsJson).HasColumnType("jsonb");
+            entity.Property(e => e.CreatedBy).IsRequired().HasMaxLength(100);
+            entity.HasOne<TravelRequest>().WithMany().HasForeignKey(e => e.TravelRequestId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasIndex(e => e.CreatedDate);
+            entity.UseXminAsConcurrencyToken();
+        });
+
+        modelBuilder.Entity<TravelOptionComparison>(entity =>
+        {
+            entity.ToTable("ea_travel_option_comparisons", "public");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.ComparedOptionsJson).IsRequired().HasColumnType("jsonb");
+            entity.Property(e => e.AppliedBookingIdsJson).HasColumnType("jsonb");
+            entity.Property(e => e.CreatedBy).IsRequired().HasMaxLength(100);
+            entity.HasOne<TravelRequest>().WithMany().HasForeignKey(e => e.TravelRequestId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasIndex(e => e.CreatedDate);
+            entity.UseXminAsConcurrencyToken();
+        });
+
+        modelBuilder.Entity<TravelItineraryDraft>(entity =>
+        {
+            entity.ToTable("ea_travel_itinerary_drafts", "public");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.CreatedBy).IsRequired().HasMaxLength(100);
+            entity.HasOne<TravelRequest>().WithMany().HasForeignKey(e => e.TravelRequestId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasIndex(e => e.CreatedDate);
+        });
+
+        modelBuilder.Entity<TravelChecklistDraft>(entity =>
+        {
+            entity.ToTable("ea_travel_checklist_drafts", "public");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.ChecklistItemsJson).IsRequired().HasColumnType("jsonb");
+            entity.Property(e => e.CreatedBy).IsRequired().HasMaxLength(100);
+            entity.HasOne<TravelRequest>().WithMany().HasForeignKey(e => e.TravelRequestId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasIndex(e => e.CreatedDate);
+        });
+
+        modelBuilder.Entity<ApprovalReadinessCheck>(entity =>
+        {
+            entity.ToTable("ea_approval_readiness_checks", "public");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.MissingFieldsJson).IsRequired().HasColumnType("jsonb");
+            entity.Property(e => e.SuggestedDocumentsJson).IsRequired().HasColumnType("jsonb");
+            entity.Property(e => e.CreatedBy).IsRequired().HasMaxLength(100);
+            entity.HasOne<ApprovalRequest>().WithMany().HasForeignKey(e => e.ApprovalRequestId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasIndex(e => e.CreatedDate);
+        });
+
+        modelBuilder.Entity<ApprovalApproverRecommendation>(entity =>
+        {
+            entity.ToTable("ea_approval_approver_recommendations", "public");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.CreatedBy).IsRequired().HasMaxLength(100);
+            entity.HasOne<ApprovalRequest>().WithMany().HasForeignKey(e => e.ApprovalRequestId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasIndex(e => e.CreatedDate);
+            entity.UseXminAsConcurrencyToken();
+        });
+
+        modelBuilder.Entity<ApprovalStatusSummary>(entity =>
+        {
+            entity.ToTable("ea_approval_status_summaries", "public");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.CreatedBy).IsRequired().HasMaxLength(100);
+            entity.HasOne<ApprovalRequest>().WithMany().HasForeignKey(e => e.ApprovalRequestId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasIndex(e => e.CreatedDate);
+        });
+
+        modelBuilder.Entity<DelegationOwnerSuggestion>(entity =>
+        {
+            entity.ToTable("ea_delegation_owner_suggestions", "public");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.CreatedBy).IsRequired().HasMaxLength(100);
+            entity.HasOne<Delegation>().WithMany().HasForeignKey(e => e.DelegationId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasIndex(e => e.CreatedDate);
+            entity.UseXminAsConcurrencyToken();
+        });
+
+        modelBuilder.Entity<DelegationDueDatePrediction>(entity =>
+        {
+            entity.ToTable("ea_delegation_due_date_predictions", "public");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Basis).IsRequired().HasMaxLength(30);
+            entity.Property(e => e.CreatedBy).IsRequired().HasMaxLength(100);
+            entity.HasOne<Delegation>().WithMany().HasForeignKey(e => e.DelegationId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasIndex(e => e.CreatedDate);
+            entity.UseXminAsConcurrencyToken();
+        });
+
+        modelBuilder.Entity<DelegationDelayRiskCheck>(entity =>
+        {
+            entity.ToTable("ea_delegation_delay_risk_checks", "public");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.RiskLevel).IsRequired().HasMaxLength(20);
+            entity.Property(e => e.CreatedBy).IsRequired().HasMaxLength(100);
+            entity.HasOne<Delegation>().WithMany().HasForeignKey(e => e.DelegationId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasIndex(e => e.CreatedDate);
+        });
+
+        // Calendar AI — quick-add (free-text -> structured event, suggest+apply) and
+        // conflict-check (read-only advisory over the EA's own real calendar rows).
+        modelBuilder.Entity<CalendarQuickAddSuggestion>(entity =>
+        {
+            entity.ToTable("ea_calendar_quick_add_suggestions", "public");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.InputText).IsRequired().HasMaxLength(2000);
+            entity.Property(e => e.SuggestedTitle).HasMaxLength(500);
+            entity.Property(e => e.SuggestedEventType).HasMaxLength(50);
+            entity.Property(e => e.SuggestedLocation).HasMaxLength(500);
+            entity.Property(e => e.CreatedBy).IsRequired().HasMaxLength(100);
+            entity.HasOne<CalendarEvent>().WithMany().HasForeignKey(e => e.AppliedCalendarEventId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasIndex(e => e.CreatedDate);
+            entity.UseXminAsConcurrencyToken();
+        });
+#pragma warning restore CS0618
+
+        modelBuilder.Entity<CalendarConflictCheck>(entity =>
+        {
+            entity.ToTable("ea_calendar_conflict_checks", "public");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.ConflictsJson).IsRequired().HasColumnType("jsonb");
+            entity.Property(e => e.CreatedBy).IsRequired().HasMaxLength(100);
+            entity.HasIndex(e => e.CreatedDate);
+        });
+
+        // Followup/Escalation AI — reminder draft (suggest+send, wires up the real
+        // IEaReminderEmailSender), escalation suggestion (suggest+apply, wires up the real
+        // EscalationService), resolution-time prediction and at-risk check (preview only).
+#pragma warning disable CS0618
+        modelBuilder.Entity<FollowupReminderSuggestion>(entity =>
+        {
+            entity.ToTable("ea_followup_reminder_suggestions", "public");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.CreatedBy).IsRequired().HasMaxLength(100);
+            entity.HasOne<Followup>().WithMany().HasForeignKey(e => e.FollowupId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasIndex(e => e.CreatedDate);
+            entity.UseXminAsConcurrencyToken();
+        });
+
+        modelBuilder.Entity<FollowupEscalationSuggestion>(entity =>
+        {
+            entity.ToTable("ea_followup_escalation_suggestions", "public");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.CreatedBy).IsRequired().HasMaxLength(100);
+            entity.HasOne<Followup>().WithMany().HasForeignKey(e => e.FollowupId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<Escalation>().WithMany().HasForeignKey(e => e.AppliedEscalationId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasIndex(e => e.CreatedDate);
+            entity.UseXminAsConcurrencyToken();
+        });
+#pragma warning restore CS0618
+
+        modelBuilder.Entity<FollowupResolutionPrediction>(entity =>
+        {
+            entity.ToTable("ea_followup_resolution_predictions", "public");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Basis).IsRequired().HasMaxLength(30);
+            entity.Property(e => e.CreatedBy).IsRequired().HasMaxLength(100);
+            entity.HasOne<Followup>().WithMany().HasForeignKey(e => e.FollowupId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasIndex(e => e.CreatedDate);
+        });
+
+        modelBuilder.Entity<FollowupAtRiskCheck>(entity =>
+        {
+            entity.ToTable("ea_followup_at_risk_checks", "public");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.RiskLevel).IsRequired().HasMaxLength(20);
+            entity.Property(e => e.CreatedBy).IsRequired().HasMaxLength(100);
+            entity.HasOne<Followup>().WithMany().HasForeignKey(e => e.FollowupId).OnDelete(DeleteBehavior.Restrict);
             entity.HasIndex(e => e.CreatedDate);
         });
 

@@ -116,6 +116,26 @@ public class MeetingAiServiceTests
         extraction.Verify(e => e.ExtractAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
+    // Full audit trail: every generated suggestion is logged verbatim into its own
+    // per-module table, mirroring SCIH's separate SCIH_Analysis/SCIH_SolutionDesign tables
+    // — see MeetingActionExtraction's own doc comment.
+    [Fact]
+    public async Task Analyze_WritesMeetingActionExtractionRow()
+    {
+        await using var db = NewDb();
+        var id = SeedMeeting(db, mom: "Discussed budget. Anita to send report.");
+        var (claude, prompts, extraction, files) = Mocks();
+        claude.Setup(c => c.GenerateJsonAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync(ValidJson);
+
+        await Service(db, claude, prompts, extraction, files).AnalyzeAsync(id);
+
+        var log = Assert.Single(db.MeetingActionExtractions);
+        Assert.Equal(id, log.MeetingId);
+        Assert.True(log.MomUsed);
+        Assert.False(log.IsApplied);
+        Assert.Contains("Send report", log.ProposedActionsJson);
+    }
+
     // 2. PDF only
     [Fact]
     public async Task PdfOnly_ExtractsAndAnalyzes_AndReportsPdfUsed()

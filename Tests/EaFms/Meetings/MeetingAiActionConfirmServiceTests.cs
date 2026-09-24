@@ -81,6 +81,48 @@ public class MeetingAiActionConfirmServiceTests
         Assert.Equal("ea-actor", saved.CreatedBy);
     }
 
+    // Confirming links back to whichever extraction suggestion preceded it — marking that
+    // row IsApplied so the audit trail shows what was suggested vs. what was actually
+    // created, same as SCIH tracks an analysis through to Approved.
+    [Fact]
+    public async Task Confirm_AfterExtract_MarksTheExtractionSuggestionApplied()
+    {
+        await using var db = NewDb();
+        var meetingId = SeedMeeting(db);
+        db.MeetingActionExtractions.Add(new MeetingActionExtraction
+        {
+            MeetingId = meetingId, ProposedActionsJson = "[]",
+            CreatedBy = "system", CreatedDate = DateTime.UtcNow,
+        });
+        await db.SaveChangesAsync();
+        var request = new ConfirmMeetingAiActionsRequestDto
+        {
+            Actions = { new CreateMeetingActionDto { Title = "Send proposal", DoerName = "Rahul" } },
+        };
+
+        await Service(db).ConfirmActionsAsync(meetingId, request, "ea-actor");
+
+        var suggestion = await db.MeetingActionExtractions.SingleAsync();
+        Assert.True(suggestion.IsApplied);
+        Assert.NotNull(suggestion.AppliedAt);
+        Assert.Contains("Send proposal", suggestion.AppliedActionsJson);
+    }
+
+    [Fact]
+    public async Task Confirm_WithoutAPrecedingExtraction_DoesNotFailAndCreatesNoSuggestionRow()
+    {
+        await using var db = NewDb();
+        var meetingId = SeedMeeting(db);
+        var request = new ConfirmMeetingAiActionsRequestDto
+        {
+            Actions = { new CreateMeetingActionDto { Title = "Typed manually", DoerName = "Rahul" } },
+        };
+
+        await Service(db).ConfirmActionsAsync(meetingId, request, "ea-actor");
+
+        Assert.Empty(db.MeetingActionExtractions);
+    }
+
     // 3. confirm multiple actions
     [Fact]
     public async Task ConfirmMultipleActions_CreatesOneMeetingActionEach()

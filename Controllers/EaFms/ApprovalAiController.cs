@@ -1,9 +1,11 @@
 using Jarvis5.Dtos.EaFms;
 using Jarvis5.Services.EaFms;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Jarvis5.Controllers.EaFms;
 
+[Authorize]
 [ApiController]
 [Route("api/ea/approvals/{approvalRequestId:long}/ai")]
 public class ApprovalAiController : ControllerBase
@@ -33,6 +35,20 @@ public class ApprovalAiController : ControllerBase
     public async Task<ActionResult<ApprovalAiApproverSuggestionResponseDto>> RecommendApprover(long approvalRequestId, CancellationToken ct)
     {
         var result = await _approvalAi.RecommendApproverAsync(approvalRequestId, ct);
+        return Ok(result);
+    }
+
+    /// <summary>Writes the given approver (the EA's reviewed/edited choice — never re-derived
+    /// from Claude) onto the real request. 409 unless the request is currently PendingApproval
+    /// or ChangesRequested.</summary>
+    [HttpPost("recommend-approver/apply")]
+    [ProducesResponseType(typeof(ApprovalDetailDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
+    public async Task<ActionResult<ApprovalDetailDto>> ApplyRecommendedApprover(
+        long approvalRequestId, [FromBody] ApplyApproverSuggestionRequestDto dto, CancellationToken ct)
+    {
+        var result = await _approvalAi.ApplyRecommendedApproverAsync(approvalRequestId, dto, ct);
         return Ok(result);
     }
 

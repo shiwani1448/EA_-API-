@@ -1,6 +1,7 @@
 using Jarvis5.Common;
 using Jarvis5.Data.EaFms;
 using Jarvis5.Dtos.EaFms;
+using Jarvis5.Repositories.EaFms;
 using Jarvis5.Services.Ai;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -22,6 +23,8 @@ public class ApprovalAiService : IApprovalAiService
     private readonly IServiceProvider _serviceProvider;
     private readonly IApprovalAiPromptBuilder _promptBuilder;
     private readonly ApprovalQueryService _queries;
+    private readonly ApprovalService _approvals;
+    private readonly IApprovalAiRepository _repository;
     private readonly ILogger<ApprovalAiService> _logger;
     private readonly int _maxAiAttempts;
 
@@ -35,6 +38,8 @@ public class ApprovalAiService : IApprovalAiService
         IServiceProvider serviceProvider,
         IApprovalAiPromptBuilder promptBuilder,
         ApprovalQueryService queries,
+        ApprovalService approvals,
+        IApprovalAiRepository repository,
         ILogger<ApprovalAiService> logger,
         IOptions<ClaudeOptions> claudeOptions)
     {
@@ -42,6 +47,8 @@ public class ApprovalAiService : IApprovalAiService
         _serviceProvider = serviceProvider;
         _promptBuilder = promptBuilder;
         _queries = queries;
+        _approvals = approvals;
+        _repository = repository;
         _logger = logger;
         _maxAiAttempts = Math.Clamp(claudeOptions.Value.MaxRetries, 1, 3);
     }
@@ -60,7 +67,7 @@ public class ApprovalAiService : IApprovalAiService
         var aiResult = await GenerateAndParseAsync<ApprovalAiReadinessResultDto>(
             systemPrompt, userPrompt, "Approval readiness check", ct);
 
-        return new ApprovalAiReadinessResponseDto
+        var response = new ApprovalAiReadinessResponseDto
         {
             ApprovalRequestId = approvalRequestId,
             IsLikelyReady = aiResult.IsLikelyReady,
@@ -69,6 +76,8 @@ public class ApprovalAiService : IApprovalAiService
             Notes = aiResult.Notes,
             WarningMessage = "Based only on request field values and uploaded file names — AI cannot read the contents of any uploaded document.",
         };
+        await AiSuggestionWriters.LogApprovalReadinessCheckAsync(_db, approvalRequestId, response, ct);
+        return response;
     }
 
     public async Task<ApprovalAiApproverSuggestionResponseDto> RecommendApproverAsync(long approvalRequestId, CancellationToken ct = default)
@@ -78,7 +87,7 @@ public class ApprovalAiService : IApprovalAiService
 
         if (string.IsNullOrWhiteSpace(detail.Department))
         {
-            return new ApprovalAiApproverSuggestionResponseDto
+            var noDepartmentResponse = new ApprovalAiApproverSuggestionResponseDto
             {
                 ApprovalRequestId = approvalRequestId,
                 RecommendedApproverName = null,
@@ -86,23 +95,18 @@ public class ApprovalAiService : IApprovalAiService
                 Reasoning = "This request has no department set, so there is no historical group to compare it against.",
                 WarningMessage = warning,
             };
+            await AiSuggestionWriters.LogApprovalApproverRecommendationAsync(_db, approvalRequestId, noDepartmentResponse, ct);
+            return noDepartmentResponse;
         }
 
         // Historical stats computed here in C#, never invented by Claude — this system has
         // no employee/role directory, so the only honest source of a "who approves this
         // kind of thing" signal is who actually approved similar requests before.
-        var history = await _db.ApprovalRequests.AsNoTracking()
-            .Where(a => !a.IsDeleted && a.Id != approvalRequestId && a.Department == detail.Department
-                && a.WorkflowStatus == "Approved" && a.ApprovedBy != null)
-            .GroupBy(a => a.ApprovedBy!)
-            .Select(g => new { Approver = g.Key, Count = g.Count() })
-            .OrderByDescending(g => g.Count)
-            .Take(5)
-            .ToListAsync(ct);
+        var history = await _repository.GetTopApproversByDepartmentAsync(approvalRequestId, detail.Department, ct);
 
         if (history.Count == 0)
         {
-            return new ApprovalAiApproverSuggestionResponseDto
+            var noHistoryResponse = new ApprovalAiApproverSuggestionResponseDto
             {
                 ApprovalRequestId = approvalRequestId,
                 RecommendedApproverName = null,
@@ -110,6 +114,8 @@ public class ApprovalAiService : IApprovalAiService
                 Reasoning = "No approved requests were found for this department yet — there is no history to base a recommendation on.",
                 WarningMessage = warning,
             };
+            await AiSuggestionWriters.LogApprovalApproverRecommendationAsync(_db, approvalRequestId, noHistoryResponse, ct);
+            return noHistoryResponse;
         }
 
         var candidates = history.Select(h => (h.Approver, h.Count)).ToList();
@@ -127,7 +133,7 @@ public class ApprovalAiService : IApprovalAiService
             ? aiResult.RecommendedApprover
             : (aiResult.RecommendedApprover == null ? null : candidates[0].Approver);
 
-        return new ApprovalAiApproverSuggestionResponseDto
+        var response = new ApprovalAiApproverSuggestionResponseDto
         {
             ApprovalRequestId = approvalRequestId,
             RecommendedApproverName = recommended,
@@ -135,6 +141,24 @@ public class ApprovalAiService : IApprovalAiService
             Reasoning = aiResult.Reasoning,
             WarningMessage = warning,
         };
+        await AiSuggestionWriters.LogApprovalApproverRecommendationAsync(_db, approvalRequestId, response, ct);
+        return response;
+    }
+
+    public async Task<ApprovalDetailDto> ApplyRecommendedApproverAsync(long approvalRequestId, ApplyApproverSuggestionRequestDto dto, CancellationToken ct = default)
+    {
+        // Writes exactly the value the caller sent — never re-derives or re-calls Claude, so
+        // this is safe to call whether the EA accepted the AI's exact suggestion or typed
+        // their own choice instead. ApprovalService.SetApproverAsync owns the actual
+        // status-gate (PendingApproval/ChangesRequested only) and audit entry. Both writes
+        // run in one transaction so the real approver change and its suggestion-log entry
+        // are never left half-done relative to each other.
+        await using var tx = await _db.Database.BeginTransactionAsync(ct);
+        await _approvals.SetApproverAsync(approvalRequestId, dto.ApproverId, dto.ApproverName, ct);
+        await AiSuggestionWriters.MarkApprovalApproverRecommendationAppliedAsync(_db, approvalRequestId, dto, ct);
+        await tx.CommitAsync(ct);
+
+        return await LoadAsync(approvalRequestId, ct);
     }
 
     public async Task<ApprovalAiStatusSummaryResponseDto> SummarizeStatusAsync(long approvalRequestId, CancellationToken ct = default)
@@ -147,7 +171,7 @@ public class ApprovalAiService : IApprovalAiService
         var aiResult = await GenerateAndParseAsync<ApprovalAiStatusResultDto>(
             systemPrompt, userPrompt, "Approval status summary", ct);
 
-        return new ApprovalAiStatusSummaryResponseDto
+        var response = new ApprovalAiStatusSummaryResponseDto
         {
             ApprovalRequestId = approvalRequestId,
             Summary = aiResult.Summary,
@@ -155,6 +179,8 @@ public class ApprovalAiService : IApprovalAiService
             CurrentCycleNo = detail.CurrentCycleNo,
             DueState = detail.DueState,
         };
+        await AiSuggestionWriters.LogApprovalStatusSummaryAsync(_db, approvalRequestId, response, ct);
+        return response;
     }
 
     // Same retry-on-malformed-JSON pattern as MeetingAiService/TravelAiService.

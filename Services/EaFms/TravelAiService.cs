@@ -74,7 +74,7 @@ public class TravelAiService : ITravelAiService
         var aiResult = await GenerateAndParseAsync<TravelAiOptionsResultDto>(
             systemPrompt, userPrompt, "Travel option suggestion", ct);
 
-        return new TravelAiOptionsSuggestionResponseDto
+        var response = new TravelAiOptionsSuggestionResponseDto
         {
             TravelRequestId = travelRequestId,
             ProposedOptions = aiResult.ProposedOptions
@@ -92,6 +92,8 @@ public class TravelAiService : ITravelAiService
             WarningMessage = "Estimated costs are illustrative only, not live pricing — verify with the provider before booking.",
             CanCreateBooking = TravelBookingService.IsReadyForBooking(request),
         };
+        await AiSuggestionWriters.LogTravelOptionSuggestionAsync(_db, travelRequestId, response, ct);
+        return response;
     }
 
     public async Task<TravelAiOptionsConfirmResponseDto> ConfirmOptionsAsync(
@@ -125,11 +127,19 @@ public class TravelAiService : ITravelAiService
             await tx.CommitAsync(ct);
         }
 
-        return new TravelAiOptionsConfirmResponseDto
+        var response = new TravelAiOptionsConfirmResponseDto
         {
             TravelRequestId = travelRequestId,
             CreatedBookings = created,
         };
+        if (created.Count > 0)
+        {
+            // Links this confirmation back to whichever single suggestion led to it — Suggest
+            // or Compare, whichever was generated more recently — since Confirm can follow
+            // either. A no-op if the EA typed the options manually without calling either first.
+            await AiSuggestionWriters.MarkLatestTravelOptionsAppliedAsync(_db, travelRequestId, response, ct);
+        }
+        return response;
     }
 
     public async Task<TravelAiCompareOptionsResponseDto> CompareOptionsAsync(
@@ -171,12 +181,14 @@ public class TravelAiService : ITravelAiService
             });
         }
 
-        return new TravelAiCompareOptionsResponseDto
+        var response = new TravelAiCompareOptionsResponseDto
         {
             TravelRequestId = travelRequestId,
             ComparedOptions = compared,
             CanCreateBooking = TravelBookingService.IsReadyForBooking(request),
         };
+        await AiSuggestionWriters.LogTravelOptionComparisonAsync(_db, travelRequestId, response, ct);
+        return response;
     }
 
     public async Task<TravelAiItineraryResponseDto> DraftItineraryAsync(long travelRequestId, CancellationToken ct = default)
@@ -190,11 +202,13 @@ public class TravelAiService : ITravelAiService
         var aiResult = await GenerateAndParseAsync<TravelAiItineraryResultDto>(
             systemPrompt, userPrompt, "Travel itinerary draft", ct);
 
-        return new TravelAiItineraryResponseDto
+        var response = new TravelAiItineraryResponseDto
         {
             TravelRequestId = travelRequestId,
             Itinerary = aiResult.Itinerary,
         };
+        await AiSuggestionWriters.LogTravelItineraryDraftAsync(_db, travelRequestId, response, ct);
+        return response;
     }
 
     public async Task<TravelAiChecklistResponseDto> DraftChecklistAsync(long travelRequestId, CancellationToken ct = default)
@@ -207,11 +221,13 @@ public class TravelAiService : ITravelAiService
         var aiResult = await GenerateAndParseAsync<TravelAiChecklistResultDto>(
             systemPrompt, userPrompt, "Travel checklist", ct);
 
-        return new TravelAiChecklistResponseDto
+        var response = new TravelAiChecklistResponseDto
         {
             TravelRequestId = travelRequestId,
             ChecklistItems = aiResult.Items.Where(i => !string.IsNullOrWhiteSpace(i)).ToList(),
         };
+        await AiSuggestionWriters.LogTravelChecklistDraftAsync(_db, travelRequestId, response, ct);
+        return response;
     }
 
     // Same retry-on-malformed-JSON pattern as MeetingAiService/AnalysisService.

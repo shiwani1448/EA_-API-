@@ -242,8 +242,27 @@ public class DelegationService : IDelegationService
 
     public async Task<DelegationResponseDto> UpdateAsync(long delegationId, DelegationUpdateRequestDto dto, CancellationToken ct = default)
     {
-        await using var transaction = await _db.Database.BeginTransactionAsync(ct);
+        // Reentrant-safe: a caller (e.g. DelegationAiService's Apply flows) may already have
+        // started a transaction it wants this update to participate in rather than commit on
+        // its own — same "only whoever actually started the transaction commits it" pattern
+        // TravelBookingService.CreateAsync uses. EF Core does not support nesting a second
+        // BeginTransactionAsync on the same connection, so this must check first.
+        var ownsTransaction = _db.Database.CurrentTransaction is null;
+        var transaction = ownsTransaction ? await _db.Database.BeginTransactionAsync(ct) : null;
+        try
+        {
+            return await UpdateCoreAsync(delegationId, dto, ct, ownsTransaction, transaction);
+        }
+        finally
+        {
+            if (transaction != null) await transaction.DisposeAsync();
+        }
+    }
 
+    private async Task<DelegationResponseDto> UpdateCoreAsync(
+        long delegationId, DelegationUpdateRequestDto dto, CancellationToken ct,
+        bool ownsTransaction, Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction? transaction)
+    {
         var entity = await _db.Delegations
             .FirstOrDefaultAsync(d => d.Id == delegationId && !d.IsDeleted, ct)
             ?? throw new NotFoundException($"Delegation {delegationId} not found.");
@@ -306,7 +325,7 @@ public class DelegationService : IDelegationService
             "Delegation updated");
 
         await _db.SaveChangesAsync(ct);
-        await transaction.CommitAsync(ct);
+        if (ownsTransaction) await transaction!.CommitAsync(ct);
 
         return await ToDtoAsync(entity, sourceModule?.Name, null, ct);
     }
