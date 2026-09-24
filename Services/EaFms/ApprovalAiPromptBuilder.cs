@@ -29,29 +29,34 @@ public class ApprovalAiPromptBuilder : IApprovalAiPromptBuilder
         - Return ONLY a single valid JSON object. Never return markdown or prose outside JSON.
         """;
 
-    public string BuildReadinessUserPrompt(ApprovalDetailDto detail)
+    public string BuildReadinessUserPrompt(ApprovalAiReadinessInput detail)
     {
         var sb = new StringBuilder();
+        if (detail.SavedRequestId == null)
+        {
+            sb.AppendLine("UNSAVED FORM: required fields are requestTitle, requestType, department, description, requiredApprovalDate, approverName, amount.");
+            sb.AppendLine("Use exactly those camelCase names in missingFields. If all are supplied and the file names look adequate, isLikelyReady should be true.");
+        }
         sb.AppendLine("APPROVAL REQUEST DETAILS");
         sb.AppendLine($"Title: {detail.RequestTitle ?? "(not specified)"}");
-        sb.AppendLine($"Type: {detail.Type ?? "(not specified)"}");
+        sb.AppendLine($"Type: {detail.RequestType ?? "(not specified)"}");
         sb.AppendLine($"Department: {detail.Department ?? "(not specified)"}");
         sb.AppendLine($"Priority: {detail.Priority ?? "(not specified)"}");
         sb.AppendLine($"Description: {detail.Description ?? "(not specified)"}");
         sb.AppendLine($"Justification: {detail.Justification ?? "(not specified)"}");
         sb.AppendLine($"Amount: {detail.Amount?.ToString() ?? "(not specified)"} {detail.Currency}");
         sb.AppendLine($"Required approval date: {detail.RequiredApprovalDate?.ToString("yyyy-MM-dd") ?? "(not specified)"}");
-        sb.AppendLine($"Designated approver: {detail.Approver ?? "(not specified)"}");
+        sb.AppendLine($"Designated approver: {detail.ApproverName ?? "(not specified)"}");
         sb.AppendLine($"Workflow status: {detail.WorkflowStatus ?? "(unknown)"} (cycle {detail.CurrentCycleNo})");
         if (string.Equals(detail.WorkflowStatus, "ChangesRequested", StringComparison.OrdinalIgnoreCase) && detail.LatestCycle?.ChangeReason is { } reason)
             sb.AppendLine($"Change requested reason (cycle {detail.LatestCycle.CycleNo}): {reason}");
 
         sb.AppendLine("------------------------------------------------");
         sb.AppendLine("ATTACHED DOCUMENTS (file names only — contents not visible)");
-        if (detail.Documents.Count == 0)
+        if (detail.DocumentFileNames == null || detail.DocumentFileNames.Count == 0)
             sb.AppendLine("No documents attached.");
         else
-            foreach (var d in detail.Documents) sb.AppendLine($"- {d.OriginalFileName}");
+            foreach (var name in detail.DocumentFileNames) sb.AppendLine($"- {name}");
 
         sb.AppendLine("------------------------------------------------");
         sb.AppendLine("Return ONLY a single JSON object with exactly this shape:");
@@ -85,13 +90,13 @@ public class ApprovalAiPromptBuilder : IApprovalAiPromptBuilder
         - Return ONLY a single valid JSON object. Never return markdown or prose outside JSON.
         """;
 
-    public string BuildApproverUserPrompt(ApprovalDetailDto detail, List<(string Approver, int Count)> candidates)
+    public string BuildApproverUserPrompt(ApprovalAiApproverInput detail, List<(string Approver, int Count)> candidates)
     {
         var sb = new StringBuilder();
         sb.AppendLine("CURRENT REQUEST");
         sb.AppendLine($"Department: {detail.Department ?? "(not specified)"}");
-        sb.AppendLine($"Type: {detail.Type ?? "(not specified)"}");
-        sb.AppendLine($"Priority: {detail.Priority ?? "(not specified)"}");
+        sb.AppendLine($"Type: {detail.RequestType ?? "(not specified)"}");
+        sb.AppendLine($"Priority: {detail.SavedPriority ?? "(not specified)"}");
         sb.AppendLine($"Amount: {detail.Amount?.ToString() ?? "(not specified)"} {detail.Currency}");
 
         sb.AppendLine("------------------------------------------------");

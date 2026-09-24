@@ -56,8 +56,13 @@ public class ApprovalTaskReviewTests
         var audit = Mock.Of<IAuditService>();
         var user = Mock.Of<Jarvis5.Services.ICurrentUserService>(u => u.UserName == "apr-review-actor" && u.UserId == 31L);
         var taskReview = new TaskReviewService(db, new TaskReviewRepository(db), user, audit);
-        var service = new ApprovalService(db, audit, numbers.Object, tasks.Object);
-        var lifecycle = new ApprovalLifecycleService(db, audit, taskReview);
+        var service = new ApprovalService(db, audit, numbers.Object, tasks.Object, new TatRuleRepository(db));
+        var rules = new TatRuleRepository(db);
+        var queries = new ApprovalQueryService(db, Mock.Of<IApprovalDocumentService>(), taskReview, rules);
+        var provider = new Mock<IServiceProvider>();
+        provider.Setup(p => p.GetService(typeof(ApprovalQueryService))).Returns(queries);
+        var lifecycle = new ApprovalLifecycleService(db, audit, taskReview, user,
+            Mock.Of<Microsoft.AspNetCore.Hosting.IWebHostEnvironment>(), provider.Object, rules);
 
         var created = await service.CreateAsync(new ApprovalRequest { RequestTitle = "Review-cycle approval", CreatedBy = "creator", ApproverId = "approver-1" });
         return new Fx { Db = db, Lifecycle = lifecycle, ApprovalRequestId = created.Id, EaTaskId = created.EaTaskId };
@@ -67,18 +72,20 @@ public class ApprovalTaskReviewTests
     public async Task FullCycle_Submit_Rework_Resubmit_Approve()
     {
         var f = await NewAsync();
+        await f.Lifecycle.StartActualAsync(f.ApprovalRequestId);
 
         var submitted = await f.Lifecycle.SubmitForReviewAsync(f.ApprovalRequestId, new SubmitForReviewRequestDto { ReviewerId = "rev-5", ReviewerName = "QA Reviewer" });
         Assert.Equal(TaskReviewStatus.PendingReview, submitted.Status);
         Assert.Equal(1, submitted.ReviewCycleNumber);
 
-        var reworked = await f.Lifecycle.RequestTaskReworkAsync(f.ApprovalRequestId, new RequestTaskReworkRequestDto { ReworkRemark = "Add justification" });
+        var reworked = await f.Lifecycle.RequestTaskReworkAsync(f.ApprovalRequestId, new RequestTaskReworkRequestDto { ReworkRemark = "Add justification" }, null);
         Assert.Equal(TaskReviewStatus.ReworkRequested, reworked.Status);
 
+        await f.Lifecycle.StartReworkAsync(f.ApprovalRequestId);
         var resubmitted = await f.Lifecycle.SubmitForReviewAsync(f.ApprovalRequestId, new SubmitForReviewRequestDto { ReviewerId = "rev-5", ReviewerName = "QA Reviewer" });
         Assert.Equal(2, resubmitted.ReviewCycleNumber);
 
-        var approved = await f.Lifecycle.ApproveReviewAsync(f.ApprovalRequestId, new ApproveTaskReviewRequestDto { ReviewRemark = "Fine" });
+        var approved = await f.Lifecycle.ApproveReviewAsync(f.ApprovalRequestId, new ApproveTaskReviewRequestDto { ReviewRemark = "Fine" }, null);
         Assert.Equal(TaskReviewStatus.Approved, approved.Status);
         Assert.Equal(2, approved.ReviewCycleNumber);
 
@@ -115,6 +122,7 @@ public class ApprovalTaskReviewTests
     public async Task SubmitForReview_WhilePendingReview_Rejected()
     {
         var f = await NewAsync();
+        await f.Lifecycle.StartActualAsync(f.ApprovalRequestId);
         await f.Lifecycle.SubmitForReviewAsync(f.ApprovalRequestId, new SubmitForReviewRequestDto());
 
         await Assert.ThrowsAsync<BusinessRuleException>(() => f.Lifecycle.SubmitForReviewAsync(f.ApprovalRequestId, new SubmitForReviewRequestDto()));
@@ -124,24 +132,25 @@ public class ApprovalTaskReviewTests
     public async Task Approve_WithoutPendingReview_Rejected()
     {
         var f = await NewAsync();
-        await Assert.ThrowsAsync<BusinessRuleException>(() => f.Lifecycle.ApproveReviewAsync(f.ApprovalRequestId, new ApproveTaskReviewRequestDto()));
+        await Assert.ThrowsAsync<BusinessRuleException>(() => f.Lifecycle.ApproveReviewAsync(f.ApprovalRequestId, new ApproveTaskReviewRequestDto(), null));
     }
 
     [Fact]
     public async Task Rework_WithoutPendingReview_Rejected()
     {
         var f = await NewAsync();
-        await Assert.ThrowsAsync<BusinessRuleException>(() => f.Lifecycle.RequestTaskReworkAsync(f.ApprovalRequestId, new RequestTaskReworkRequestDto()));
+        await Assert.ThrowsAsync<BusinessRuleException>(() => f.Lifecycle.RequestTaskReworkAsync(f.ApprovalRequestId, new RequestTaskReworkRequestDto(), null));
     }
 
     [Fact]
     public async Task Approve_Twice_SecondCallRejected()
     {
         var f = await NewAsync();
+        await f.Lifecycle.StartActualAsync(f.ApprovalRequestId);
         await f.Lifecycle.SubmitForReviewAsync(f.ApprovalRequestId, new SubmitForReviewRequestDto());
-        await f.Lifecycle.ApproveReviewAsync(f.ApprovalRequestId, new ApproveTaskReviewRequestDto());
+        await f.Lifecycle.ApproveReviewAsync(f.ApprovalRequestId, new ApproveTaskReviewRequestDto(), null);
 
-        await Assert.ThrowsAsync<BusinessRuleException>(() => f.Lifecycle.ApproveReviewAsync(f.ApprovalRequestId, new ApproveTaskReviewRequestDto()));
+        await Assert.ThrowsAsync<BusinessRuleException>(() => f.Lifecycle.ApproveReviewAsync(f.ApprovalRequestId, new ApproveTaskReviewRequestDto(), null));
     }
 
     // ================================================================
@@ -271,6 +280,7 @@ public class ApprovalTaskReviewTests
     public async Task Phase10H_TaskReviewHistory_And_ApprovalCycleHistory_AreIndependent()
     {
         var f = await NewAsync();
+        await f.Lifecycle.StartActualAsync(f.ApprovalRequestId);
 
         // Perform two business-lifecycle operations that add ApprovalCycle rows
         await f.Lifecycle.RequestChangesAsync(f.ApprovalRequestId,
@@ -281,7 +291,7 @@ public class ApprovalTaskReviewTests
         await f.Lifecycle.SubmitForReviewAsync(f.ApprovalRequestId,
             new SubmitForReviewRequestDto { ReviewerId = "rev-1", ReviewerName = "Quality Lead" });
         await f.Lifecycle.RequestTaskReworkAsync(f.ApprovalRequestId,
-            new RequestTaskReworkRequestDto { ReworkRemark = "Fix formatting" });
+            new RequestTaskReworkRequestDto { ReworkRemark = "Fix formatting" }, null);
 
         // ApprovalCycle history: exactly 2 cycles (Round 1 + Resubmit)
         var cycles = await f.Db.ApprovalCycles
@@ -370,6 +380,7 @@ public class ApprovalTaskReviewTests
     public async Task Phase11_TaskReviewPending_ThenBusinessApprove_BothCyclesCoexistIndependently()
     {
         var f = await NewAsync();
+        await f.Lifecycle.StartActualAsync(f.ApprovalRequestId);
 
         // Submit for Task Review first (cycle 1, PendingReview)
         await f.Lifecycle.SubmitForReviewAsync(f.ApprovalRequestId,

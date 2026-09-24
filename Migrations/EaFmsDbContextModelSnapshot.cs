@@ -143,51 +143,6 @@ namespace Studio5JarvisMasterApi.Migrations
                     b.ToTable("ea_approval_cycles", "public");
                 });
 
-            modelBuilder.Entity("Jarvis5.Entities.EaFms.ApprovalReadinessCheck", b =>
-                {
-                    b.Property<long>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("bigint");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
-
-                    b.Property<long>("ApprovalRequestId")
-                        .HasColumnType("bigint");
-
-                    b.Property<string>("CreatedBy")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)");
-
-                    b.Property<DateTime>("CreatedDate")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<bool>("IsLikelyReady")
-                        .HasColumnType("boolean");
-
-                    b.Property<string>("MissingFieldsJson")
-                        .IsRequired()
-                        .HasColumnType("jsonb");
-
-                    b.Property<string>("Notes")
-                        .HasColumnType("text");
-
-                    b.Property<string>("SuggestedDocumentsJson")
-                        .IsRequired()
-                        .HasColumnType("jsonb");
-
-                    b.Property<string>("WarningMessage")
-                        .HasColumnType("text");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("ApprovalRequestId");
-
-                    b.HasIndex("CreatedDate");
-
-                    b.ToTable("ea_approval_readiness_checks", "public");
-                });
-
             modelBuilder.Entity("Jarvis5.Entities.EaFms.ApprovalRequest", b =>
                 {
                     b.Property<long>("Id")
@@ -1084,6 +1039,14 @@ namespace Studio5JarvisMasterApi.Migrations
                     b.Property<DateTime?>("EndedAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<string>("EndedById")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("EndedByName")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
                     b.Property<string>("ModifiedBy")
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)");
@@ -1097,8 +1060,16 @@ namespace Studio5JarvisMasterApi.Migrations
                     b.Property<int>("ReviewCycleNumber")
                         .HasColumnType("integer");
 
-                    b.Property<DateTime>("StartedAt")
+                    b.Property<DateTime?>("StartedAt")
                         .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("StartedById")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("StartedByName")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
 
                     b.Property<string>("TaskType")
                         .IsRequired()
@@ -4238,15 +4209,6 @@ namespace Studio5JarvisMasterApi.Migrations
                         .IsRequired();
 
                     b.Navigation("ApprovalRequest");
-                });
-
-            modelBuilder.Entity("Jarvis5.Entities.EaFms.ApprovalReadinessCheck", b =>
-                {
-                    b.HasOne("Jarvis5.Entities.EaFms.ApprovalRequest", null)
-                        .WithMany()
-                        .HasForeignKey("ApprovalRequestId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
                 });
 
             modelBuilder.Entity("Jarvis5.Entities.EaFms.ApprovalRequest", b =>

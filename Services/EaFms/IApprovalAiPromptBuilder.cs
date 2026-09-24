@@ -8,10 +8,10 @@ namespace Jarvis5.Services.EaFms;
 public interface IApprovalAiPromptBuilder
 {
     string BuildReadinessSystemPrompt();
-    string BuildReadinessUserPrompt(ApprovalDetailDto detail);
+    string BuildReadinessUserPrompt(ApprovalAiReadinessInput detail);
 
     string BuildApproverSystemPrompt();
-    string BuildApproverUserPrompt(ApprovalDetailDto detail, List<(string Approver, int Count)> candidates);
+    string BuildApproverUserPrompt(ApprovalAiApproverInput detail, List<(string Approver, int Count)> candidates);
 
     string BuildStatusSystemPrompt();
     string BuildStatusUserPrompt(ApprovalDetailDto detail);

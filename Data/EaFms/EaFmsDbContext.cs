@@ -62,6 +62,8 @@ public class EaFmsDbContext : DbContext
     // Approval management (EA-specific)
     public DbSet<Entities.EaFms.ApprovalRequest> ApprovalRequests { get; set; } = null!;
     public DbSet<Entities.EaFms.ApprovalCycle> ApprovalCycles { get; set; } = null!;
+    // Per-phase TAT records (Actual / Review N / Rework N) — see ApprovalPhaseTat's own doc comment.
+    public DbSet<Entities.EaFms.ApprovalPhaseTat> ApprovalPhaseTats { get; set; } = null!;
     public DbSet<TravelLocalTransport> TravelLocalTransports { get; set; } = null!;
     public DbSet<TravelHospitality> TravelHospitalityArrangements { get; set; } = null!;
     public DbSet<TravelExpense> TravelExpenses { get; set; } = null!;
@@ -1255,11 +1257,17 @@ public class EaFmsDbContext : DbContext
 
         modelBuilder.Entity<DelegationPhaseTat>(entity =>
         {
+            entity.Property(e => e.StartedById).HasMaxLength(100);
+            entity.Property(e => e.StartedByName).HasMaxLength(200);
+            entity.Property(e => e.EndedById).HasMaxLength(100);
+            entity.Property(e => e.EndedByName).HasMaxLength(200);
             entity.ToTable("ea_delegation_phase_tat", "public");
             entity.HasKey(e => e.Id);
             entity.Property(e => e.Id).UseIdentityByDefaultColumn();
             entity.Property(e => e.TaskType).IsRequired().HasMaxLength(20);
-            entity.Property(e => e.StartedAt).HasColumnType("timestamp with time zone").IsRequired();
+            // Nullable: null while the phase exists but hasn't had its explicit Start action called yet
+            // (Review/Rework open idle now; Actual is set immediately by StartAsync).
+            entity.Property(e => e.StartedAt).HasColumnType("timestamp with time zone");
             entity.Property(e => e.EndedAt).HasColumnType("timestamp with time zone");
             entity.Property(e => e.TatUsedSeconds).HasPrecision(20, 7);
             entity.Property(e => e.TatPausedSeconds).HasPrecision(20, 7);
@@ -1272,6 +1280,27 @@ public class EaFmsDbContext : DbContext
             entity.HasIndex(e => new { e.DelegationId, e.TaskType, e.ReviewCycleNumber }).IsUnique();
             entity.HasIndex(e => e.DelegationId).IsUnique()
                 .HasFilter("\"EndedAt\" IS NULL").HasDatabaseName("UX_ea_delegation_phase_tat_OpenPhase");
+        });
+
+        modelBuilder.Entity<Entities.EaFms.ApprovalPhaseTat>(entity =>
+        {
+            entity.ToTable("ea_approval_phase_tat", "public");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).UseIdentityByDefaultColumn();
+            entity.Property(e => e.TaskType).IsRequired().HasMaxLength(20);
+            entity.Property(e => e.StartedAt).HasColumnType("timestamp with time zone");
+            entity.Property(e => e.EndedAt).HasColumnType("timestamp with time zone");
+            entity.Property(e => e.TatUsedSeconds).HasPrecision(20, 7);
+            entity.Property(e => e.TatPausedSeconds).HasPrecision(20, 7);
+            entity.Property(e => e.CreatedBy).IsRequired().HasMaxLength(100);
+            entity.Property(e => e.CreatedDate).HasColumnType("timestamp with time zone");
+            entity.Property(e => e.ModifiedBy).HasMaxLength(100);
+            entity.Property(e => e.ModifiedDate).HasColumnType("timestamp with time zone");
+            entity.HasOne(e => e.ApprovalRequest).WithMany().HasForeignKey(e => e.ApprovalRequestId)
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasIndex(e => new { e.ApprovalRequestId, e.TaskType, e.ReviewCycleNumber }).IsUnique();
+            entity.HasIndex(e => e.ApprovalRequestId).IsUnique()
+                .HasFilter("\"EndedAt\" IS NULL").HasDatabaseName("UX_ea_approval_phase_tat_OpenPhase");
         });
 
         modelBuilder.Entity<EaTask>(entity =>

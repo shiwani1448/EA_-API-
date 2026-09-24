@@ -22,9 +22,19 @@ public class DelegationPhaseTat
     /// <summary>0 for Actual. For Review/Rework, the review cycle number this phase belongs to.</summary>
     public int ReviewCycleNumber { get; set; }
 
-    public DateTime StartedAt { get; set; }
+    /// <summary>
+    /// Null while this phase exists but its TAT clock has not been started yet (Review/Rework are
+    /// opened this way — see DelegationService.OpenPhaseAsync/StartReviewAsync/StartReworkAsync;
+    /// Actual is always started immediately by StartAsync, so it is never null in practice). Set once,
+    /// the moment the phase's own explicit Start action runs.
+    /// </summary>
+    public DateTime? StartedAt { get; set; }
     /// <summary>Null while this is the current, still-open phase.</summary>
     public DateTime? EndedAt { get; set; }
+    public string? StartedById { get; set; }
+    public string? StartedByName { get; set; }
+    public string? EndedById { get; set; }
+    public string? EndedByName { get; set; }
 
     /// <summary>Null when no TAT rule is configured for (DelegationType, TaskType) — "no TAT" for this phase specifically.</summary>
     public int? AllottedTatMinutes { get; set; }

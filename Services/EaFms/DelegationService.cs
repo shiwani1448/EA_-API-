@@ -364,6 +364,7 @@ public class DelegationService : IDelegationService
         {
             DelegationId = entity.Id, TaskType = DelegationTaskType.Actual, ReviewCycleNumber = 0,
             StartedAt = now, AllottedTatMinutes = eaTask.AllottedTatMinutes, TatRuleId = eaTask.TatRuleId,
+            StartedById = Actor(), StartedByName = _user.UserName,
             CreatedBy = Actor(), CreatedDate = now
         });
 
@@ -534,6 +535,12 @@ public class DelegationService : IDelegationService
         var entity = await LockDelegationAsync(delegationId, ct);
         RequireInProgress(entity, "paused");
 
+        var currentPhase = await _db.DelegationPhaseTats
+            .Where(p => p.DelegationId == delegationId && p.EndedAt == null)
+            .OrderByDescending(p => p.Id).FirstOrDefaultAsync(ct);
+        if (currentPhase is not null && !currentPhase.StartedAt.HasValue)
+            throw new BusinessRuleException($"Cannot pause: the current {currentPhase.TaskType} phase has not been started yet. Start it first.");
+
         var eaTask = await _db.Tasks.FirstAsync(t => t.Id == entity.EaTaskId, ct);
         var now = Clock.UtcNowTz;
         var anchor = await EnsureAnchorAsync(entity, eaTask, now, ct);
@@ -627,6 +634,20 @@ public class DelegationService : IDelegationService
         SubmitWorkForReviewAsync(delegationId, null, dto, ct);
 
     /// <summary>
+    /// Starts the reviewer's own SLA clock for the currently open Review phase (opened idle by
+    /// Complete/SubmitForReview). 409 if the current open phase isn't a not-yet-started Review phase.
+    /// </summary>
+    public Task<DelegationResponseDto> StartReviewAsync(long delegationId, CancellationToken ct = default) =>
+        StartOpenPhaseAsync(delegationId, DelegationTaskType.Review, ct);
+
+    /// <summary>
+    /// Starts the doer's redo clock for the currently open Rework phase (opened idle by
+    /// review/rework). 409 if the current open phase isn't a not-yet-started Rework phase.
+    /// </summary>
+    public Task<DelegationResponseDto> StartReworkAsync(long delegationId, CancellationToken ct = default) =>
+        StartOpenPhaseAsync(delegationId, DelegationTaskType.Rework, ct);
+
+    /// <summary>
     /// Approving the pending review cycle is what finalizes the Delegation now (Complete only opens
     /// the cycle — see CompleteAsync above). Runs the same completion tail CompleteAsync used to run
     /// directly: freezes TAT, closes the pause anchor, marks Completed. completedBy reflects the doer
@@ -647,7 +668,10 @@ public class DelegationService : IDelegationService
         var eaTask = await _db.Tasks.FirstAsync(t => t.Id == entity.EaTaskId, ct);
         await RequireNoOpenPauseAsync(eaTask.WorkflowInstanceId, ct);
         var phase = await RequireReviewPhaseAsync(entity, ct);
-        var summary = await _taskReview.ApproveAsync(entity.EaTaskId, dto, ct);
+        var summary = await _taskReview.ApproveAsync(entity.EaTaskId, new ApproveTaskReviewRequestDto
+        {
+            ReviewedById = Actor(), ReviewedByName = _user.UserName, ReviewRemark = dto.ReviewRemark
+        }, ct);
         var now = Clock.UtcNowTz;
         await FinalizeCompletionAsync(entity, eaTask, summary.SubmittedById, summary.SubmittedByName, now, ct);
         // Close out this cycle's Review phase — approved, so nothing new opens after it.
@@ -696,7 +720,10 @@ public class DelegationService : IDelegationService
         var eaTask = await _db.Tasks.FirstAsync(t => t.Id == entity.EaTaskId, ct);
         await RequireNoOpenPauseAsync(eaTask.WorkflowInstanceId, ct);
         var phase = await RequireReviewPhaseAsync(entity, ct);
-        var summary = await _taskReview.RequestReworkAsync(entity.EaTaskId, dto, ct);
+        var summary = await _taskReview.RequestReworkAsync(entity.EaTaskId, new RequestTaskReworkRequestDto
+        {
+            ReviewedById = Actor(), ReviewedByName = _user.UserName, ReworkRemark = dto.ReworkRemark
+        }, ct);
         var now = Clock.UtcNowTz;
 
         // Close out this cycle's Review phase and open a Rework phase (same cycle number — a review
@@ -711,6 +738,13 @@ public class DelegationService : IDelegationService
             // ea_attachments row, tagged with this review cycle so it's traceable in history.
             if (attachmentBytes is not null)
                 objectKey = await AddReviewAttachmentAsync(delegationId, ReworkAttachmentPurpose, summary.ReviewCycleNumber, attachment!, attachmentBytes, now, ct);
+
+            _audit.AddAudit(
+                "DELEGATION_REWORK_REQUESTED", "Delegation", nameof(Delegation),
+                entity.Id.ToString(CultureInfo.InvariantCulture),
+                new { ReviewStatus = TaskReviewStatus.PendingReview },
+                new { ReviewCycle = summary.ReviewCycleNumber, dto.ReworkRemark, HasAttachment = attachmentBytes is not null },
+                "Delegation rework requested");
 
             await _db.SaveChangesAsync(ct);
             await transaction.CommitAsync(ct);
@@ -965,7 +999,11 @@ public class DelegationService : IDelegationService
         return applicable.Count == 1 ? (applicable[0].TatMinutes, applicable[0].Id) : (null, null);
     }
 
-    /// <summary>Opens (tracked, not yet saved) a new phase, resolving its own TAT rule fresh.</summary>
+    /// <summary>
+    /// Opens (tracked, not yet saved) a new Review/Rework phase, resolving its own TAT rule fresh.
+    /// Created idle — StartedAt null — its TAT clock only starts once StartReviewAsync/StartReworkAsync
+    /// is explicitly called (mirrors how Actual sits Pending until StartAsync is called).
+    /// </summary>
     private async Task OpenPhaseAsync(long delegationId, long moduleId, string? delegationType, string taskType, int reviewCycleNumber, DateTime now, CancellationToken ct)
     {
         var (allotted, ruleId) = await ResolvePhaseTatAsync(moduleId, delegationType, taskType, ct);
@@ -973,9 +1011,57 @@ public class DelegationService : IDelegationService
         _db.DelegationPhaseTats.Add(new DelegationPhaseTat
         {
             DelegationId = delegationId, TaskType = taskType, ReviewCycleNumber = reviewCycleNumber,
-            StartedAt = now, AllottedTatMinutes = allotted, TatRuleId = ruleId,
+            StartedAt = null, AllottedTatMinutes = allotted, TatRuleId = ruleId,
             CreatedBy = actor, CreatedDate = now
         });
+    }
+
+    /// <summary>
+    /// Explicit Start for a Review or Rework phase that was opened idle (see OpenPhaseAsync) — sets
+    /// StartedAt to now and begins TAT accrual, the same semantics StartAsync already applies to the
+    /// Actual phase. 409 if the Delegation isn't InProgress, there's no currently open phase, the open
+    /// phase is a different TaskType, or it was already started.
+    /// </summary>
+    private async Task<DelegationResponseDto> StartOpenPhaseAsync(long delegationId, string taskType, CancellationToken ct)
+    {
+        await using var transaction = await _db.Database.BeginTransactionAsync(ct);
+
+        var entity = await LockDelegationAsync(delegationId, ct);
+        RequireInProgress(entity, "started");
+
+        var eaTask = await _db.Tasks.FirstAsync(t => t.Id == entity.EaTaskId, ct);
+        await RequireNoOpenPauseAsync(eaTask.WorkflowInstanceId, ct);
+
+        var phase = await _db.DelegationPhaseTats
+            .Where(p => p.DelegationId == delegationId && p.EndedAt == null)
+            .OrderByDescending(p => p.Id).FirstOrDefaultAsync(ct)
+            ?? throw new BusinessRuleException("No phase is currently open for this Delegation.");
+        if (phase.TaskType != taskType)
+            throw new BusinessRuleException($"The current open phase is '{phase.TaskType}', not '{taskType}'.");
+        if (phase.StartedAt.HasValue)
+            throw new BusinessRuleException($"The current {taskType} phase has already been started.");
+
+        var now = Clock.UtcNowTz;
+        phase.StartedAt = now;
+        phase.StartedById = Actor();
+        phase.StartedByName = _user.UserName;
+        phase.ModifiedBy = Actor();
+        phase.ModifiedDate = now;
+
+        entity.ModifiedBy = Actor();
+        entity.ModifiedDate = now;
+
+        _audit.AddAudit(
+            $"DELEGATION_{taskType.ToUpperInvariant()}_START", "Delegation", nameof(Delegation),
+            entity.Id.ToString(CultureInfo.InvariantCulture),
+            new { TaskType = taskType, StartedAt = (DateTime?)null },
+            new { TaskType = taskType, phase.ReviewCycleNumber, phase.StartedAt },
+            $"Delegation {taskType} phase started");
+
+        await _db.SaveChangesAsync(ct);
+        await transaction.CommitAsync(ct);
+
+        return await BuildResponseAsync(entity, ct);
     }
 
     private async Task RequireNoOpenPauseAsync(long? workflowInstanceId, CancellationToken ct)
@@ -1005,14 +1091,30 @@ public class DelegationService : IDelegationService
 
     private async Task ClosePhaseAsync(DelegationPhaseTat phase, long? workflowInstanceId, DateTime now, CancellationToken ct)
     {
-        var pauses = PausesOverlapping(await LoadDelegationWorkPausesAsync(workflowInstanceId, ct), phase.StartedAt, now);
-        var summary = TatSummaryCalculator.Calculate(phase.AllottedTatMinutes ?? 0, phase.StartedAt, now, pauses, now);
         phase.EndedAt = now;
-        phase.TatUsedMinutes = phase.AllottedTatMinutes.HasValue ? (int)summary.Tat!.Value.TotalMinutes : null;
-        phase.TatPausedMinutes = (int)summary.PauseTime.TotalMinutes;
-        phase.TatUsedSeconds = phase.AllottedTatMinutes.HasValue ? DurationSeconds(summary.Tat!.Value) : null;
-        phase.TatPausedSeconds = DurationSeconds(summary.PauseTime);
-        phase.PauseCount = summary.PauseCount;
+        phase.EndedById = Actor();
+        phase.EndedByName = _user.UserName;
+        if (!phase.StartedAt.HasValue)
+        {
+            // Never explicitly started (Review/Rework can close without ever having their clock
+            // started) — nothing accrued, so freeze a zero snapshot rather than dividing by a window
+            // that never opened.
+            phase.TatUsedMinutes = phase.AllottedTatMinutes.HasValue ? 0 : null;
+            phase.TatPausedMinutes = 0;
+            phase.TatUsedSeconds = phase.AllottedTatMinutes.HasValue ? 0m : null;
+            phase.TatPausedSeconds = 0m;
+            phase.PauseCount = 0;
+        }
+        else
+        {
+            var pauses = PausesOverlapping(await LoadDelegationWorkPausesAsync(workflowInstanceId, ct), phase.StartedAt.Value, now);
+            var summary = TatSummaryCalculator.Calculate(phase.AllottedTatMinutes ?? 0, phase.StartedAt.Value, now, pauses, now);
+            phase.TatUsedMinutes = phase.AllottedTatMinutes.HasValue ? (int)summary.Tat!.Value.TotalMinutes : null;
+            phase.TatPausedMinutes = (int)summary.PauseTime.TotalMinutes;
+            phase.TatUsedSeconds = phase.AllottedTatMinutes.HasValue ? DurationSeconds(summary.Tat!.Value) : null;
+            phase.TatPausedSeconds = DurationSeconds(summary.PauseTime);
+            phase.PauseCount = summary.PauseCount;
+        }
         phase.ModifiedBy = Actor();
         phase.ModifiedDate = now;
         // Release the single-open-phase index entry before inserting the successor, within the same transaction.
@@ -1077,6 +1179,8 @@ public class DelegationService : IDelegationService
             {
                 TaskType = phase.TaskType, ReviewCycleNumber = phase.ReviewCycleNumber,
                 StartedAt = phase.StartedAt, EndedAt = phase.EndedAt,
+                StartedById = phase.StartedById, StartedByName = phase.StartedByName,
+                EndedById = phase.EndedById, EndedByName = phase.EndedByName,
                 AllottedTatMinutes = phase.AllottedTatMinutes, TatUsedMinutes = phase.TatUsedMinutes,
                 TatPausedMinutes = phase.TatPausedMinutes, PauseCount = phase.PauseCount,
                 TatUsedSeconds = phase.TatUsedSeconds, TatPausedSeconds = phase.TatPausedSeconds,
@@ -1086,15 +1190,35 @@ public class DelegationService : IDelegationService
                     ? phase.AllottedTatMinutes - phase.TatUsedMinutes : null,
             };
         }
-        // The current, still-open phase — live-ticking, same formula, window end is "now" instead of a frozen EndedAt.
-        var relevant = PausesOverlapping(pauses, phase.StartedAt, now);
-        var summary = TatSummaryCalculator.Calculate(phase.AllottedTatMinutes ?? 0, phase.StartedAt, null, relevant, now);
+        if (!phase.StartedAt.HasValue)
+        {
+            // Open but not yet started (Review/Rework waiting for their explicit Start action) — zero
+            // elapsed, full budget still available; never call TatSummaryCalculator with no window.
+            return new DelegationPhaseTatDto
+            {
+                TaskType = phase.TaskType, ReviewCycleNumber = phase.ReviewCycleNumber,
+                StartedAt = null, EndedAt = null,
+                StartedById = phase.StartedById, StartedByName = phase.StartedByName,
+                EndedById = phase.EndedById, EndedByName = phase.EndedByName,
+                AllottedTatMinutes = phase.AllottedTatMinutes,
+                TatUsedMinutes = phase.AllottedTatMinutes.HasValue ? 0 : null,
+                TatPausedMinutes = 0, PauseCount = 0,
+                TatUsedSeconds = phase.AllottedTatMinutes.HasValue ? 0m : null, TatPausedSeconds = 0m,
+                TatDifferenceSeconds = phase.AllottedTatMinutes.HasValue ? phase.AllottedTatMinutes.Value * 60m : null,
+                TatDifferenceMinutes = phase.AllottedTatMinutes,
+            };
+        }
+        // The current, still-open, started phase — live-ticking, same formula, window end is "now" instead of a frozen EndedAt.
+        var relevant = PausesOverlapping(pauses, phase.StartedAt.Value, now);
+        var summary = TatSummaryCalculator.Calculate(phase.AllottedTatMinutes ?? 0, phase.StartedAt.Value, null, relevant, now);
         int? used = phase.AllottedTatMinutes.HasValue ? (int)summary.Tat!.Value.TotalMinutes : null;
         decimal? usedSeconds = phase.AllottedTatMinutes.HasValue ? DurationSeconds(summary.Tat!.Value) : null;
         return new DelegationPhaseTatDto
         {
             TaskType = phase.TaskType, ReviewCycleNumber = phase.ReviewCycleNumber,
             StartedAt = phase.StartedAt, EndedAt = null,
+            StartedById = phase.StartedById, StartedByName = phase.StartedByName,
+            EndedById = phase.EndedById, EndedByName = phase.EndedByName,
             AllottedTatMinutes = phase.AllottedTatMinutes, TatUsedMinutes = used,
             TatPausedMinutes = (int)summary.PauseTime.TotalMinutes, PauseCount = summary.PauseCount,
             TatUsedSeconds = usedSeconds, TatPausedSeconds = DurationSeconds(summary.PauseTime),
@@ -1292,6 +1416,8 @@ public class DelegationService : IDelegationService
         switch (view)
         {
             case "pending": q = q.Where(d => d.Status == DelegationStatus.Pending); break;
+            case "notstarted": q = q.Where(IsNotStartedExpr()); break;
+            case "started": q = q.Where(IsExecutionInProgressExpr()); break;
             case "inprogress": q = q.Where(d => d.Status == DelegationStatus.InProgress); break;
             case "completed": q = q.Where(d => d.Status == DelegationStatus.Completed); break;
             case "duetoday": q = q.Where(IsDueTodayExpr(today)); break;
@@ -1356,6 +1482,7 @@ public class DelegationService : IDelegationService
         return new DelegationSummaryResponseDto
         {
             Total = await active.CountAsync(ct),
+            NotStarted = await active.CountAsync(IsNotStartedExpr(), ct),
             Pending = await active.CountAsync(d => d.Status == DelegationStatus.Pending, ct),
             InProgress = await active.CountAsync(d => d.Status == DelegationStatus.InProgress, ct),
             // Same predicate expressions the register's view=dueToday/overdue filters use —
@@ -1376,6 +1503,15 @@ public class DelegationService : IDelegationService
     /// IsDueToday/IsOverdue response flags — one calculation, not three. A completed
     /// Delegation is never due-today/overdue regardless of DueDate.
     /// </summary>
+    private Expression<Func<Delegation, bool>> IsNotStartedExpr() =>
+        d => d.Status == DelegationStatus.Pending ||
+             (d.Status == DelegationStatus.InProgress && _db.DelegationPhaseTats.Any(
+                 p => p.DelegationId == d.Id && p.EndedAt == null && p.StartedAt == null));
+
+    private Expression<Func<Delegation, bool>> IsExecutionInProgressExpr() =>
+        d => d.Status == DelegationStatus.InProgress && !_db.DelegationPhaseTats.Any(
+            p => p.DelegationId == d.Id && p.EndedAt == null && p.StartedAt == null);
+
     private static Expression<Func<Delegation, bool>> IsDueTodayExpr(DateTime today) =>
         d => d.Status != DelegationStatus.Completed && d.DueDate.HasValue && d.DueDate.Value.Date == today;
 
@@ -1452,7 +1588,7 @@ public class DelegationService : IDelegationService
     {
         if (string.IsNullOrWhiteSpace(view)) return null;
         var v = view.Trim().ToLowerInvariant();
-        if (v is "all" or "pending" or "inprogress" or "duetoday" or "overdue" or "completed") return v == "all" ? null : v;
+        if (v is "all" or "pending" or "inprogress" or "notstarted" or "started" or "duetoday" or "overdue" or "completed") return v == "all" ? null : v;
         throw new BadRequestException($"Unsupported view '{view}'.");
     }
 
@@ -1467,17 +1603,28 @@ public class DelegationService : IDelegationService
         {
             "pending" => DelegationStatus.Pending,
             "inprogress" => DelegationStatus.InProgress,
+            "started" => DelegationStatus.InProgress,
             "completed" => DelegationStatus.Completed,
             _ => null
         };
         if (expected is not null && expected != status)
             throw new BadRequestException($"view '{view}' conflicts with status '{status}'.");
+        if (view == "notstarted" && status == DelegationStatus.Completed)
+            throw new BadRequestException($"view '{view}' conflicts with status '{status}'.");
         if ((view is "duetoday" or "overdue") && status == DelegationStatus.Completed)
             throw new BadRequestException($"view '{view}' conflicts with status '{status}' (Completed is excluded from {view}).");
     }
 
+    private static string DeriveExecutionStatus(string status, DelegationPhaseTatDto? openPhase) =>
+        status == DelegationStatus.Completed ? EaTaskExecutionStatus.Completed :
+        status == DelegationStatus.Pending ||
+        (status == DelegationStatus.InProgress && openPhase is { StartedAt: null })
+            ? EaTaskExecutionStatus.NotStarted : EaTaskExecutionStatus.InProgress;
+
     private static DelegationResponseDto ToDto(Delegation d, string? sourceModuleName, long? completionPdfAttachmentId = null, DelegationTatView? tat = null, TaskReviewSummaryDto? reviewSummary = null, List<DelegationPhaseTatDto>? phaseTat = null)
     {
+        var openPhase = d.Status == DelegationStatus.InProgress
+            ? phaseTat?.SingleOrDefault(p => p.EndedAt == null) : null;
         var today = IndiaBusinessCalendar.Today;
         // Compiled from the exact same expressions used for the register view filter and
         // the KPI summary counts — see IsDueTodayExpr/IsOverdueExpr.
@@ -1521,7 +1668,10 @@ public class DelegationService : IDelegationService
             CompletedByName = d.CompletedByNameSnapshot,
             CompletionPdfAttachmentId = completionPdfAttachmentId,
             IsPaused = tat?.IsPaused ?? false,
-            ExecutionStatus = tat?.ExecutionStatus ?? EaTaskExecutionStatus.NotStarted,
+            ExecutionStatus = DeriveExecutionStatus(d.Status, openPhase),
+            CurrentPhase = openPhase?.TaskType,
+            CurrentPhaseCycleNumber = openPhase?.ReviewCycleNumber,
+            CurrentPhaseStartedAt = openPhase?.StartedAt,
             AllottedTatMinutes = tat?.AllottedTatMinutes,
             TatUsedMinutes = tat?.TatUsedMinutes,
             TatPausedMinutes = tat?.TatPausedMinutes,

@@ -17,6 +17,8 @@ namespace Jarvis5.Controllers.EaFms;
 ///   POST   /api/ea/delegations/{delegationId}/pause      (optional JSON body: pauseReason)
 ///   POST   /api/ea/delegations/{delegationId}/resume     (no body)
 ///   POST   /api/ea/delegations/{delegationId}/complete   (multipart/form-data; completionPdf optional)
+///   POST   /api/ea/delegations/{delegationId}/review/start   (starts the reviewer's TAT clock for the open Review phase)
+///   POST   /api/ea/delegations/{delegationId}/rework/start   (starts the doer's TAT clock for the open Rework phase)
 ///
 /// NOT implemented yet: /cancel, /history, /reminder, /escalation.
 /// </summary>
@@ -129,6 +131,32 @@ public class DelegationsController : ControllerBase
     // ============================================================
     // TASK REVIEW / REWORK (Phase 1)
     // ============================================================
+
+    /// <summary>
+    /// Starts the reviewer's own TAT clock for the currently open Review phase. Complete/
+    /// submit-for-review open the Review phase idle now (no auto-start); a reviewer must call this
+    /// before their SLA clock begins accruing. No request body. 404 unknown id; 409 if not InProgress,
+    /// paused, there's no currently open phase, the open phase isn't Review, or it was already started.
+    /// </summary>
+    [HttpPost("{delegationId:long}/review/start")]
+    [ProducesResponseType(typeof(DelegationResponseDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> StartReview(long delegationId, CancellationToken ct) =>
+        Ok(await _service.StartReviewAsync(delegationId, ct));
+
+    /// <summary>
+    /// Starts the doer's own TAT clock for the currently open Rework phase. review/rework opens the
+    /// Rework phase idle now (no auto-start); the doer must call this before their redo clock begins
+    /// accruing. No request body. 404 unknown id; 409 if not InProgress, paused, there's no currently
+    /// open phase, the open phase isn't Rework, or it was already started.
+    /// </summary>
+    [HttpPost("{delegationId:long}/rework/start")]
+    [ProducesResponseType(typeof(DelegationResponseDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> StartRework(long delegationId, CancellationToken ct) =>
+        Ok(await _service.StartReworkAsync(delegationId, ct));
 
     /// <summary>Close the current Actual/Rework phase and open the next Review phase atomically. 409 if not InProgress, paused, already pending review, or phase history is inconsistent.</summary>
     [HttpPost("{delegationId:long}/submit-for-review")]

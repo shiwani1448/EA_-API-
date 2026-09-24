@@ -61,13 +61,30 @@ public class ApprovalAiService : IApprovalAiService
     {
         var detail = await LoadAsync(approvalRequestId, ct);
 
+        return await CheckReadinessAsync(new ApprovalAiReadinessInput
+        {
+            SavedRequestId = approvalRequestId,
+            RequestTitle = detail.RequestTitle, RequestType = detail.Type,
+            Priority = detail.Priority, Department = detail.Department,
+            Description = detail.Description, Justification = detail.Justification,
+            Amount = detail.Amount, Currency = detail.Currency,
+            RequiredApprovalDate = detail.RequiredApprovalDate, ApproverName = detail.Approver,
+            DocumentFileNames = detail.Documents.Select(d => d.OriginalFileName).ToList(),
+            WorkflowStatus = detail.WorkflowStatus, CurrentCycleNo = detail.CurrentCycleNo,
+            LatestCycle = detail.LatestCycle,
+        }, ct);
+    }
+
+    public async Task<ApprovalAiReadinessResponseDto> CheckReadinessAsync(ApprovalAiReadinessInput detail, CancellationToken ct = default)
+    {
+        var approvalRequestId = detail.SavedRequestId;
         var systemPrompt = _promptBuilder.BuildReadinessSystemPrompt();
         var userPrompt = _promptBuilder.BuildReadinessUserPrompt(detail);
 
         var aiResult = await GenerateAndParseAsync<ApprovalAiReadinessResultDto>(
             systemPrompt, userPrompt, "Approval readiness check", ct);
 
-        var response = new ApprovalAiReadinessResponseDto
+        return new ApprovalAiReadinessResponseDto
         {
             ApprovalRequestId = approvalRequestId,
             IsLikelyReady = aiResult.IsLikelyReady,
@@ -83,6 +100,17 @@ public class ApprovalAiService : IApprovalAiService
     public async Task<ApprovalAiApproverSuggestionResponseDto> RecommendApproverAsync(long approvalRequestId, CancellationToken ct = default)
     {
         var detail = await LoadAsync(approvalRequestId, ct);
+        return await RecommendApproverAsync(new ApprovalAiApproverInput
+        {
+            SavedRequestId = approvalRequestId, RequestType = detail.Type,
+            Department = detail.Department, Amount = detail.Amount,
+            Currency = detail.Currency, SavedPriority = detail.Priority,
+        }, ct);
+    }
+
+    public async Task<ApprovalAiApproverSuggestionResponseDto> RecommendApproverAsync(ApprovalAiApproverInput detail, CancellationToken ct = default)
+    {
+        var approvalRequestId = detail.SavedRequestId;
         const string warning = "Based on historical approval patterns in this department only — not an org chart or authorization rule.";
 
         if (string.IsNullOrWhiteSpace(detail.Department))
@@ -102,7 +130,14 @@ public class ApprovalAiService : IApprovalAiService
         // Historical stats computed here in C#, never invented by Claude — this system has
         // no employee/role directory, so the only honest source of a "who approves this
         // kind of thing" signal is who actually approved similar requests before.
-        var history = await _repository.GetTopApproversByDepartmentAsync(approvalRequestId, detail.Department, ct);
+        var history = await _db.ApprovalRequests.AsNoTracking()
+            .Where(a => !a.IsDeleted && a.Id != approvalRequestId && a.Department == detail.Department
+                && a.WorkflowStatus == "Approved" && a.ApprovedBy != null)
+            .GroupBy(a => a.ApprovedBy!)
+            .Select(g => new { Approver = g.Key, Count = g.Count() })
+            .OrderByDescending(g => g.Count)
+            .Take(5)
+            .ToListAsync(ct);
 
         if (history.Count == 0)
         {

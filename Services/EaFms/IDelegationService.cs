@@ -27,9 +27,24 @@ public interface IDelegationService
     /// 409 if not currently InProgress, or if a review cycle is already pending.
     /// </summary>
     Task<DelegationResponseDto> CompleteAsync(long delegationId, IFormFile? completionPdf, CancellationToken ct = default);
+
+    /// <summary>
+    /// Starts the reviewer's SLA clock for the currently open Review phase, which Complete/
+    /// SubmitForReview now open idle (StartedAt null) instead of live. 404 unknown id; 409 if not
+    /// InProgress, paused, there's no open phase, the open phase isn't Review, or it was already started.
+    /// </summary>
+    Task<DelegationResponseDto> StartReviewAsync(long delegationId, CancellationToken ct = default);
+    /// <summary>
+    /// Starts the doer's redo clock for the currently open Rework phase, which review/rework now opens
+    /// idle (StartedAt null) instead of live. 404 unknown id; 409 if not InProgress, paused, there's no
+    /// open phase, the open phase isn't Rework, or it was already started.
+    /// </summary>
+    Task<DelegationResponseDto> StartReworkAsync(long delegationId, CancellationToken ct = default);
     /// <summary>
     /// Opens exactly one shared WorkPause for an InProgress Delegation (status stays InProgress; isPaused=true).
-    /// 409 when not InProgress or already paused.
+    /// 409 when not InProgress, already paused, or the currently open phase has not been started yet
+    /// (StartReviewAsync/StartReworkAsync/StartAsync must run first — pausing a phase whose clock
+    /// never started doesn't make sense).
     /// </summary>
     Task<DelegationResponseDto> PauseAsync(long delegationId, DelegationPauseRequestDto? request, CancellationToken ct = default);
     /// <summary>Closes the open WorkPause of an InProgress Delegation (isPaused=false). 409 when not paused.</summary>

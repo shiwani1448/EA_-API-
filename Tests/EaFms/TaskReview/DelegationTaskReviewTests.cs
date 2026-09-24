@@ -86,13 +86,13 @@ public class DelegationTaskReviewTests : IDisposable
         Assert.Equal(TaskReviewStatus.PendingReview, submitted.ReviewSummary.Status);
         Assert.Equal(1, submitted.ReviewSummary.ReviewCycleNumber);
         Assert.Equal("rev-1", submitted.ReviewSummary.ReviewerId);
-        Assert.Equal(EaTaskExecutionStatus.InProgress, submitted.ExecutionStatus);
+        Assert.Equal(EaTaskExecutionStatus.NotStarted, submitted.ExecutionStatus);
 
         var reworked = await f.Svc.RequestReworkAsync(f.DelegationId, new RequestTaskReworkRequestDto { ReviewedById = "rev-1", ReviewedByName = "Reviewer One", ReworkRemark = "Fix the numbers" }, null);
         Assert.Equal(TaskReviewStatus.ReworkRequested, reworked.ReviewSummary.Status);
         Assert.Equal(1, reworked.ReviewSummary.ReviewCycleNumber);
         Assert.Equal("Fix the numbers", reworked.ReviewSummary.ReworkRemark);
-        Assert.Equal(EaTaskExecutionStatus.InProgress, reworked.ExecutionStatus);
+        Assert.Equal(EaTaskExecutionStatus.NotStarted, reworked.ExecutionStatus);
 
         var resubmitted = await f.Svc.SubmitForReviewAsync(f.DelegationId, new SubmitForReviewRequestDto { ReviewerId = "rev-1", ReviewerName = "Reviewer One", SubmittedById = "doer-1", SubmittedByName = "Doer One" });
         Assert.Equal(TaskReviewStatus.PendingReview, resubmitted.ReviewSummary.Status);
@@ -199,7 +199,7 @@ public class DelegationTaskReviewTests : IDisposable
 
         var submitted = await f.Svc.CompleteAsync(f.DelegationId, null);
         Assert.Equal(DelegationStatus.InProgress, submitted.Status);
-        Assert.Equal(EaTaskExecutionStatus.InProgress, submitted.ExecutionStatus);
+        Assert.Equal(EaTaskExecutionStatus.NotStarted, submitted.ExecutionStatus);
         Assert.Equal(TaskReviewStatus.PendingReview, submitted.ReviewSummary.Status);
         Assert.Null(submitted.CompletedAt);
 
@@ -226,7 +226,7 @@ public class DelegationTaskReviewTests : IDisposable
 
         var reworked = await f.Svc.RequestReworkAsync(f.DelegationId, new RequestTaskReworkRequestDto { ReworkRemark = "Please redo section 2" }, null);
         Assert.Equal(DelegationStatus.InProgress, reworked.Status);
-        Assert.Equal(EaTaskExecutionStatus.InProgress, reworked.ExecutionStatus);
+        Assert.Equal(EaTaskExecutionStatus.NotStarted, reworked.ExecutionStatus);
         Assert.Equal(TaskReviewStatus.ReworkRequested, reworked.ReviewSummary.Status);
 
         // Doer redoes the work and completes again — same InProgress Delegation, next review cycle.

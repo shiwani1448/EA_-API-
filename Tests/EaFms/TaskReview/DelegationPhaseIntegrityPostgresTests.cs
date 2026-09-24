@@ -61,6 +61,8 @@ public class DelegationPhaseIntegrityPostgresTests : IClassFixture<ScratchTatDat
             "approve" => await svc.ApproveReviewAsync(id, new ApproveTaskReviewRequestDto(), null),
             "pause" => await svc.PauseAsync(id, new DelegationPauseRequestDto()),
             "resume" => await svc.ResumeAsync(id),
+            "startReview" => await svc.StartReviewAsync(id),
+            "startRework" => await svc.StartReworkAsync(id),
             _ => throw new ArgumentException(action)
         };
     }
@@ -93,8 +95,10 @@ public class DelegationPhaseIntegrityPostgresTests : IClassFixture<ScratchTatDat
         Assert.Equal(frozenActual.EndedAt, done.PhaseTat[0].EndedAt);
         Assert.Equal(frozenActual.TatUsedMinutes, done.PhaseTat[0].TatUsedMinutes);
         Assert.All(done.PhaseTat.Skip(1), p => Assert.Equal(0, p.TatUsedMinutes));
+        // Every Review/Rework phase here opened idle and was closed without ever being explicitly
+        // started (this flow never calls StartReviewAsync/StartReworkAsync) — StartedAt stays null.
         for (var i = 1; i < done.PhaseTat.Count; i++)
-            Assert.Equal(done.PhaseTat[i - 1].EndedAt, done.PhaseTat[i].StartedAt);
+            Assert.Null(done.PhaseTat[i].StartedAt);
         await using var verify = _fx.Db();
         var rows = await verify.DelegationPhaseTats.Where(p => p.DelegationId == id).OrderBy(p => p.Id).ToListAsync();
         Assert.Equal(6, rows.Count);
@@ -109,6 +113,7 @@ public class DelegationPhaseIntegrityPostgresTests : IClassFixture<ScratchTatDat
     {
         var id = await CreateAsync();
         await Act(id, "submit");
+        await Act(id, "startReview"); // Review opens idle now — must be started before it can be paused
         await Act(id, "pause");
         await Act(id, "resume");
         await Act(id, "pause");
@@ -169,7 +174,7 @@ public class DelegationPhaseIntegrityPostgresTests : IClassFixture<ScratchTatDat
     public async Task OpenPause_BlocksTransitionWithoutChangingHistory(string action, bool review)
     {
         var id = await CreateAsync();
-        if (review) await Act(id, "submit");
+        if (review) { await Act(id, "submit"); await Act(id, "startReview"); }
         await Act(id, "pause");
         await Assert.ThrowsAsync<BusinessRuleException>(() => Act(id, action));
         await using (var db = _fx.Db())
