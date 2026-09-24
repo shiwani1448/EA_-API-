@@ -14,9 +14,13 @@ public class EaTaskService(EaFmsDbContext db, IEaTaskRepository repository, ITat
     IValidator<CreateEaTaskDto> validator, ICurrentUserService user, IAuditService audit) : IEaTaskService
 {
     // Explicit backend module policy for the no-TAT task-creation path. The frontend never
-    // selects this; only module identity (resolved server-side by name) does.
+    // selects this; only module identity (resolved server-side by name) does. Follow-up uses
+    // this as its EaTask creation entry point too: it always creates without a hard-required
+    // TAT rule, then FollowupService itself does the soft (never-throwing) type-only rule
+    // lookup and writes AllottedTatMinutes/TatRuleId onto the same EaTask afterward — see
+    // FollowupService.CreateAsync for why a "no rule = no TAT" outcome must never throw here.
     private static readonly HashSet<string> NoTatAuthorizedModules =
-        new(StringComparer.OrdinalIgnoreCase) { "EA Approval", "Travel & Hospitality", "Delegation" };
+        new(StringComparer.OrdinalIgnoreCase) { "EA Approval", "Travel & Hospitality", "Delegation", "Follow-up" };
 
     public static bool IsTypeOnlyTatModule(string moduleName) =>
         TypeOnlyTatModules.Contains(moduleName.Trim());
@@ -103,8 +107,9 @@ public class EaTaskService(EaFmsDbContext db, IEaTaskRepository repository, ITat
     // None = no TAT (backend-only); TypeOnly = module + type, no subtype (backend-only, Delegation).
     private enum TatMode { Required, None, TypeOnly }
 
-    // Only Delegation has a single business classification (delegationType) and therefore no subtype.
-    private static readonly HashSet<string> TypeOnlyTatModules = new(StringComparer.OrdinalIgnoreCase) { "Delegation" };
+    // Delegation and Follow-up each have a single business classification (delegationType /
+    // Followup.Type) and therefore no subtype — both resolve TAT rules as module + Type + TaskType only.
+    private static readonly HashSet<string> TypeOnlyTatModules = new(StringComparer.OrdinalIgnoreCase) { "Delegation", "Follow-up" };
 
     public Task<EaTaskResponseDto> CreateAsync(CreateEaTaskDto dto, CancellationToken ct) =>
         CreateCoreAsync(dto, TatMode.Required, ct);
@@ -146,9 +151,9 @@ public class EaTaskService(EaFmsDbContext db, IEaTaskRepository repository, ITat
         var subtype = dto.Subtype;
         var isApproval = string.Equals(module.Name.Trim(), "EA Approval", StringComparison.OrdinalIgnoreCase);
         if (mode == TatMode.None && !IsNoTatAuthorized(module.Name))
-            throw new BusinessRuleException("Task creation without TAT is only supported for EA Approval, Travel & Hospitality, and Delegation.");
+            throw new BusinessRuleException("Task creation without TAT is only supported for EA Approval, Travel & Hospitality, Delegation, and Follow-up.");
         if (mode == TatMode.TypeOnly && !TypeOnlyTatModules.Contains(module.Name.Trim()))
-            throw new BusinessRuleException("Type-only TAT resolution is only supported for Delegation.");
+            throw new BusinessRuleException("Type-only TAT resolution is only supported for Delegation and Follow-up.");
         if (string.Equals(module.Name.Trim(), "Meeting", StringComparison.OrdinalIgnoreCase))
         {
             if (!long.TryParse(dto.BusinessRecordId, NumberStyles.None, CultureInfo.InvariantCulture, out var meetingId))
@@ -219,7 +224,7 @@ public class EaTaskService(EaFmsDbContext db, IEaTaskRepository repository, ITat
             // ApprovalService.CreateAsync) transitions it to InProgress immediately
             // afterward, in the same transaction; this service never guesses that for them.
             ExecutionStatus = EaTaskExecutionStatus.NotStarted,
-            IsActive = true, CreatedBy = user.UserId.ToString(CultureInfo.InvariantCulture), CreatedDate = Clock.UtcNowTz
+            IsActive = true, CreatedBy = user.ActorDisplay(), CreatedDate = Clock.UtcNowTz
         };
         await repository.AddAsync(task, ct);
         await db.SaveChangesAsync(ct);

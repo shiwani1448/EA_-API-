@@ -363,8 +363,8 @@ public class DelegationService : IDelegationService
         _db.DelegationPhaseTats.Add(new DelegationPhaseTat
         {
             DelegationId = entity.Id, TaskType = DelegationTaskType.Actual, ReviewCycleNumber = 0,
+            StartedById = _user.ActorId(), StartedByName = _user.ActorName(),
             StartedAt = now, AllottedTatMinutes = eaTask.AllottedTatMinutes, TatRuleId = eaTask.TatRuleId,
-            StartedById = Actor(), StartedByName = _user.UserName,
             CreatedBy = Actor(), CreatedDate = now
         });
 
@@ -601,8 +601,8 @@ public class DelegationService : IDelegationService
         var now = Clock.UtcNowTz;
         var actor = Actor();
         pause.EndAt = now;
-        pause.ResumedById = _user.UserId.ToString(CultureInfo.InvariantCulture);
-        pause.ResumedByName = _user.UserName;
+        pause.ResumedById = _user.ActorId();
+        pause.ResumedByName = _user.ActorName();
         pause.ModifiedBy = actor;
         pause.ModifiedDate = now;
 
@@ -1043,8 +1043,8 @@ public class DelegationService : IDelegationService
 
         var now = Clock.UtcNowTz;
         phase.StartedAt = now;
-        phase.StartedById = Actor();
-        phase.StartedByName = _user.UserName;
+        phase.StartedById = _user.ActorId();
+        phase.StartedByName = _user.ActorName();
         phase.ModifiedBy = Actor();
         phase.ModifiedDate = now;
 
@@ -1092,8 +1092,8 @@ public class DelegationService : IDelegationService
     private async Task ClosePhaseAsync(DelegationPhaseTat phase, long? workflowInstanceId, DateTime now, CancellationToken ct)
     {
         phase.EndedAt = now;
-        phase.EndedById = Actor();
-        phase.EndedByName = _user.UserName;
+        phase.EndedById = _user.ActorId();
+        phase.EndedByName = _user.ActorName();
         if (!phase.StartedAt.HasValue)
         {
             // Never explicitly started (Review/Rework can close without ever having their clock
@@ -1555,7 +1555,7 @@ public class DelegationService : IDelegationService
                 .SingleAsync(ct)
             : null;
 
-    private string Actor() => _user.UserName ?? _user.UserId.ToString(CultureInfo.InvariantCulture);
+    private string Actor() => _user.ActorDisplay();
 
     /// <summary>
     /// Priority is a frontend-owned business string (PriorityLevel is optional discovery

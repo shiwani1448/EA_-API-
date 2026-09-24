@@ -47,7 +47,7 @@ public class FollowupAiServiceTests
     {
         var currentUser = Mock.Of<ICurrentUserService>(u => u.UserId == 7L && u.UserName == "EA User");
         var audit = Mock.Of<IAuditService>();
-        var followups = new FollowupService(new FollowupRepository(db), db, Mapper, currentUser, audit, new FollowupSourceResolver(db));
+        var followups = new FollowupService(new FollowupRepository(db), db, Mapper, currentUser, audit, new FollowupSourceResolver(db), FollowupTestSupport.EaTasks(db), new TatRuleRepository(db));
         var escalations = new EscalationService(new EscalationRepository(db), db, Mapper, currentUser, audit);
         var cycles = new FollowupCycleRepository(db);
         return new Harness { Db = db, Followups = followups, Escalations = escalations, Cycles = cycles, ReminderSender = new Mock<IEaReminderEmailSender>() };

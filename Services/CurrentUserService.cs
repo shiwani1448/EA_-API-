@@ -18,12 +18,27 @@ public class CurrentUserService : ICurrentUserService
     {
         get
         {
-            var value = _httpContextAccessor.HttpContext?.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+            var value = EmployeeId;
             return long.TryParse(value, out var id) ? id : 0;
         }
     }
 
-    public string? UserName => _httpContextAccessor.HttpContext?.User.Identity?.Name;
+    public string? EmployeeId => Claim("employeeID", "employee_id", "empId", "sub", System.Security.Claims.ClaimTypes.NameIdentifier);
+
+    public string? UserName => Claim("employeeName", "employee_name", "name", System.Security.Claims.ClaimTypes.Name, "unique_name");
+
+    private string? Claim(params string[] types)
+    {
+        var principal = _httpContextAccessor.HttpContext?.User;
+        if (principal is null) return null;
+        foreach (var type in types)
+        {
+            var value = principal.Identities.Where(i => i.IsAuthenticated).SelectMany(i => i.Claims)
+                .FirstOrDefault(c => string.Equals(c.Type, type, StringComparison.OrdinalIgnoreCase))?.Value.Trim();
+            if (!string.IsNullOrWhiteSpace(value) && value != "0") return value;
+        }
+        return null;
+    }
 
     public string? IPAddress
     {

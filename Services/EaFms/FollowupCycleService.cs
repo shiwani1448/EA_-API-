@@ -52,7 +52,7 @@ public class FollowupCycleService : IFollowupCycleService
             OutcomeCode = dto.OutcomeCode?.Trim(),
             FollowedUpByEmployeeId = actor.EmployeeId,
             FollowedUpByEmployeeName = actor.EmployeeName,
-            CreatedBy = actor.DisplayName ?? _user.UserName ?? _user.UserId.ToString(CultureInfo.InvariantCulture),
+            CreatedBy = actor.DisplayName ?? _user.ActorDisplay(),
             CreatedDate = now
         };
         await _repo.AddAsync(cycle, ct);

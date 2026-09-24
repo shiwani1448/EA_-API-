@@ -28,8 +28,12 @@ public class FinalConsistencyTests
     private static BusinessModuleService Modules(EaFmsDbContext db) =>
         new(db, new BusinessModuleRepository(db), Placeholder, Mock.Of<IAuditService>());
 
-    private static FollowupService Followups(EaFmsDbContext db) => new(
-        new FollowupRepository(db), db, Mapper, Placeholder, Mock.Of<IAuditService>(), new FollowupSourceResolver(db));
+    // Followup actors come from the request token, never from body fields.
+    private static readonly ICurrentUserService Siddhi = FollowupTestSupport.User("S5I-1013", "Siddhi Jadhav");
+    private static readonly ICurrentUserService Richa = FollowupTestSupport.User("S5I-3000", "Richa Shah");
+
+    private static FollowupService Followups(EaFmsDbContext db, ICurrentUserService? user = null) => new(
+        new FollowupRepository(db), db, Mapper, user ?? Siddhi, Mock.Of<IAuditService>(), new FollowupSourceResolver(db), FollowupTestSupport.EaTasks(db), new TatRuleRepository(db));
 
     private static SaveBusinessModuleDto Save(string name, bool active) =>
         new() { Name = name, IsActive = active, EmployeeId = "S5I-1013", EmployeeName = "Siddhi Jadhav" };
@@ -125,8 +129,8 @@ public class FinalConsistencyTests
     {
         var (db, svc, f) = await NewFollowupAsync(); await using var _ = db;
 
-        await svc.RecordFollowupAsync(f.Id, new RecordFollowupRequestDto
-        { Note = "Called again", NextFollowupAt = Base.AddDays(4), EmployeeId = "S5I-3000", EmployeeName = "Richa Shah" });
+        await Followups(db, Richa).RecordFollowupAsync(f.Id, new RecordFollowupRequestDto
+        { Note = "Called again", NextFollowupAt = Base.AddDays(4) });
         var after = await svc.GetByIdAsync(f.Id);
         var cycle = await db.FollowupCycles.AsNoTracking().SingleAsync();
 
@@ -145,7 +149,7 @@ public class FinalConsistencyTests
         var (db, svc, f) = await NewFollowupAsync(); await using var _ = db;
 
         await svc.RecordFollowupAsync(f.Id, new RecordFollowupRequestDto { Note = "Waiting for confirmation", EmployeeId = "S5I-1013", EmployeeName = "Siddhi Jadhav" });
-        await svc.RecordFollowupAsync(f.Id, new RecordFollowupRequestDto { Note = "Called again", EmployeeId = "S5I-3000", EmployeeName = "Richa Shah" });
+        await Followups(db, Richa).RecordFollowupAsync(f.Id, new RecordFollowupRequestDto { Note = "Called again" });
         await svc.RecordFollowupAsync(f.Id, new RecordFollowupRequestDto { Note = "Documents received", EmployeeId = "S5I-1013", EmployeeName = "Siddhi Jadhav" });
 
         var history = await db.FollowupCycles.AsNoTracking().OrderBy(c => c.SequenceNumber).ToListAsync();
@@ -174,7 +178,7 @@ public class FinalConsistencyTests
 
         await Assert.ThrowsAsync<NotFoundException>(() => svc.RecordFollowupAsync(99999, new RecordFollowupRequestDto()));
         await Assert.ThrowsAsync<BadRequestException>(() => svc.RecordFollowupAsync(f.Id, new RecordFollowupRequestDto { OutcomeCode = new string('x', 101) }));
-        await Assert.ThrowsAsync<BadRequestException>(() => svc.RecordFollowupAsync(f.Id, new RecordFollowupRequestDto { EmployeeName = new string('x', 101) }));
+        await svc.StartAsync(f.Id);
         await svc.CompleteAsync(f.Id, new CompleteFollowupRequestDto());
         await Assert.ThrowsAsync<BadRequestException>(() => svc.RecordFollowupAsync(f.Id, new RecordFollowupRequestDto { Note = "late" }));
 
@@ -204,15 +208,16 @@ public class FinalConsistencyTests
         });
         await svc.RecordFollowupAsync(f.Id, new RecordFollowupRequestDto { Note = "x", EmployeeName = "Siddhi Jadhav" });
 
-        var updated = await svc.UpdateAsync(f.Id, new UpdateFollowupRequestDto
+        var updated = await Followups(db, FollowupTestSupport.User("S5I-4000", "Riya")).UpdateAsync(f.Id, new UpdateFollowupRequestDto
         { Subject = "u", DueAt = Base.AddDays(3), ReminderAt = Base.AddDays(1), ReminderSendEmail = true, ReminderRecipientEmail = "aman@example.com",
-          ReminderSendWhatsApp = true, ReminderWhatsAppNumber = "9999999999", EmployeeName = "Riya" });
+          ReminderSendWhatsApp = true, ReminderWhatsAppNumber = "9999999999" });
         var wa = await svc.SendWhatsAppAsync(f.Id);
         var email = await svc.SendEmailAsync(f.Id);
         db.EscalationLevels.Add(new EscalationLevel { Id = 1, Code = "L1", Name = "L1", Level = 1, CreatedBy = "seed", CreatedDate = Base });
         await db.SaveChangesAsync();
         var esc = await new EscalationService(new EscalationRepository(db), db, Mapper, Placeholder, Mock.Of<IAuditService>())
             .CreateAsync(new CreateEscalationRequestDto { FollowupId = f.Id, EscalationLevelId = 1 });
+        await svc.StartAsync(f.Id);
         var done = await svc.CompleteAsync(f.Id, new CompleteFollowupRequestDto());
 
         Assert.Equal("Riya", updated.ModifiedByEmployeeName);

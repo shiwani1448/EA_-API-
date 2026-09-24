@@ -38,7 +38,7 @@ public class MeetingLifecycleService : IMeetingLifecycleService
         _logger = logger;
     }
 
-    private string Actor => _user.UserName ?? _user.UserId.ToString();
+    private string Actor => _user.ActorDisplay();
 
     private async Task<(Meeting Meeting, long WorkflowId)> RequireLinkedWorkflowAsync(long meetingId, CancellationToken ct)
     {

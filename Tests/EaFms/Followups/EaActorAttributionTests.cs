@@ -32,9 +32,12 @@ public class EaActorAttributionTests
     private static BusinessModuleService Modules(EaFmsDbContext db, Mock<IAuditService>? audit = null) =>
         new(db, new BusinessModuleRepository(db), Placeholder, (audit ?? new Mock<IAuditService>()).Object);
 
-    private static FollowupService Followups(EaFmsDbContext db, Mock<IAuditService>? audit = null) => new(
-        new FollowupRepository(db), db, Mapper, Placeholder, (audit ?? new Mock<IAuditService>()).Object,
-        new FollowupSourceResolver(db));
+    // Followup actors come from the request token (ICurrentUserService), never from body fields.
+    private static readonly ICurrentUserService Siddhi = FollowupTestSupport.User("S5I-1013", "Siddhi Jadhav");
+
+    private static FollowupService Followups(EaFmsDbContext db, Mock<IAuditService>? audit = null, ICurrentUserService? user = null) => new(
+        new FollowupRepository(db), db, Mapper, user ?? Siddhi, (audit ?? new Mock<IAuditService>()).Object,
+        new FollowupSourceResolver(db), FollowupTestSupport.EaTasks(db), new TatRuleRepository(db));
 
     private static SaveBusinessModuleDto Module(string name, bool active = true, string? id = "S5I-1013", string? actorName = "Siddhi Jadhav") =>
         new() { Name = name, IsActive = active, EmployeeId = id, EmployeeName = actorName };
@@ -187,10 +190,10 @@ public class EaActorAttributionTests
     }
 
     // ---------------- Followup ----------------
-    private static async Task<(Seed S, FollowupService Svc)> FollowupSeedAsync(Mock<IAuditService>? audit = null)
+    private static async Task<(Seed S, FollowupService Svc)> FollowupSeedAsync(Mock<IAuditService>? audit = null, ICurrentUserService? user = null)
     {
         var s = await SeedAsync();
-        return (s, Followups(s.Db, audit));
+        return (s, Followups(s.Db, audit, user));
     }
 
     [Theory]
@@ -215,17 +218,19 @@ public class EaActorAttributionTests
             BusinessModuleId = m.Id, BusinessRecordId = record, Remark = "chase", DueAt = Base.AddDays(2),
             ReminderAt = Base.AddDays(1), ReminderSendEmail = true, ReminderRecipientEmployeeId = "S5I-2000",
             ReminderRecipientName = "Aman Verma", ReminderRecipientEmail = "aman@example.com",
-            EmployeeId = "S5I-1013", EmployeeName = "Siddhi Jadhav"
+            EmployeeId = "FORGED", EmployeeName = "Someone Else"   // body identity is ignored
         });
 
-        // actor
+        // actor (from the token)
         Assert.Equal(("S5I-1013", "Siddhi Jadhav", "Siddhi Jadhav"), (f.CreatedByEmployeeId, f.CreatedByEmployeeName, f.CreatedBy));
         Assert.InRange(f.CreatedDate, DateTime.UtcNow.AddSeconds(-2), DateTime.UtcNow.AddSeconds(2));
         // recipient (separate)
         Assert.Equal(("S5I-2000", "Aman Verma", "aman@example.com"), (f.ReminderRecipientEmployeeId, f.ReminderRecipientName, f.ReminderRecipientEmail));
         // source + derived task context
         Assert.Equal((m.Id, record, module, "Prepare MOM", "InProgress"), (f.BusinessModuleId, f.BusinessRecordId, f.ModuleName, f.Task, f.Stage));
-        Assert.NotNull(f.EaTaskId);
+        Assert.NotNull(f.SourceEaTaskId);
+        Assert.NotNull(f.EaTaskId);                       // the Followup's own task
+        Assert.NotEqual(f.SourceEaTaskId, f.EaTaskId);
         var row = await s.Db.Followups.AsNoTracking().SingleAsync();
         Assert.Equal(("S5I-1013", "Siddhi Jadhav"), (row.CreatedByEmployeeId, row.CreatedByEmployeeName));
         Assert.Equal("Aman Verma", row.ReminderRecipientName);
@@ -235,9 +240,10 @@ public class EaActorAttributionTests
     public async Task Followup_Update_StoresModifier_KeepsCreatorAndCreatedDate_WithServerModifiedDate()
     {
         var (s, svc) = await FollowupSeedAsync(); await using var _ = s.Db;
-        var created = await svc.CreateAsync(new CreateFollowupRequestDto { Subject = "s", EmployeeId = "S5I-1013", EmployeeName = "Siddhi Jadhav" });
+        var created = await svc.CreateAsync(new CreateFollowupRequestDto { Subject = "s" });
 
-        var updated = await svc.UpdateAsync(created.Id, new UpdateFollowupRequestDto { Subject = "s2", EmployeeId = "S5I-2000", EmployeeName = "Aman Verma" });
+        var updated = await Followups(s.Db, user: FollowupTestSupport.User("S5I-2000", "Aman Verma"))
+            .UpdateAsync(created.Id, new UpdateFollowupRequestDto { Subject = "s2", EmployeeId = "FORGED", EmployeeName = "Someone Else" });
 
         Assert.Equal(("S5I-1013", "Siddhi Jadhav"), (updated.CreatedByEmployeeId, updated.CreatedByEmployeeName));
         Assert.Equal(created.CreatedDate, updated.CreatedDate);
@@ -246,14 +252,14 @@ public class EaActorAttributionTests
     }
 
     [Fact]
-    public async Task Followup_WithoutActor_KeepsLegacyPlaceholder_AndNullSnapshot()
+    public async Task Followup_WithoutTokenIdentity_NeverStoresZero_AndLeavesSnapshotNull()
     {
-        var (s, svc) = await FollowupSeedAsync(); await using var _ = s.Db;
+        var (s, svc) = await FollowupSeedAsync(user: Placeholder); await using var _ = s.Db;
 
-        var f = await svc.CreateAsync(new CreateFollowupRequestDto { Subject = "s" });
+        var f = await svc.CreateAsync(new CreateFollowupRequestDto { Subject = "s", EmployeeId = "S5I-1013", EmployeeName = "Siddhi Jadhav" });
 
-        Assert.Equal("0", f.CreatedBy);
-        Assert.Null(f.CreatedByEmployeeId);
+        Assert.Equal("system", f.CreatedBy);             // required column; "0" is never persisted
+        Assert.Null(f.CreatedByEmployeeId);              // body identity is not trusted
         Assert.Null(f.CreatedByEmployeeName);
     }
 
@@ -263,8 +269,8 @@ public class EaActorAttributionTests
         var audit = new Mock<IAuditService>();
         var (s, svc) = await FollowupSeedAsync(audit); await using var _ = s.Db;
 
-        var f = await svc.CreateAsync(new CreateFollowupRequestDto { Subject = "s", EmployeeId = "S5I-1013", EmployeeName = "Siddhi Jadhav" });
-        await svc.UpdateAsync(f.Id, new UpdateFollowupRequestDto { EmployeeId = "S5I-1013", EmployeeName = "Siddhi Jadhav" });
+        var f = await svc.CreateAsync(new CreateFollowupRequestDto { Subject = "s" });
+        await svc.UpdateAsync(f.Id, new UpdateFollowupRequestDto());
 
         foreach (var action in new[] { "FOLLOWUP_CREATE", "FOLLOWUP_UPDATE" })
             audit.Verify(a => a.AddAudit(action, "Followup", nameof(Followup), f.Id.ToString(), It.IsAny<object?>(),
@@ -272,12 +278,13 @@ public class EaActorAttributionTests
     }
 
     [Fact]
-    public async Task Followup_OversizedActorValues_AreRejected()
+    public async Task Followup_BodyActorFields_AreIgnored_EvenWhenOversized()
     {
         var (s, svc) = await FollowupSeedAsync(); await using var _ = s.Db;
 
-        await Assert.ThrowsAsync<BadRequestException>(() => svc.CreateAsync(new CreateFollowupRequestDto { EmployeeName = new string('n', 101) }));
-        Assert.Equal(0, await s.Db.Followups.CountAsync());
+        var f = await svc.CreateAsync(new CreateFollowupRequestDto { EmployeeName = new string('n', 101) });
+
+        Assert.Equal("Siddhi Jadhav", f.CreatedByEmployeeName);
     }
 
     // ---------------- record-followup ----------------
@@ -285,9 +292,10 @@ public class EaActorAttributionTests
     public async Task RecordFollowup_StoresPerformingActor_WithServerTimestamp_AndAppendsOneCycle()
     {
         var (s, svc) = await FollowupSeedAsync(); await using var _ = s.Db;
-        var f = await svc.CreateAsync(new CreateFollowupRequestDto { Subject = "s", EmployeeId = "S5I-1013", EmployeeName = "Siddhi Jadhav" });
+        var f = await svc.CreateAsync(new CreateFollowupRequestDto { Subject = "s" });
 
-        await svc.RecordFollowupAsync(f.Id, new RecordFollowupRequestDto { Note = "spoke to Aman", EmployeeId = "S5I-3000", EmployeeName = "Riya Shah" });
+        await Followups(s.Db, user: FollowupTestSupport.User("S5I-3000", "Riya Shah"))
+            .RecordFollowupAsync(f.Id, new RecordFollowupRequestDto { Note = "spoke to Aman", EmployeeId = "FORGED", EmployeeName = "Someone Else" });
         var after = await svc.GetByIdAsync(f.Id);
 
         Assert.Equal(("S5I-3000", "Riya Shah"), (after.ModifiedByEmployeeId, after.ModifiedByEmployeeName));
@@ -331,7 +339,7 @@ public class EaActorAttributionTests
 
         var r = await svc.CreateAsync(5, new CreateFollowupCycleRequestDto { Note = "x" }, default);
 
-        Assert.Equal("0", r.CreatedBy);
+        Assert.Equal("system", r.CreatedBy);   // "0" is never persisted as an actor
         Assert.Null(r.FollowedUpByEmployeeId);
     }
 

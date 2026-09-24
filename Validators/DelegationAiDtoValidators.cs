@@ -8,6 +8,8 @@ public class ApplySuggestedOwnerRequestDtoValidator : AbstractValidator<ApplySug
     public ApplySuggestedOwnerRequestDtoValidator()
     {
         RuleFor(x => x.DoerId).NotEmpty().WithMessage("DoerId must not be empty.");
+        RuleFor(x => x.DoerId).MaximumLength(100).WithMessage("DoerId must not exceed 100 characters.");
+        RuleFor(x => x.DoerName).MaximumLength(200).WithMessage("DoerName must not exceed 200 characters.");
     }
 }
 

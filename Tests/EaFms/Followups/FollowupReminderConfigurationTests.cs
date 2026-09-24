@@ -29,7 +29,7 @@ public class FollowupReminderConfigurationTests
     private static FollowupService Svc(EaFmsDbContext db, Mock<IAuditService>? audit = null) => new(
         new FollowupRepository(db), db, Mapper,
         Mock.Of<ICurrentUserService>(u => u.UserId == 7 && u.UserName == "EA User"),
-        (audit ?? new Mock<IAuditService>()).Object, new FollowupSourceResolver(db));
+        (audit ?? new Mock<IAuditService>()).Object, new FollowupSourceResolver(db), FollowupTestSupport.EaTasks(db), new TatRuleRepository(db));
 
     private static CreateFollowupRequestDto Create(Action<CreateFollowupRequestDto>? tweak = null)
     {
@@ -242,7 +242,7 @@ public class FollowupReminderConfigurationTests
 
         Assert.True(f.ReminderSendEmail);
         Assert.Equal(1, await s.Db.Followups.CountAsync());
-        Assert.Equal(tasks, await s.Db.Tasks.CountAsync());
+        Assert.Equal(tasks + 1, await s.Db.Tasks.CountAsync());   // only the follow-up's own task
         Assert.Equal(0, await s.Db.Escalations.CountAsync());
         Assert.Equal(0, await s.Db.Notifications.CountAsync());
         audit.Verify(a => a.AddAudit("FOLLOWUP_CREATE", "Followup", nameof(Followup), f.Id.ToString(), It.IsAny<object?>(),

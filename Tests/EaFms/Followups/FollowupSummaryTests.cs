@@ -18,7 +18,7 @@ public class FollowupSummaryTests
     private static FollowupService Service(EaFmsDbContext db) => new(
         new FollowupRepository(db), db, Mapper,
         Mock.Of<ICurrentUserService>(x => x.UserId == 7 && x.UserName == "EA User"),
-        Mock.Of<IAuditService>(), new FollowupSourceResolver(db));
+        Mock.Of<IAuditService>(), new FollowupSourceResolver(db), FollowupTestSupport.EaTasks(db), new TatRuleRepository(db));
 
     [Fact]
     public async Task Summary_CountsFollowupsOnly_ExcludesDeletedAndCompletedOperationalBuckets()

@@ -41,7 +41,7 @@ public class TatRuleService(EaFmsDbContext db, ITatRuleRepository repository,
         if (dto.ModuleName is not null
             && !string.Equals(dto.ModuleName.Trim(), module.Name.Trim(), StringComparison.OrdinalIgnoreCase))
             throw new BusinessRuleException("ModuleName must match the selected ModuleId.");
-        var typeOnlyModule = EaTaskService.IsTypeOnlyTatModule(module.Name); // Delegation only — unchanged
+        var typeOnlyModule = EaTaskService.IsTypeOnlyTatModule(module.Name); // Delegation and Follow-up
         // TaskType is required for Delegation (its rules are always Type + TaskType, no Subtype) and now
         // OPTIONAL for EA Approval (its rules may be plain Type[/Subtype] as before, or Type + TaskType
         // with no Subtype — the same shape Delegation uses — for per-phase Actual/Review/Rework rules).
@@ -50,9 +50,13 @@ public class TatRuleService(EaFmsDbContext db, ITatRuleRepository repository,
         var taskTypeCapable = typeOnlyModule || string.Equals(module.Name.Trim(), "EA Approval", StringComparison.OrdinalIgnoreCase);
         var taskType = string.IsNullOrWhiteSpace(dto.TaskType) ? null : dto.TaskType.Trim();
         if (taskType is null && typeOnlyModule)
-            throw new BadRequestException("TaskType is required for Delegation TAT rules.");
+            throw new BadRequestException("TaskType is required for Delegation/Follow-up TAT rules.");
         if (taskType is not null && !taskTypeCapable)
             throw new BadRequestException($"{module.Name} TAT rules do not use TaskType; it must be omitted.");
+        // Follow-up has no Review/Rework cycle: TaskType must always be Actual for it.
+        if (taskType is not null && string.Equals(module.Name.Trim(), "Follow-up", StringComparison.OrdinalIgnoreCase)
+            && !string.Equals(taskType, DelegationTaskType.Actual, StringComparison.Ordinal))
+            throw new BadRequestException("Follow-up TAT rules only support TaskType Actual.");
         // A rule uses the Type+TaskType-only shape (no Subtype) either because its module is Delegation
         // (always) or because a TaskType was actually supplied for a taskType-capable module (Approval,
         // optionally). Otherwise the ordinary Type[/Subtype] shape applies unchanged.

@@ -126,12 +126,12 @@ public class ApprovalDocumentService : IApprovalDocumentService
                 ContentType = file.ContentType,
                 Size = file.Length,
                 AccessUrl = "/" + key, // do not expose filesystem path
-                UploadedBy = _user.UserName ?? _user.UserId.ToString(),
+                UploadedBy = _user.ActorDisplay(),
                 UploadedAt = now,
                 Metadata = metadata,
                 IsActive = true,
                 IsDeleted = false,
-                CreatedBy = _user.UserName ?? _user.UserId.ToString(),
+                CreatedBy = _user.ActorDisplay(),
                 CreatedDate = now
             };
 
@@ -224,7 +224,7 @@ public class ApprovalDocumentService : IApprovalDocumentService
 
             att.IsDeleted = true;
             att.IsActive = false;
-            att.ModifiedBy = _user.UserName ?? _user.UserId.ToString();
+            att.ModifiedBy = _user.ActorDisplay();
             att.ModifiedDate = Clock.UtcNowTz;
 
             _db.Set<Attachment>().Update(att);

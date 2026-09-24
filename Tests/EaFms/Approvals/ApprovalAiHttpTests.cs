@@ -29,6 +29,9 @@ public class ApprovalAiHttpTests
         builder.Logging.ClearProviders();
         builder.WebHost.UseUrls("http://127.0.0.1:0");
         builder.Services.AddSingleton(service.Object);
+        // The controller is [Authorize]; this host tests binding/error handling, not auth, so allow all.
+        builder.Services.AddAuthorization(o => o.DefaultPolicy =
+            new Microsoft.AspNetCore.Authorization.AuthorizationPolicyBuilder().RequireAssertion(_ => true).Build());
         builder.Services.AddControllers().AddApplicationPart(typeof(ApprovalAiController).Assembly)
             .AddJsonOptions(options =>
             {

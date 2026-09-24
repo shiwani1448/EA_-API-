@@ -18,7 +18,7 @@ public class FollowupEmployeeRecipientTests
     private static FollowupService Service(EaFmsDbContext db) => new(
         new FollowupRepository(db), db, Mapper,
         Mock.Of<ICurrentUserService>(x => x.UserId == 7 && x.UserName == "EA User"),
-        Mock.Of<IAuditService>(), new FollowupSourceResolver(db));
+        Mock.Of<IAuditService>(), new FollowupSourceResolver(db), FollowupTestSupport.EaTasks(db), new TatRuleRepository(db));
 
     [Fact]
     public async Task EmployeeWhatsAppSnapshot_IsStored_Returned_AndProducesHandoffWithoutLocalUser()
@@ -44,7 +44,7 @@ public class FollowupEmployeeRecipientTests
         Assert.Equal(("Meeting", created.ReminderAt, "Please complete the pending task.", true, false),
             (created.ModuleName, created.ReminderAt, created.Remark, created.ReminderSendWhatsApp, created.ReminderSendEmail));
         Assert.Contains("Module: Meeting", created.WhatsApp!.Message);
-        Assert.Contains($"Task ID: {created.EaTaskId}", created.WhatsApp.Message);
+        Assert.Contains($"Task ID: {created.SourceEaTaskId}", created.WhatsApp.Message);
         Assert.Contains("Task: Prepare MOM", created.WhatsApp.Message);
         Assert.Contains($"Follow-up Date: {created.ReminderAt:O}", created.WhatsApp.Message);
         Assert.Contains("Remark: Please complete the pending task.", created.WhatsApp.Message);
@@ -55,7 +55,7 @@ public class FollowupEmployeeRecipientTests
         Assert.Equal("8369543637", Assert.Single(list).Recipient!.Phone);
         Assert.Equal(created.ReminderAt, single.ReminderAt);
         Assert.Equal(created.Remark, single.Remark);
-        Assert.Equal(created.EaTaskId, Assert.Single(list).EaTaskId);
+        Assert.Equal(created.SourceEaTaskId, Assert.Single(list).SourceEaTaskId);
     }
 
     [Fact]

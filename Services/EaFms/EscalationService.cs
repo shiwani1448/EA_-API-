@@ -42,7 +42,7 @@ public class EscalationService : IEscalationService
         }
 
         var now = Clock.UtcNowTz;
-        var by = _currentUser.UserName ?? _currentUser.UserId.ToString();
+        var by = _currentUser.ActorDisplay();
 
         var esc = new Escalation
         {
@@ -202,10 +202,10 @@ public class EscalationService : IEscalationService
         var oldSnap = new { e.Id, e.ResolvedAt };
         if (e.ResolvedAt != null) throw new Jarvis5.Common.BadRequestException("Escalation already resolved.");
         e.ResolvedAt = Clock.UtcNowTz;
-        e.ResolvedById = _currentUser.UserId.ToString();
+        e.ResolvedById = _currentUser.ActorId();
         var resolvedByName = _currentUser.UserName;
         e.ResolutionNote = dto?.ResolutionNote?.Trim();
-        e.ModifiedBy = _currentUser.UserName ?? _currentUser.UserId.ToString();
+        e.ModifiedBy = _currentUser.ActorDisplay();
         e.ModifiedDate = Clock.UtcNowTz;
         // Escalation entity does not include ModifiedBy/ModifiedDate in the current model,
         // so only set ResolvedAt and persist.
@@ -229,10 +229,10 @@ public class EscalationService : IEscalationService
         if (e.ResolvedAt != null) throw new Jarvis5.Common.BadRequestException("Cannot acknowledge a resolved escalation.");
         if (e.AcknowledgedAt != null) throw new Jarvis5.Common.BadRequestException("Escalation already acknowledged.");
         e.AcknowledgedAt = Clock.UtcNowTz;
-        e.AcknowledgedById = _currentUser.UserId.ToString();
+        e.AcknowledgedById = _currentUser.ActorId();
         var ackByName = _currentUser.UserName;
         e.AcknowledgementNote = note?.Trim();
-        e.ModifiedBy = _currentUser.UserName ?? _currentUser.UserId.ToString();
+        e.ModifiedBy = _currentUser.ActorDisplay();
         e.ModifiedDate = Clock.UtcNowTz;
         _repo.Update(e);
 

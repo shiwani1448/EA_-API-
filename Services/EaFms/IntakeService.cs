@@ -52,7 +52,7 @@ public class IntakeService : IIntakeService
         }
 
         var now = Clock.UtcNowTz;
-        var by = _currentUser.UserName ?? _currentUser.UserId.ToString();
+        var by = _currentUser.ActorDisplay();
 
         var entity = new IntakeRequest
         {
@@ -171,7 +171,7 @@ public class IntakeService : IIntakeService
         entity.BusinessModuleId = dto.BusinessModuleId;
         entity.StatusId = dto.StatusId;
         entity.PriorityLevelId = dto.PriorityLevelId;
-        entity.ModifiedBy = _currentUser.UserName ?? _currentUser.UserId.ToString();
+        entity.ModifiedBy = _currentUser.ActorDisplay();
         entity.ModifiedDate = Clock.UtcNowTz;
 
         _repo.Update(entity);
@@ -197,7 +197,7 @@ public class IntakeService : IIntakeService
         // capture old snapshot
         var oldSnap = new { entity.Id, entity.Title, entity.IsDeleted };
         entity.IsDeleted = true;
-        entity.ModifiedBy = _currentUser.UserName ?? _currentUser.UserId.ToString();
+        entity.ModifiedBy = _currentUser.ActorDisplay();
         entity.ModifiedDate = Clock.UtcNowTz;
         _repo.Update(entity);
 
@@ -218,7 +218,7 @@ public class IntakeService : IIntakeService
         var intake = await _repo.GetByIdAsync(intakeId, ct) ?? throw new Jarvis5.Common.NotFoundException($"Intake {intakeId} not found.");
 
         var now = Clock.UtcNowTz;
-        var by = _currentUser.UserName ?? _currentUser.UserId.ToString();
+        var by = _currentUser.ActorDisplay();
 
         var c = new IntakeClassification
         {
@@ -250,7 +250,7 @@ public class IntakeService : IIntakeService
 
         c.Name = dto.Name.Trim();
         c.Details = dto.Details?.Trim();
-        c.ModifiedBy = _currentUser.UserName ?? _currentUser.UserId.ToString();
+        c.ModifiedBy = _currentUser.ActorDisplay();
         c.ModifiedDate = Clock.UtcNowTz;
 
         _repo.UpdateClassification(c);

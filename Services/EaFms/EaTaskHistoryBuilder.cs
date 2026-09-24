@@ -38,8 +38,10 @@ internal sealed class EaTaskHistoryBuilder(EaFmsDbContext db)
 
         // A Delegation's WorkflowInstanceId is only its pause anchor (created on first Pause) — its
         // Started/Completed events still come from the Delegation audit trail, pauses from WorkPause.
+        // Same for a Follow-up's own task: its WorkflowInstanceId is only a pause anchor too.
         if (task.WorkflowInstanceId.HasValue
-            && !string.Equals(task.ModuleName, "Delegation", StringComparison.OrdinalIgnoreCase))
+            && !string.Equals(task.ModuleName, "Delegation", StringComparison.OrdinalIgnoreCase)
+            && !string.Equals(task.ModuleName, "Follow-up", StringComparison.OrdinalIgnoreCase))
             await AddMeetingEventsAsync(task, events, ct);
         else
             await AddNoTatModuleEventsAsync(task, events, ct);
@@ -229,6 +231,66 @@ internal sealed class EaTaskHistoryBuilder(EaFmsDbContext db)
                     .ToListAsync(ct);
                 AddPauseEvents(task, pauses, events);
             }
+        }
+        else if (string.Equals(task.ModuleName, "Follow-up", StringComparison.OrdinalIgnoreCase)
+            && long.TryParse(task.BusinessRecordId, out var followupId))
+        {
+            // Started/Completed from the Followup audit trail (same as Delegation's branch).
+            var logs = await db.AuditLogs.AsNoTracking()
+                .Where(a => a.Module == "Followup" && a.EntityName == "Followup" && a.EntityId == task.BusinessRecordId
+                    && (a.ActionType == "FOLLOWUP_START" || a.ActionType == "FOLLOWUP_COMPLETE"))
+                .OrderBy(a => a.OccurredAt)
+                .ToListAsync(ct);
+            foreach (var log in logs)
+                events.Add(MapAuditEvent(log, log.ActionType switch
+                {
+                    "FOLLOWUP_START" => ("Started", EaTaskExecutionStatus.NotStarted, EaTaskExecutionStatus.InProgress),
+                    "FOLLOWUP_COMPLETE" => ("Completed", EaTaskExecutionStatus.InProgress, EaTaskExecutionStatus.Completed),
+                    _ => (log.ActionType, null, null)
+                }));
+
+            // Completion note is on the Followup itself, not the audit summary.
+            var completionNote = await db.Followups.AsNoTracking().Where(f => f.Id == followupId)
+                .Select(f => f.CompletionNote).FirstOrDefaultAsync(ct);
+            foreach (var e in events.Where(e => e.EventType == "Completed" && e.Source == "AuditLog"))
+                e.Notes = completionNote;
+
+            if (task.WorkflowInstanceId.HasValue && task.StartedAt.HasValue)
+            {
+                var workflowId = task.WorkflowInstanceId.Value;
+                var pauses = await db.WorkPauses.AsNoTracking()
+                    .Where(p => p.WorkflowInstanceId == workflowId && !p.IsDeleted)
+                    .OrderBy(p => p.StartAt)
+                    .ToListAsync(ct);
+                AddPauseEvents(task, pauses, events);
+            }
+
+            var reminders = await db.FollowupReminderLogs.AsNoTracking()
+                .Where(r => r.FollowupId == followupId).OrderBy(r => r.SentAt).ToListAsync(ct);
+            foreach (var r in reminders)
+                events.Add(new EaTaskHistoryEventDto
+                {
+                    EventType = "ReminderSent",
+                    OccurredAt = r.SentAt,
+                    PerformedBy = r.SentById,
+                    PerformedByName = r.SentByName,
+                    Notes = $"{r.Channel} to {r.Recipient}" + (string.IsNullOrWhiteSpace(r.RecipientName) ? "" : $" ({r.RecipientName})"),
+                    Source = "FollowupReminderLog"
+                });
+
+            var cycles = await db.FollowupCycles.AsNoTracking()
+                .Where(c => c.FollowupId == followupId).OrderBy(c => c.FollowedUpAt).ToListAsync(ct);
+            foreach (var c in cycles)
+                events.Add(new EaTaskHistoryEventDto
+                {
+                    EventType = "FollowupRecorded",
+                    OccurredAt = c.FollowedUpAt,
+                    PerformedBy = c.FollowedUpByEmployeeId ?? c.CreatedBy,
+                    PerformedByName = c.FollowedUpByEmployeeName,
+                    Notes = c.Note + (c.NextFollowupAt.HasValue
+                        ? $" | Next follow-up: {c.NextFollowupAt.Value:yyyy-MM-dd HH:mm}" : string.Empty),
+                    Source = "FollowupCycle"
+                });
         }
         // No other module currently creates EaTasks.
     }

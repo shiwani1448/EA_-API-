@@ -30,7 +30,7 @@ public class NotificationService : INotificationService
         // Validate lengths already handled by FluentValidation when used by controllers.
 
         var now = Clock.UtcNowTz;
-        var createdBy = _currentUser.UserName ?? _currentUser.UserId.ToString();
+        var createdBy = _currentUser.ActorDisplay();
 
         var n = new Notification
         {

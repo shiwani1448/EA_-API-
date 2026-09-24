@@ -116,6 +116,45 @@ public class ApprovalAiServiceTests
         new(h.Db, MakeServiceProvider(claude.Object), prompts.Object, h.Queries, h.Approvals, new ApprovalAiRepository(h.Db),
             NullLogger<ApprovalAiService>.Instance, Options.Create(new ClaudeOptions { MaxRetries = maxRetries }));
 
+    [Theory]
+    [InlineData("null", 0)]
+    [InlineData("[]", 0)]
+    [InlineData("[null, \"\", \"  \", \"Invoice\"]", 1)]
+    public async Task CheckReadiness_NormalizesNullCollectionsAndFiltersBlankItems(string collectionJson, int expectedCount)
+    {
+        var h = await NewHarnessAsync();
+        var created = await h.Approvals.CreateAsync(new ApprovalRequest { RequestTitle = "Capex", CreatedBy = "creator" });
+        var (claude, prompts) = Mocks();
+        var json = "{\"missingFields\":" + collectionJson + ",\"suggestedDocuments\":" + collectionJson + "}";
+        claude.Setup(c => c.GenerateJsonAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync(json);
+
+        var result = await Service(h, claude, prompts).CheckReadinessAsync(created.Id);
+
+        Assert.Equal(expectedCount, result.MissingFields.Count);
+        Assert.Equal(expectedCount, result.SuggestedDocuments.Count);
+        if (expectedCount > 0)
+        {
+            Assert.Equal("Invoice", Assert.Single(result.MissingFields));
+            Assert.Equal("Invoice", Assert.Single(result.SuggestedDocuments));
+        }
+        Assert.Single(h.Db.ApprovalReadinessChecks);
+    }
+
+    [Fact]
+    public async Task CheckReadiness_ExplicitNullCollections_AreReturnedAsEmptyLists()
+    {
+        var h = await NewHarnessAsync();
+        var created = await h.Approvals.CreateAsync(new ApprovalRequest { RequestTitle = "Capex", CreatedBy = "creator" });
+        var (claude, prompts) = Mocks();
+        claude.Setup(c => c.GenerateJsonAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync("{\"missingFields\":null,\"suggestedDocuments\":null}");
+
+        var result = await Service(h, claude, prompts).CheckReadinessAsync(created.Id);
+
+        Assert.Empty(result.MissingFields);
+        Assert.Empty(result.SuggestedDocuments);
+    }
+
     [Fact]
     public async Task FormPreviews_UseSharedLogic_AndDoNotChangeTrackedRows()
     {

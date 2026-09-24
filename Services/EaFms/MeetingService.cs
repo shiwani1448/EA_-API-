@@ -39,7 +39,7 @@ public class MeetingService : IMeetingService
             throw new NotFoundException($"Intake request {dto.IntakeRequestId} not found.");
 
         var now = Clock.UtcNowTz;
-        var by = _currentUser.UserName ?? _currentUser.UserId.ToString();
+        var by = _currentUser.ActorDisplay();
         var doers = dto.Doers is null ? (Array.Empty<string>(), Array.Empty<string>()) : MeetingDoers.ToArrays(dto.Doers);
 
         var m = new Meeting
@@ -383,7 +383,7 @@ public class MeetingService : IMeetingService
             m.DoerNames = doers.Names;
         }
         m.IntakeRequestId = dto.IntakeRequestId;
-        m.ModifiedBy = _currentUser.UserName ?? _currentUser.UserId.ToString();
+        m.ModifiedBy = _currentUser.ActorDisplay();
         m.ModifiedDate = Clock.UtcNowTz;
 
         await _repo.UpdateAsync(m);
@@ -395,7 +395,7 @@ public class MeetingService : IMeetingService
     {
         var m = await _repo.GetByIdAsync(id, ct) ?? throw new NotFoundException($"Meeting {id} not found.");
         m.IsDeleted = true;
-        m.ModifiedBy = _currentUser.UserName ?? _currentUser.UserId.ToString();
+        m.ModifiedBy = _currentUser.ActorDisplay();
         m.ModifiedDate = Clock.UtcNowTz;
         await _repo.UpdateAsync(m);
         _auditService.AddAudit("MEETING_DELETE", "Meeting", nameof(Meeting), m.Id.ToString(), null, null, "Meeting deleted");

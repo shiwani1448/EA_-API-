@@ -123,15 +123,15 @@ public class DelegationPhaseTatTests : IDisposable
         {
             Assert.NotNull(p.StartedAt);
             Assert.NotNull(p.EndedAt);
-            Assert.Equal("phase-actor", p.StartedById);
+            Assert.Equal("99", p.StartedById);   // §0: id from token
             Assert.Equal("phase-actor", p.StartedByName);
-            Assert.Equal("phase-actor", p.EndedById);
+            Assert.Equal("99", p.EndedById);
             Assert.Equal("phase-actor", p.EndedByName);
         });
         Assert.All(await f.Db.DelegationPhaseTats.AsNoTracking().ToListAsync(), p =>
         {
-            Assert.Equal("phase-actor", p.StartedById);
-            Assert.Equal("phase-actor", p.EndedById);
+            Assert.Equal("99", p.StartedById);   // §0: id from token
+            Assert.Equal("99", p.EndedById);
         });
     }
 
@@ -172,7 +172,7 @@ public class DelegationPhaseTatTests : IDisposable
         var unstartedReview = closed.PhaseTat.Single(p => p.TaskType == "Review");
         Assert.Null(unstartedReview.StartedById);
         Assert.Null(unstartedReview.StartedByName);
-        Assert.Equal("phase-actor", unstartedReview.EndedById);
+        Assert.Equal("99", unstartedReview.EndedById);
         var notStarted = await f.Svc.ListAsync(new DelegationListQueryDto { View = "notstarted" });
         Assert.Equal(new[] { pending, review, rework }.OrderBy(i => i), notStarted.Items.Select(d => d.DelegationId).OrderBy(i => i));
         Assert.All(notStarted.Items, d => Assert.Equal("NotStarted", d.ExecutionStatus));

@@ -30,15 +30,15 @@ public class AuditService : IAuditService
         log.OccurredAt = log.OccurredAt == default ? now : log.OccurredAt;
         log.CreatedDate = log.CreatedDate == default ? now : log.CreatedDate;
         log.CreatedBy = string.IsNullOrWhiteSpace(log.CreatedBy)
-            ? _currentUser.UserName ?? _currentUser.UserId.ToString()
+            ? _currentUser.ActorDisplay()
             : log.CreatedBy;
         _context.AuditLogs.Add(log);
     }
 
     public void AddAudit(string actionType, string module, string entityName, string entityId, object? oldValues, object? newValues, string? description = null)
     {
-        var actorId = _currentUser.UserId != 0 ? _currentUser.UserId.ToString() : null;
-        var actorName = _currentUser.UserName;
+        var actorId = _currentUser.ActorId();
+        var actorName = _currentUser.ActorName();
 
         var log = new AuditLog
         {

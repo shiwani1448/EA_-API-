@@ -83,11 +83,63 @@ public class FollowupsController : ControllerBase
     public async Task<IActionResult> SendWhatsApp(long id, CancellationToken ct)
         => Ok(await _followupService.SendWhatsAppAsync(id, ct));
     [HttpPost("{id:long}/complete")]
+    [ProducesResponseType(typeof(FollowupResponseDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
     public async Task<IActionResult> Complete(long id, [FromBody] CompleteFollowupRequestDto? dto, CancellationToken ct)
     {
         dto ??= new CompleteFollowupRequestDto();
         return Ok(await _followupService.CompleteAsync(id, dto, ct));
     }
+
+    /// <summary>Start a NotStarted Follow-up (NotStarted -> InProgress). No request body. 409 if not currently NotStarted.</summary>
+    [HttpPost("{id:long}/start")]
+    [ProducesResponseType(typeof(FollowupResponseDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> Start(long id, CancellationToken ct) =>
+        Ok(await _followupService.StartAsync(id, ct));
+
+    /// <summary>
+    /// Pause an InProgress Follow-up. Status stays InProgress; one shared WorkPause is opened and the
+    /// response carries the derived <c>isFollowupPaused=true</c>. Optional body <c>{ "pauseReason": "..." }</c>.
+    /// 404 unknown id; 409 when not InProgress or already paused.
+    /// </summary>
+    [HttpPost("{id:long}/pause")]
+    [ProducesResponseType(typeof(FollowupResponseDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> Pause(long id,
+        [FromBody(EmptyBodyBehavior = Microsoft.AspNetCore.Mvc.ModelBinding.EmptyBodyBehavior.Allow)] FollowupPauseRequestDto? request,
+        CancellationToken ct) =>
+        Ok(await _followupService.PauseAsync(id, request, ct));
+
+    /// <summary>
+    /// Resume a paused Follow-up (closes the open WorkPause; <c>isFollowupPaused=false</c>). No request body.
+    /// 404 unknown id; 409 when not InProgress or not currently paused.
+    /// </summary>
+    [HttpPost("{id:long}/resume")]
+    [ProducesResponseType(typeof(FollowupResponseDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> Resume(long id, CancellationToken ct) =>
+        Ok(await _followupService.ResumeAsync(id, ct));
+
+    /// <summary>Logs that a reminder handoff happened (the frontend calls this when the user actually
+    /// opens the email/WhatsApp handoff) — the backend sends nothing itself.</summary>
+    [HttpPost("{id:long}/reminders/log")]
+    [ProducesResponseType(typeof(FollowupReminderLogResponseDto), StatusCodes.Status201Created)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> LogReminder(long id, [FromBody] LogFollowupReminderRequestDto dto, CancellationToken ct) =>
+        StatusCode(StatusCodes.Status201Created, await _followupService.LogReminderAsync(id, dto, ct));
+
+    /// <summary>Reminder handoff history for a Follow-up, newest first.</summary>
+    [HttpGet("{id:long}/reminders")]
+    [ProducesResponseType(typeof(List<FollowupReminderLogResponseDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> GetReminderLog(long id, CancellationToken ct) =>
+        Ok(await _followupService.GetReminderLogAsync(id, ct));
 
     // Escalation creation is owned by EscalationsController: POST /api/ea/escalations (body carries FollowupId).
     // Removed here: a duplicate POST /api/ea/escalations (Swagger route conflict) and a second, followup-scoped create route.
