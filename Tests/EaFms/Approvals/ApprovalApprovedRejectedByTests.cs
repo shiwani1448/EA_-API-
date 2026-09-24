@@ -57,10 +57,11 @@ public class ApprovalApprovedRejectedByTests
                 });
             var audit = Mock.Of<IAuditService>();
             var taskReview = new TaskReviewService(f.Db, new TaskReviewRepository(f.Db), Mock.Of<Jarvis5.Services.ICurrentUserService>(), audit);
-            f.Service = new ApprovalService(f.Db, audit, numbers.Object, tasks.Object);
-            f.Queries = new ApprovalQueryService(f.Db, Mock.Of<IApprovalDocumentService>(), taskReview);
+            f.Service = new ApprovalService(f.Db, audit, numbers.Object, tasks.Object, new TatRuleRepository(f.Db));
+            f.Queries = new ApprovalQueryService(f.Db, Mock.Of<IApprovalDocumentService>(), taskReview, new TatRuleRepository(f.Db));
             f.Controller = new ApprovalsController(f.Service, f.Queries);
-            f.Lifecycle = new ApprovalLifecycleService(f.Db, audit, taskReview);
+            f.Lifecycle = new ApprovalLifecycleService(f.Db, audit, taskReview, Mock.Of<Jarvis5.Services.ICurrentUserService>(),
+                Mock.Of<Microsoft.AspNetCore.Hosting.IWebHostEnvironment>(), Mock.Of<IServiceProvider>(), new TatRuleRepository(f.Db));
             return f;
         }
 

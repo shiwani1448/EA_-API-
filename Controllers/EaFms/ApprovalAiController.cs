@@ -17,6 +17,22 @@ public class ApprovalAiController : ControllerBase
         _approvalAi = approvalAi;
     }
 
+    /// <summary>Preview an unsaved form using field values and document file names only. Writes nothing.</summary>
+    [HttpPost("~/api/ea/approvals/ai/readiness")]
+    [ProducesResponseType(typeof(ApprovalAiReadinessResponseDto), StatusCodes.Status200OK)]
+    public async Task<ActionResult<ApprovalAiReadinessResponseDto>> PreviewReadiness(
+        [FromBody(EmptyBodyBehavior = Microsoft.AspNetCore.Mvc.ModelBinding.EmptyBodyBehavior.Allow)] ApprovalAiReadinessInput? input,
+        CancellationToken ct)
+        => Ok(await _approvalAi.CheckReadinessAsync(input ?? new(), ct));
+
+    /// <summary>Preview an approver name from approved department history. Writes nothing.</summary>
+    [HttpPost("~/api/ea/approvals/ai/recommend-approver")]
+    [ProducesResponseType(typeof(ApprovalAiApproverSuggestionResponseDto), StatusCodes.Status200OK)]
+    public async Task<ActionResult<ApprovalAiApproverSuggestionResponseDto>> PreviewApprover(
+        [FromBody(EmptyBodyBehavior = Microsoft.AspNetCore.Mvc.ModelBinding.EmptyBodyBehavior.Allow)] ApprovalAiApproverInput? input,
+        CancellationToken ct)
+        => Ok(await _approvalAi.RecommendApproverAsync(input ?? new(), ct));
+
     /// <summary>Preview only. Judges completeness from the request's own fields and its
     /// documents' file names only (no OCR/content access). Writes nothing.</summary>
     [HttpPost("readiness")]

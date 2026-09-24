@@ -14,21 +14,23 @@ namespace Jarvis5.Tests.EaFms.Approvals;
 public class ApprovalNoTatQueryTests
 {
     [Theory]
-    [InlineData(null, "Unavailable", 0)]
-    [InlineData(30, "Overdue", 1)]
-    public async Task List_detail_and_dashboard_handle_optional_snapshot(int? minutes, string dueState, int overdueCount)
+    [InlineData(null, true, "Unavailable", 0)]
+    [InlineData(30, false, "Unavailable", 0)]
+    [InlineData(30, true, "Overdue", 1)]
+    public async Task List_detail_and_dashboard_handle_optional_snapshot(int? minutes, bool started, string dueState, int overdueCount)
     {
         await using var db = new EaFmsDbContext(new DbContextOptionsBuilder<EaFmsDbContext>()
             .UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
         var module = new BusinessModule { Name = "EA Approval", CreatedBy = "tester", CreatedDate = DateTime.UtcNow, IsActive = true };
-        var task = new EaTask { BusinessModule = module, ModuleName = module.Name, ExecutionStatus = "InProgress", BusinessRecordId = "APR-TEST", Task = "No TAT", CreatedBy = "tester", CreatedDate = DateTime.UtcNow.AddDays(-1), AllottedTatMinutes = minutes };
+        var task = new EaTask { BusinessModule = module, ModuleName = module.Name, ExecutionStatus = started ? "InProgress" : "NotStarted", BusinessRecordId = "APR-TEST", Task = "No TAT", CreatedBy = "tester", CreatedDate = DateTime.UtcNow.AddDays(-1), AllottedTatMinutes = minutes };
+        task.StartedAt = started ? task.CreatedDate : null;
         var approval = new ApprovalRequest { EaTask = task, ReferenceNo = "APR-TEST", CreatedBy = "tester", CreatedAt = task.CreatedDate, WorkflowStatus = "Draft" };
         db.ApprovalRequests.Add(approval);
         await db.SaveChangesAsync();
         var documents = new Mock<IApprovalDocumentService>();
         documents.Setup(x => x.ListAsync(approval.Id, It.IsAny<CancellationToken>())).ReturnsAsync(new List<ApprovalDocumentResponseDto>());
         var taskReview = new TaskReviewService(db, new TaskReviewRepository(db), Mock.Of<ICurrentUserService>(), Mock.Of<IAuditService>());
-        var service = new ApprovalQueryService(db, documents.Object, taskReview);
+        var service = new ApprovalQueryService(db, documents.Object, taskReview, new TatRuleRepository(db));
 
         var list = await service.ListAsync(null, null, null, null, null, null, null, null, null, null, null, 1, 50, default);
         Assert.Equal(dueState, Assert.Single(list.Items).DueState);
@@ -36,7 +38,7 @@ public class ApprovalNoTatQueryTests
         Assert.NotNull(detail);
         Assert.Equal(minutes, detail!.Task.AllottedTatMinutes);
         Assert.Equal(dueState, detail.Task.DueState);
-        Assert.Equal(minutes.HasValue ? task.CreatedDate.AddMinutes(minutes.Value) : (DateTime?)null, detail.Task.DueDate);
+        Assert.Equal(minutes.HasValue && started ? task.StartedAt!.Value.AddMinutes(minutes.Value) : (DateTime?)null, detail.Task.DueDate);
         Assert.Equal(overdueCount, (await service.DashboardAsync(default)).Overdue);
         var overdue = await service.ListAsync(null, null, null, null, null, null, null, null, null, null, "Overdue", 1, 50, default);
         Assert.Equal(overdueCount, overdue.Items.Count);

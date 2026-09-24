@@ -10,7 +10,7 @@ namespace Jarvis5.Dtos.EaFms;
 /// this can never verify what a document actually contains.</summary>
 public class ApprovalAiReadinessResponseDto
 {
-    public long ApprovalRequestId { get; set; }
+    public long? ApprovalRequestId { get; set; }
     public bool IsLikelyReady { get; set; }
 
     /// <summary>Request fields Claude considers missing/weak (e.g. no justification, no
@@ -35,7 +35,7 @@ public class ApprovalAiReadinessResponseDto
 /// names anyone who wasn't already a real approver of a past request.</summary>
 public class ApprovalAiApproverSuggestionResponseDto
 {
-    public long ApprovalRequestId { get; set; }
+    public long? ApprovalRequestId { get; set; }
 
     /// <summary>Null when there is no approval history to draw from for this department —
     /// deliberately never guessed in that case.</summary>
@@ -71,4 +71,37 @@ public class ApprovalAiStatusSummaryResponseDto
     public string? WorkflowStatus { get; set; }
     public int CurrentCycleNo { get; set; }
     public string? DueState { get; set; }
+}
+
+/// <summary>Optional form fields for a read-only approver preview.</summary>
+public class ApprovalAiApproverInput
+{
+    public string? RequestType { get; set; }
+    public string? Department { get; set; }
+    public decimal? Amount { get; set; }
+    public string? Currency { get; set; }
+
+    internal long? SavedRequestId { get; set; }
+    internal string? SavedPriority { get; set; }
+}
+
+/// <summary>Optional form fields; documents are represented by file names only.</summary>
+public class ApprovalAiReadinessInput
+{
+    public string? RequestTitle { get; set; }
+    public string? RequestType { get; set; }
+    public string? Priority { get; set; }
+    public string? Department { get; set; }
+    public string? Description { get; set; }
+    public string? Justification { get; set; }
+    public decimal? Amount { get; set; }
+    public string? Currency { get; set; }
+    public DateTime? RequiredApprovalDate { get; set; }
+    public string? ApproverName { get; set; }
+    public List<string>? DocumentFileNames { get; set; } = new();
+
+    internal long? SavedRequestId { get; set; }
+    internal string? WorkflowStatus { get; set; }
+    internal int CurrentCycleNo { get; set; }
+    internal ApprovalCycleDto? LatestCycle { get; set; }
 }

@@ -60,6 +60,36 @@ public class DelegationPhasePrecisionTests
     }
 
     [Fact]
+    public void NotStarted_ZeroElapsed_FullBudgetRemaining_NeverTouchesTatSummaryCalculator()
+    {
+        // StartedAt null, EndedAt null — opened idle, waiting for its explicit Start action.
+        var dto = Map(new DelegationPhaseTat { TaskType = "Review", AllottedTatMinutes = 10 }, DateTime.UtcNow,
+            new WorkPause { StartAt = DateTime.UtcNow, EndAt = DateTime.UtcNow.AddMinutes(1) });
+        Assert.Null(dto.StartedAt);
+        Assert.Null(dto.EndedAt);
+        Assert.Equal(0, dto.TatUsedMinutes);
+        Assert.Equal(0m, dto.TatUsedSeconds);
+        Assert.Equal(0, dto.TatPausedMinutes);
+        Assert.Equal(0m, dto.TatPausedSeconds);
+        Assert.Equal(0, dto.PauseCount);
+        Assert.Equal(10, dto.TatDifferenceMinutes);
+        Assert.Equal(600m, dto.TatDifferenceSeconds);
+    }
+
+    [Fact]
+    public void NotStarted_NoBudget_UsedAndDifferenceStayNull()
+    {
+        var dto = Map(new DelegationPhaseTat { TaskType = "Rework" }, DateTime.UtcNow);
+        Assert.Null(dto.StartedAt);
+        Assert.Null(dto.TatUsedMinutes);
+        Assert.Null(dto.TatUsedSeconds);
+        Assert.Null(dto.TatDifferenceMinutes);
+        Assert.Null(dto.TatDifferenceSeconds);
+        Assert.Equal(0, dto.TatPausedMinutes);
+        Assert.Equal(0, dto.PauseCount);
+    }
+
+    [Fact]
     public void NoBudget_KeepsUsedAndDifferenceNullButPreservesPausedSeconds()
     {
         var start = DateTime.UtcNow;

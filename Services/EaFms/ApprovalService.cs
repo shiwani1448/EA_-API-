@@ -18,13 +18,15 @@ public class ApprovalService
     private readonly IAuditService _audit;
     private readonly IApprovalNumberRepository _repo;
     private readonly IEaTaskService _eaTaskService;
+    private readonly ITatRuleRepository _tatRules;
 
-    public ApprovalService(EaFmsDbContext context, IAuditService audit, IApprovalNumberRepository repo, IEaTaskService eaTaskService)
+    public ApprovalService(EaFmsDbContext context, IAuditService audit, IApprovalNumberRepository repo, IEaTaskService eaTaskService, ITatRuleRepository tatRules)
     {
         _context = context;
         _audit = audit;
         _repo = repo;
         _eaTaskService = eaTaskService;
+        _tatRules = tatRules;
     }
 
     /// <summary>
@@ -70,13 +72,13 @@ public class ApprovalService
 
         var eaTaskDto = await _eaTaskService.CreateWithoutTatAsync(createTaskDto, ct);
 
-        // Approval has no distinct "start" action: SubmittedAt == CreatedAt below (the
-        // request is immediately actionable — an approver can decide the moment it exists),
-        // unlike Meeting/Travel/Delegation which all have a real, separate Start step. The
-        // central task therefore begins InProgress rather than NotStarted for this module.
+        // SubmittedAt == CreatedAt below — the business decision (Approve/Reject/RequestChanges) is
+        // immediately actionable the moment the request exists, unlike Meeting/Travel/Delegation which
+        // all gate their business lifecycle behind a real Start step. Execution, however, now mirrors
+        // Delegation exactly: the central task begins NotStarted, and the Actual phase opened below sits
+        // idle (StartedAt null) until an explicit StartActualAsync call — see ApprovalLifecycleService.
         var eaTaskEntity = await _context.Tasks.FirstAsync(t => t.Id == eaTaskDto.EaTaskId, ct);
-        eaTaskEntity.ExecutionStatus = EaTaskExecutionStatus.InProgress;
-        eaTaskEntity.StartedAt = now;
+        eaTaskEntity.ExecutionStatus = EaTaskExecutionStatus.NotStarted;
 
         // Persist the approval only after a valid central task exists.
         request.EaTaskId = eaTaskDto.EaTaskId;
@@ -95,6 +97,22 @@ public class ApprovalService
             CreatedAt = now
         };
         await _context.ApprovalCycles.AddAsync(cycle, ct);
+
+        // The Actual phase row opens automatically at creation, but idle (StartedAt null) — it waits for
+        // an explicit StartActualAsync call, exactly like Delegation's Actual phase waits for StartAsync.
+        // Soft-resolved (0 or >1 matching rules => no TAT for this phase, never throws) via Approval's
+        // own per-phase TAT lookup — unlike Delegation's Actual phase, which reuses an already-hard-
+        // resolved EaTask value, Approval's EaTask never resolves TAT at all (CreateWithoutTatAsync
+        // above), so this phase does its own fresh resolution.
+        var (allotted, ruleId) = await _tatRules.GetApplicableForApprovalPhaseAsync(approvalModule.Id, request.RequestType, request.Department, DelegationTaskType.Actual, ct) is { Count: 1 } applicable
+            ? (applicable[0].TatMinutes, (long?)applicable[0].Id)
+            : ((int?)null, (long?)null);
+        _context.ApprovalPhaseTats.Add(new Entities.EaFms.ApprovalPhaseTat
+        {
+            ApprovalRequestId = request.Id, TaskType = DelegationTaskType.Actual, ReviewCycleNumber = 0,
+            StartedAt = null, AllottedTatMinutes = allotted, TatRuleId = ruleId,
+            CreatedBy = request.CreatedBy, CreatedDate = now
+        });
 
         _audit.AddAudit("Created", "EA.Approval", "ApprovalRequest", request.Id.ToString(), null, request, "Approval request created");
         _audit.AddAudit("APPROVAL_SUBMIT", "Approval", nameof(ApprovalRequest), request.Id.ToString(), null, new { request.ReferenceNo, request.Id }, "Approval submitted");

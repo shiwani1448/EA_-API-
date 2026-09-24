@@ -61,6 +61,23 @@ public class ApprovalAiService : IApprovalAiService
     {
         var detail = await LoadAsync(approvalRequestId, ct);
 
+        return await CheckReadinessAsync(new ApprovalAiReadinessInput
+        {
+            SavedRequestId = approvalRequestId,
+            RequestTitle = detail.RequestTitle, RequestType = detail.Type,
+            Priority = detail.Priority, Department = detail.Department,
+            Description = detail.Description, Justification = detail.Justification,
+            Amount = detail.Amount, Currency = detail.Currency,
+            RequiredApprovalDate = detail.RequiredApprovalDate, ApproverName = detail.Approver,
+            DocumentFileNames = detail.Documents.Select(d => d.OriginalFileName).ToList(),
+            WorkflowStatus = detail.WorkflowStatus, CurrentCycleNo = detail.CurrentCycleNo,
+            LatestCycle = detail.LatestCycle,
+        }, ct);
+    }
+
+    public async Task<ApprovalAiReadinessResponseDto> CheckReadinessAsync(ApprovalAiReadinessInput detail, CancellationToken ct = default)
+    {
+        var approvalRequestId = detail.SavedRequestId;
         var systemPrompt = _promptBuilder.BuildReadinessSystemPrompt();
         var userPrompt = _promptBuilder.BuildReadinessUserPrompt(detail);
 
@@ -76,13 +93,26 @@ public class ApprovalAiService : IApprovalAiService
             Notes = aiResult.Notes,
             WarningMessage = "Based only on request field values and uploaded file names — AI cannot read the contents of any uploaded document.",
         };
-        await AiSuggestionWriters.LogApprovalReadinessCheckAsync(_db, approvalRequestId, response, ct);
+        // Only a saved request is logged; an unsaved form preview writes nothing.
+        if (approvalRequestId is long savedId)
+            await AiSuggestionWriters.LogApprovalReadinessCheckAsync(_db, savedId, response, ct);
         return response;
     }
 
     public async Task<ApprovalAiApproverSuggestionResponseDto> RecommendApproverAsync(long approvalRequestId, CancellationToken ct = default)
     {
         var detail = await LoadAsync(approvalRequestId, ct);
+        return await RecommendApproverAsync(new ApprovalAiApproverInput
+        {
+            SavedRequestId = approvalRequestId, RequestType = detail.Type,
+            Department = detail.Department, Amount = detail.Amount,
+            Currency = detail.Currency, SavedPriority = detail.Priority,
+        }, ct);
+    }
+
+    public async Task<ApprovalAiApproverSuggestionResponseDto> RecommendApproverAsync(ApprovalAiApproverInput detail, CancellationToken ct = default)
+    {
+        var approvalRequestId = detail.SavedRequestId;
         const string warning = "Based on historical approval patterns in this department only — not an org chart or authorization rule.";
 
         if (string.IsNullOrWhiteSpace(detail.Department))
@@ -95,14 +125,22 @@ public class ApprovalAiService : IApprovalAiService
                 Reasoning = "This request has no department set, so there is no historical group to compare it against.",
                 WarningMessage = warning,
             };
-            await AiSuggestionWriters.LogApprovalApproverRecommendationAsync(_db, approvalRequestId, noDepartmentResponse, ct);
+            if (approvalRequestId is long savedId)
+                await AiSuggestionWriters.LogApprovalApproverRecommendationAsync(_db, savedId, noDepartmentResponse, ct);
             return noDepartmentResponse;
         }
 
         // Historical stats computed here in C#, never invented by Claude — this system has
         // no employee/role directory, so the only honest source of a "who approves this
         // kind of thing" signal is who actually approved similar requests before.
-        var history = await _repository.GetTopApproversByDepartmentAsync(approvalRequestId, detail.Department, ct);
+        var history = await _db.ApprovalRequests.AsNoTracking()
+            .Where(a => !a.IsDeleted && a.Id != approvalRequestId && a.Department == detail.Department
+                && a.WorkflowStatus == "Approved" && a.ApprovedBy != null)
+            .GroupBy(a => a.ApprovedBy!)
+            .Select(g => new { Approver = g.Key, Count = g.Count() })
+            .OrderByDescending(g => g.Count)
+            .Take(5)
+            .ToListAsync(ct);
 
         if (history.Count == 0)
         {
@@ -114,7 +152,8 @@ public class ApprovalAiService : IApprovalAiService
                 Reasoning = "No approved requests were found for this department yet — there is no history to base a recommendation on.",
                 WarningMessage = warning,
             };
-            await AiSuggestionWriters.LogApprovalApproverRecommendationAsync(_db, approvalRequestId, noHistoryResponse, ct);
+            if (approvalRequestId is long savedId)
+                await AiSuggestionWriters.LogApprovalApproverRecommendationAsync(_db, savedId, noHistoryResponse, ct);
             return noHistoryResponse;
         }
 
@@ -141,7 +180,8 @@ public class ApprovalAiService : IApprovalAiService
             Reasoning = aiResult.Reasoning,
             WarningMessage = warning,
         };
-        await AiSuggestionWriters.LogApprovalApproverRecommendationAsync(_db, approvalRequestId, response, ct);
+        if (approvalRequestId is long savedRequestId)
+            await AiSuggestionWriters.LogApprovalApproverRecommendationAsync(_db, savedRequestId, response, ct);
         return response;
     }
 

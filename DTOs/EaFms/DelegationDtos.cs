@@ -132,8 +132,12 @@ public class DelegationResponseDto
     // ---- Execution / TAT snapshot: read from the central EaTask (ea_tasks) and its WorkPauses; nothing here is stored on
     // ea_delegations. Names follow the central EaTask API (GET /api/ea/tasks/{id}). Unavailable TAT is null, never 0. ----
 
-    /// <summary>Central task execution status: NotStarted | InProgress | Completed. Stays InProgress while paused (see isPaused).</summary>
+    /// <summary>Phase-aware execution status: NotStarted while Pending or waiting to start the current phase, InProgress while running (including paused), Completed when the delegation completes. Derived independently of the stored central task status.</summary>
     public string ExecutionStatus { get; set; } = string.Empty;
+    /// <summary>Current open phase: Actual | Review | Rework; null before the first start or after completion.</summary>
+    public string? CurrentPhase { get; set; }
+    public int? CurrentPhaseCycleNumber { get; set; }
+    public DateTime? CurrentPhaseStartedAt { get; set; }
 
     /// <summary>Configured TAT snapshot taken at creation (EaTask.AllottedTatMinutes). Null for a Delegation created without a delegationType (no TAT). Present on Meeting's own detail contract under the same name.</summary>
     public int? AllottedTatMinutes { get; set; }
@@ -212,7 +216,7 @@ public class DelegationListQueryDto
     public long? SourceBusinessModuleId { get; set; }
     /// <summary>Exact business calendar-date match (day boundary) on the planned end date, not a range.</summary>
     public DateTime? EndDate { get; set; }
-    /// <summary>all | pending | inProgress | dueToday | overdue | completed.</summary>
+    /// <summary>all | pending | inProgress | notstarted | started | dueToday | overdue | completed. pending/inProgress filter lifecycle status; notstarted/started filter phase execution.</summary>
     public string? View { get; set; }
 
     public int PageNumber { get; set; } = 1;
@@ -229,6 +233,8 @@ public class DelegationListQueryDto
 /// </summary>
 public class DelegationSummaryResponseDto
 {
+    /// <summary>Pending delegations plus InProgress delegations waiting to start their current phase.</summary>
+    public int NotStarted { get; set; }
     public int Total { get; set; }
     public int Pending { get; set; }
     public int InProgress { get; set; }
@@ -303,11 +309,20 @@ public class DelegationRequestReworkRequestDto
 /// </summary>
 public class DelegationPhaseTatDto
 {
+    public string? StartedById { get; set; }
+    public string? StartedByName { get; set; }
+    public string? EndedById { get; set; }
+    public string? EndedByName { get; set; }
     /// <summary>Actual | Review | Rework.</summary>
     public string TaskType { get; set; } = string.Empty;
     /// <summary>0 for Actual; the review cycle number for Review/Rework.</summary>
     public int ReviewCycleNumber { get; set; }
-    public DateTime StartedAt { get; set; }
+    /// <summary>
+    /// Null when this phase exists but is waiting for its explicit Start action (Review/Rework open
+    /// this way; Actual is always started immediately). Use (StartedAt == null &amp;&amp; EndedAt == null)
+    /// to detect "not started yet" vs (StartedAt != null &amp;&amp; EndedAt == null) for "currently running".
+    /// </summary>
+    public DateTime? StartedAt { get; set; }
     /// <summary>Null when this is the current, still-open phase (live-ticking values).</summary>
     public DateTime? EndedAt { get; set; }
     public int? AllottedTatMinutes { get; set; }

@@ -41,22 +41,32 @@ public class TatRuleService(EaFmsDbContext db, ITatRuleRepository repository,
         if (dto.ModuleName is not null
             && !string.Equals(dto.ModuleName.Trim(), module.Name.Trim(), StringComparison.OrdinalIgnoreCase))
             throw new BusinessRuleException("ModuleName must match the selected ModuleId.");
-        var typeOnlyModule = EaTaskService.IsTypeOnlyTatModule(module.Name);
-        if (subtype is null && !typeOnlyModule)
-            throw new BadRequestException("Subtype is required for this module.");
-        if (subtype is not null && typeOnlyModule)
-            throw new BadRequestException($"{module.Name} TAT rules are classified by Type only; Subtype must be omitted.");
-        // TaskType is the inverse of Subtype: required for Delegation (its rules are Type + TaskType), forbidden
-        // everywhere else. Format (one of Actual/Review/Rework) was already checked by the validator.
+        var typeOnlyModule = EaTaskService.IsTypeOnlyTatModule(module.Name); // Delegation and Follow-up
+        // TaskType is required for Delegation (its rules are always Type + TaskType, no Subtype) and now
+        // OPTIONAL for EA Approval (its rules may be plain Type[/Subtype] as before, or Type + TaskType
+        // with no Subtype — the same shape Delegation uses — for per-phase Actual/Review/Rework rules).
+        // Every other module still forbids TaskType entirely. Format (one of Actual/Review/Rework) was
+        // already checked by the validator.
+        var taskTypeCapable = typeOnlyModule || string.Equals(module.Name.Trim(), "EA Approval", StringComparison.OrdinalIgnoreCase);
         var taskType = string.IsNullOrWhiteSpace(dto.TaskType) ? null : dto.TaskType.Trim();
         if (taskType is null && typeOnlyModule)
             throw new BadRequestException("TaskType is required for Delegation/Follow-up TAT rules.");
-        if (taskType is not null && !typeOnlyModule)
+        if (taskType is not null && !taskTypeCapable)
             throw new BadRequestException($"{module.Name} TAT rules do not use TaskType; it must be omitted.");
         // Follow-up has no Review/Rework cycle: TaskType must always be Actual for it.
         if (taskType is not null && string.Equals(module.Name.Trim(), "Follow-up", StringComparison.OrdinalIgnoreCase)
             && !string.Equals(taskType, DelegationTaskType.Actual, StringComparison.Ordinal))
             throw new BadRequestException("Follow-up TAT rules only support TaskType Actual.");
+        // A rule uses the Type+TaskType-only shape (no Subtype) either because its module is Delegation
+        // (always) or because a TaskType was actually supplied for a taskType-capable module (Approval,
+        // optionally). Otherwise the ordinary Type[/Subtype] shape applies unchanged.
+        var usesTaskTypeOnlyShape = typeOnlyModule || taskType is not null;
+        if (subtype is null && !usesTaskTypeOnlyShape)
+            throw new BadRequestException("Subtype is required for this module.");
+        if (subtype is not null && usesTaskTypeOnlyShape)
+            throw new BadRequestException(taskType is not null
+                ? "A TAT rule with TaskType set must omit Subtype (Type + TaskType classification only)."
+                : $"{module.Name} TAT rules are classified by Type only; Subtype must be omitted.");
         if (dto.IsActive == true && subtype is not null && await db.TatRules.AnyAsync(x => x.BusinessModuleId == dto.ModuleId
             && x.Type != null && x.Subtype != null && TatClassification.TrimForMatch(x.Type).ToLower() == typeKey && TatClassification.TrimForMatch(x.Subtype).ToLower() == subtypeKey
             && x.IsActive && !x.IsDeleted && (!id.HasValue || x.Id != id.Value), ct))
@@ -106,6 +116,11 @@ public class TatRuleService(EaFmsDbContext db, ITatRuleRepository repository,
         }
         catch (DbUpdateException ex) when (ex.InnerException is PostgresException
             { SqlState: PostgresErrorCodes.UniqueViolation, ConstraintName: "UX_ea_tat_rules_ActiveDelegationClassification" })
+        {
+            throw new BusinessRuleException("An active TAT rule already exists for this module/type/taskType combination.");
+        }
+        catch (DbUpdateException ex) when (ex.InnerException is PostgresException
+            { SqlState: PostgresErrorCodes.UniqueViolation, ConstraintName: "UX_ea_tat_rules_ActiveApprovalTaskTypeClassification" })
         {
             throw new BusinessRuleException("An active TAT rule already exists for this module/type/taskType combination.");
         }

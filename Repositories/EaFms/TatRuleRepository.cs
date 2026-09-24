@@ -64,9 +64,42 @@ public class TatRuleRepository(EaFmsDbContext db) : ITatRuleRepository
         return await MatchingRules(moduleId, x => x.Type == null && x.Subtype == null, ct);
     }
 
+    // TaskType == null keeps this cascade taskType-agnostic now that Approval rows may carry a
+    // TaskType (resolved separately, first, by GetApplicableForApprovalPhaseAsync below) — safe/
+    // backward-compatible since all pre-existing data already has TaskType == null.
     private Task<List<TatRule>> MatchingRules(long moduleId, System.Linq.Expressions.Expression<Func<TatRule, bool>> classification, CancellationToken ct) =>
-        db.TatRules.AsNoTracking().Where(x => x.BusinessModuleId == moduleId && x.IsActive && !x.IsDeleted && x.TatMinutes > 0)
+        db.TatRules.AsNoTracking().Where(x => x.BusinessModuleId == moduleId && x.IsActive && !x.IsDeleted && x.TatMinutes > 0 && x.TaskType == null)
             .Where(classification).Take(2).ToListAsync(ct);
+
+    // Approval per-phase TAT: exact module + Type + TaskType match (no Subtype), same shape as
+    // Delegation's GetApplicableByTypeOnlyAsync, via UX_ea_tat_rules_ActiveApprovalTaskTypeClassification.
+    // Falls back to the ordinary (now taskType-agnostic) GetApplicableForApprovalAsync cascade when no
+    // exact match exists. Soft: 0 or >1 rows is "no TAT for this phase", callers never see an exception.
+    public async Task<List<TatRule>> GetApplicableForApprovalPhaseAsync(long moduleId, string? type, string? subtype, string taskType, CancellationToken ct)
+    {
+        if (!string.IsNullOrWhiteSpace(type))
+        {
+            List<TatRule> exact;
+            if (!db.Database.IsRelational())
+            {
+                var typeKey = type.Trim().ToLowerInvariant();
+                var taskTypeKey = taskType.Trim().ToLowerInvariant();
+                exact = await db.TatRules.AsNoTracking()
+                    .Where(x => x.BusinessModuleId == moduleId && x.Type != null && x.Type.Trim().ToLower() == typeKey
+                        && x.TaskType != null && x.TaskType.Trim().ToLower() == taskTypeKey
+                        && (x.Subtype == null || x.Subtype.Trim() == "")
+                        && x.IsActive && !x.IsDeleted)
+                    .Take(2).ToListAsync(ct);
+            }
+            else
+            {
+                exact = await db.TatRules.FromSqlInterpolated($"SELECT * FROM public.ea_tat_rules WHERE \"BusinessModuleId\" = {moduleId} AND \"Type\" IS NOT NULL AND lower(btrim(\"Type\")) = lower(btrim({type})) AND lower(btrim(\"TaskType\")) = lower(btrim({taskType})) AND (\"Subtype\" IS NULL OR btrim(\"Subtype\") = '') AND \"IsActive\" AND NOT \"IsDeleted\" LIMIT 2 FOR SHARE")
+                    .AsNoTracking().ToListAsync(ct);
+            }
+            if (exact.Count != 0) return exact;
+        }
+        return await GetApplicableForApprovalAsync(moduleId, type, subtype, ct);
+    }
 
     public async Task AddAsync(TatRule rule, CancellationToken ct) => await db.TatRules.AddAsync(rule, ct);
 }

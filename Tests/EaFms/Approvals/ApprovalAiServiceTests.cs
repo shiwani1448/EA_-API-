@@ -76,13 +76,17 @@ public class ApprovalAiServiceTests
             });
 
         var audit = Mock.Of<IAuditService>();
-        var approvals = new Jarvis5.Services.EaFms.ApprovalService(db, audit, numbers.Object, eaTasks.Object);
+        var approvals = new Jarvis5.Services.EaFms.ApprovalService(db, audit, numbers.Object, eaTasks.Object, new TatRuleRepository(db));
         var taskReview = new TaskReviewService(db, new TaskReviewRepository(db), Mock.Of<ICurrentUserService>(), audit);
-        var lifecycle = new ApprovalLifecycleService(db, audit, taskReview);
+        // Pause/Resume (which lazily resolve ApprovalQueryService via IServiceProvider) are not exercised
+        // by these AI-preview tests, so an unconfigured IServiceProvider mock is sufficient here.
+        var lifecycle = new ApprovalLifecycleService(db, audit, taskReview, Mock.Of<ICurrentUserService>(),
+            Mock.Of<Microsoft.AspNetCore.Hosting.IWebHostEnvironment>(e => e.ContentRootPath == Path.GetTempPath()),
+            Mock.Of<IServiceProvider>(), new TatRuleRepository(db));
         var documents = new ApprovalDocumentService(db, Mock.Of<ICurrentUserService>(), audit,
             Mock.Of<Microsoft.AspNetCore.Hosting.IWebHostEnvironment>(e => e.ContentRootPath == Path.GetTempPath()),
             new ApprovalAuthorizationService(db), lifecycle);
-        var queries = new ApprovalQueryService(db, documents, taskReview);
+        var queries = new ApprovalQueryService(db, documents, taskReview, new TatRuleRepository(db));
 
         return new Harness { Db = db, Approvals = approvals, Lifecycle = lifecycle, Queries = queries };
     }
@@ -92,9 +96,9 @@ public class ApprovalAiServiceTests
         var claude = new Mock<IClaudeClient>();
         var prompts = new Mock<IApprovalAiPromptBuilder>();
         prompts.Setup(p => p.BuildReadinessSystemPrompt()).Returns("system");
-        prompts.Setup(p => p.BuildReadinessUserPrompt(It.IsAny<ApprovalDetailDto>())).Returns("user");
+        prompts.Setup(p => p.BuildReadinessUserPrompt(It.IsAny<ApprovalAiReadinessInput>())).Returns("user");
         prompts.Setup(p => p.BuildApproverSystemPrompt()).Returns("system");
-        prompts.Setup(p => p.BuildApproverUserPrompt(It.IsAny<ApprovalDetailDto>(), It.IsAny<List<(string, int)>>())).Returns("user");
+        prompts.Setup(p => p.BuildApproverUserPrompt(It.IsAny<ApprovalAiApproverInput>(), It.IsAny<List<(string, int)>>())).Returns("user");
         prompts.Setup(p => p.BuildStatusSystemPrompt()).Returns("system");
         prompts.Setup(p => p.BuildStatusUserPrompt(It.IsAny<ApprovalDetailDto>())).Returns("user");
         return (claude, prompts);
@@ -149,6 +153,83 @@ public class ApprovalAiServiceTests
 
         Assert.Empty(result.MissingFields);
         Assert.Empty(result.SuggestedDocuments);
+    }
+
+    [Fact]
+    public async Task FormPreviews_UseSharedLogic_AndDoNotChangeTrackedRows()
+    {
+        var h = await NewHarnessAsync();
+        var past = await h.Approvals.CreateAsync(new ApprovalRequest { RequestTitle = "Past", Department = "Ops", CreatedBy = "creator" });
+        await h.Lifecycle.ApproveAsync(past.Id, new ApprovalDecisionDto { EmployeeName = "Priya" });
+        var current = await h.Approvals.CreateAsync(new ApprovalRequest
+        {
+            RequestTitle = "Capex", RequestType = "Finance", Department = "Ops", CreatedBy = "creator",
+            Description = "Buy equipment", Amount = 100, Currency = "INR",
+        });
+        var (claude, prompts) = Mocks();
+        claude.Setup(c => c.GenerateJsonAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync("""{"isLikelyReady":true,"missingFields":[],"suggestedDocuments":[],"notes":"Ready"}""");
+        var service = Service(h, claude, prompts);
+        var controller = new Jarvis5.Controllers.EaFms.ApprovalAiController(service);
+        var saves = 0;
+        h.Db.SavingChanges += (_, _) => saves++;
+        var before = h.Db.ChangeTracker.Entries().ToDictionary(e => e.Entity, e => System.Text.Json.JsonSerializer.Serialize(e.CurrentValues.ToObject()));
+
+        var ready = Assert.IsType<Microsoft.AspNetCore.Mvc.OkObjectResult>((await controller.PreviewReadiness(new()
+        {
+            RequestTitle = "Capex", RequestType = "Finance", Department = "Ops", Description = "Buy equipment",
+            RequiredApprovalDate = new DateTime(2026, 9, 30), ApproverName = "Priya", Amount = 100,
+            Currency = "INR", DocumentFileNames = new() { "quote.pdf" },
+        }, default)).Result).Value as ApprovalAiReadinessResponseDto;
+        Assert.NotNull(ready);
+        Assert.True(ready!.IsLikelyReady);
+        Assert.Null(ready.ApprovalRequestId);
+        Assert.Empty(ready.MissingFields);
+
+        var empty = await service.CheckReadinessAsync(new ApprovalAiReadinessInput());
+        Assert.False(empty.IsLikelyReady);
+        Assert.Null(empty.ApprovalRequestId);
+        Assert.Equal(new[] { "requestTitle", "requestType", "department", "description", "requiredApprovalDate", "approverName", "amount" }, empty.MissingFields);
+        var savedReady = await service.CheckReadinessAsync(current.Id);
+        Assert.Equal(current.Id, savedReady.ApprovalRequestId);
+        Assert.True(savedReady.IsLikelyReady);
+
+        claude.Setup(c => c.GenerateJsonAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync("""{"recommendedApprover":"Priya","reasoning":"Past approvals"}""");
+        var suggested = Assert.IsType<Microsoft.AspNetCore.Mvc.OkObjectResult>((await controller.PreviewApprover(new() { Department = "Ops" }, default)).Result).Value as ApprovalAiApproverSuggestionResponseDto;
+        Assert.Null(suggested!.ApprovalRequestId);
+        Assert.Equal("Priya", suggested.RecommendedApproverName);
+        Assert.Equal(1, suggested.HistoricalSampleSize);
+        var savedSuggestion = await service.RecommendApproverAsync(current.Id);
+        Assert.Equal(current.Id, savedSuggestion.ApprovalRequestId);
+        Assert.Equal(suggested.RecommendedApproverName, savedSuggestion.RecommendedApproverName);
+        Assert.Equal(suggested.HistoricalSampleSize, savedSuggestion.HistoricalSampleSize);
+        var noHistory = await service.RecommendApproverAsync(new ApprovalAiApproverInput { Department = "Unknown" });
+        Assert.Null(noHistory.RecommendedApproverName);
+        Assert.Equal(0, noHistory.HistoricalSampleSize);
+
+        Assert.Equal(0, saves);
+        Assert.False(h.Db.ChangeTracker.HasChanges());
+        Assert.Equal(before.Count, h.Db.ChangeTracker.Entries().Count());
+        foreach (var entry in h.Db.ChangeTracker.Entries())
+            Assert.Equal(before[entry.Entity], System.Text.Json.JsonSerializer.Serialize(entry.CurrentValues.ToObject()));
+        Assert.Equal(2, await h.Db.ApprovalRequests.CountAsync());
+    }
+
+    [Fact]
+    public async Task SavedReadiness_MapsFileNamesAndWorkflowContext()
+    {
+        var h = await NewHarnessAsync();
+        var created = await h.Approvals.CreateAsync(new ApprovalRequest { RequestTitle = "Capex", RequestType = "Finance", Department = "Ops", CreatedBy = "creator" });
+        var (claude, prompts) = Mocks();
+        claude.Setup(c => c.GenerateJsonAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync(ValidReadinessJson);
+        var detail = await h.Queries.DetailAsync(created.Id, default);
+        await Service(h, claude, prompts).CheckReadinessAsync(created.Id);
+        prompts.Verify(p => p.BuildReadinessUserPrompt(It.Is<ApprovalAiReadinessInput>(i =>
+            i.RequestTitle == detail!.RequestTitle && i.RequestType == detail.Type &&
+            i.ApproverName == detail.Approver && i.WorkflowStatus == detail.WorkflowStatus &&
+            i.CurrentCycleNo == detail.CurrentCycleNo &&
+            i.DocumentFileNames!.SequenceEqual(detail.Documents.Select(d => d.OriginalFileName)))), Times.Once);
     }
 
     private const string ValidReadinessJson = """{"isLikelyReady":false,"missingFields":["Justification"],"suggestedDocuments":["Invoice or quote"],"notes":"No supporting documents attached."}""";

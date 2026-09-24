@@ -11,7 +11,7 @@ namespace Jarvis5.Tests.EaFms.Approvals;
 public class ApprovalAiSwaggerTests
 {
     [Fact]
-    public async Task GeneratedContract_ExposesExactlyTheThreeApprovalAiRoutes_WithNoProviderInternals()
+    public async Task GeneratedContract_ExposesAllFiveApprovalAiRoutes_WithNoProviderInternals()
     {
         var builder = WebApplication.CreateBuilder();
         builder.Services.AddControllers().AddApplicationPart(typeof(ApprovalAiController).Assembly);
@@ -42,7 +42,9 @@ public class ApprovalAiSwaggerTests
             "/api/ea/approvals/{approvalRequestId}/ai/recommend-approver",
             "/api/ea/approvals/{approvalRequestId}/ai/recommend-approver/apply",
             "/api/ea/approvals/{approvalRequestId}/ai/status-summary",
-        }, aiPaths);
+            "/api/ea/approvals/ai/readiness",
+            "/api/ea/approvals/ai/recommend-approver",
+        }.OrderBy(k => k).ToArray(), aiPaths);
 
         var readinessResponseRef = paths["/api/ea/approvals/{approvalRequestId}/ai/readiness"]!["post"]!["responses"]!["200"]!["content"]!["application/json"]!["schema"]!["$ref"]!.GetValue<string>();
         Assert.Equal("#/components/schemas/ApprovalAiReadinessResponseDto", readinessResponseRef);

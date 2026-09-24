@@ -143,6 +143,82 @@ namespace Studio5JarvisMasterApi.Migrations
                     b.ToTable("ea_approval_cycles", "public");
                 });
 
+            modelBuilder.Entity("Jarvis5.Entities.EaFms.ApprovalPhaseTat", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<int?>("AllottedTatMinutes")
+                        .HasColumnType("integer");
+
+                    b.Property<long>("ApprovalRequestId")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<DateTime>("CreatedDate")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("EndedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("ModifiedBy")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<DateTime?>("ModifiedDate")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int?>("PauseCount")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("ReviewCycleNumber")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime?>("StartedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("TaskType")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<int?>("TatPausedMinutes")
+                        .HasColumnType("integer");
+
+                    b.Property<decimal?>("TatPausedSeconds")
+                        .HasPrecision(20, 7)
+                        .HasColumnType("numeric(20,7)");
+
+                    b.Property<long?>("TatRuleId")
+                        .HasColumnType("bigint");
+
+                    b.Property<int?>("TatUsedMinutes")
+                        .HasColumnType("integer");
+
+                    b.Property<decimal?>("TatUsedSeconds")
+                        .HasPrecision(20, 7)
+                        .HasColumnType("numeric(20,7)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ApprovalRequestId")
+                        .IsUnique()
+                        .HasDatabaseName("UX_ea_approval_phase_tat_OpenPhase")
+                        .HasFilter("\"EndedAt\" IS NULL");
+
+                    b.HasIndex("ApprovalRequestId", "TaskType", "ReviewCycleNumber")
+                        .IsUnique();
+
+                    b.ToTable("ea_approval_phase_tat", "public");
+                });
+
             modelBuilder.Entity("Jarvis5.Entities.EaFms.ApprovalReadinessCheck", b =>
                 {
                     b.Property<long>("Id")
@@ -1105,7 +1181,7 @@ namespace Studio5JarvisMasterApi.Migrations
                     b.Property<int>("ReviewCycleNumber")
                         .HasColumnType("integer");
 
-                    b.Property<DateTime>("StartedAt")
+                    b.Property<DateTime?>("StartedAt")
                         .HasColumnType("timestamp with time zone");
 
                     b.Property<string>("StartedById")
@@ -4396,6 +4472,17 @@ namespace Studio5JarvisMasterApi.Migrations
                 });
 
             modelBuilder.Entity("Jarvis5.Entities.EaFms.ApprovalCycle", b =>
+                {
+                    b.HasOne("Jarvis5.Entities.EaFms.ApprovalRequest", "ApprovalRequest")
+                        .WithMany()
+                        .HasForeignKey("ApprovalRequestId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("ApprovalRequest");
+                });
+
+            modelBuilder.Entity("Jarvis5.Entities.EaFms.ApprovalPhaseTat", b =>
                 {
                     b.HasOne("Jarvis5.Entities.EaFms.ApprovalRequest", "ApprovalRequest")
                         .WithMany()

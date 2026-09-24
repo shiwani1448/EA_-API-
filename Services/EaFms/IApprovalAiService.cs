@@ -4,6 +4,9 @@ namespace Jarvis5.Services.EaFms;
 
 public interface IApprovalAiService
 {
+    Task<ApprovalAiReadinessResponseDto> CheckReadinessAsync(ApprovalAiReadinessInput input, CancellationToken ct = default);
+    Task<ApprovalAiApproverSuggestionResponseDto> RecommendApproverAsync(ApprovalAiApproverInput input, CancellationToken ct = default);
+
     /// <summary>Preview-only: judges completeness from the request's own fields and its
     /// documents' file names only (no OCR/content access). Never writes to the database.</summary>
     Task<ApprovalAiReadinessResponseDto> CheckReadinessAsync(long approvalRequestId, CancellationToken ct = default);
