@@ -100,5 +100,15 @@ public class MeetingAiSwaggerTests
         var responseSchema = root["components"]!["schemas"]!["MeetingAiActionsConfirmResponseDto"]!;
         var createdActionsRef = responseSchema["properties"]!["createdActions"]!["items"]!["$ref"]!.GetValue<string>();
         Assert.Equal("#/components/schemas/MeetingActionDto", createdActionsRef);
+        Assert.NotNull(paths["/api/ea/meetings/{meetingId}/delegation/decline"]?["post"]);
+        var schemas = root["components"]!["schemas"]!;
+        Assert.NotNull(schemas["CreateMeetingActionDto"]!["properties"]!["meetingActionId"]);
+        Assert.NotNull(schemas["MeetingActionDto"]!["properties"]!["delegationId"]);
+        Assert.NotNull(responseSchema["properties"]!["createdDelegationCount"]);
+        Assert.NotNull(responseSchema["properties"]!["delegationDecision"]);
+        foreach (var name in new[] { "MeetingDetailResponseDto", "MeetingListItemResponseDto" })
+        foreach (var field in new[] { "delegationDecision", "delegationDecidedAt", "delegationDecidedBy" })
+            Assert.NotNull(schemas[name]!["properties"]![field]);
+
     }
 }

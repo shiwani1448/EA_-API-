@@ -29,6 +29,10 @@ public class MeetingsActionsController : ControllerBase
         var now = Jarvis5.Common.Clock.UtcNowTz;
         var result = list.Select(a => MeetingActionFactory.ToDto(a, now)).ToList();
 
+        var links = await MeetingDelegationService.LoadDelegationIdsAsync(_context, list.Select(a => a.Id), ct);
+        foreach (var action in result)
+            action.DelegationId = links.TryGetValue(action.Id, out var delegationId) ? delegationId : null;
+
         return Ok(result);
     }
 

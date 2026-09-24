@@ -151,7 +151,7 @@ public class DelegationService : IDelegationService
         // supplied: module + Type = delegationType, no subtype (backend-only type-only path; a missing rule fails
         // like any canonical TAT resolution). A blank delegationType — including a Meeting action without one —
         // keeps the backend-only no-TAT path; no Type is ever fabricated. A Meeting action's delegationType is
-        // checked against its rule when the action is saved (MeetingActionFactory.ValidateAsync).
+        // checked against its rule when the action is saved or confirmed (MeetingActionFactory.ValidateAsync).
         var eaTaskRequest = new CreateEaTaskDto
         {
             ModuleId = delegationModule.Id,

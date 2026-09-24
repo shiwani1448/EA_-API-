@@ -4,6 +4,10 @@ namespace Jarvis5.Entities.EaFms;
 
 public class Meeting
 {
+    public string? DelegationDecision { get; set; }
+    public DateTime? DelegationDecidedAt { get; set; }
+    public string? DelegationDecidedBy { get; set; }
+
     public long Id { get; set; }
 
     // Business reference

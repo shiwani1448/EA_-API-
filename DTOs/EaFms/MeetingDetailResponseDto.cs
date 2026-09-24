@@ -4,6 +4,10 @@ namespace Jarvis5.Dtos.EaFms;
 
 public class MeetingDetailResponseDto
 {
+    public string? DelegationDecision { get; set; }
+    public DateTime? DelegationDecidedAt { get; set; }
+    public string? DelegationDecidedBy { get; set; }
+
     // Core
     public long MeetingId { get; set; }    public string? MeetingNumber { get; set; }
     public string? Title { get; set; }

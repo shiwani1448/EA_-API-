@@ -2,6 +2,7 @@ namespace Jarvis5.Dtos.EaFms;
 
 public class CreateMeetingActionDto
 {
+    public long? MeetingActionId { get; set; }
     public string? Title { get; set; }
     public string? Description { get; set; }
     /// <summary>Opaque stable doer identity. Optional — existing callers that send only

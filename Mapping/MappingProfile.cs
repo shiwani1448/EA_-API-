@@ -109,7 +109,8 @@ public class MappingProfile : Profile
             .ForMember(d => d.RevisionNo, opt => opt.MapFrom(s => s.RevisionNumber));
 
         CreateMap<Jarvis5.Entities.EaFms.MeetingDecision, Jarvis5.Dtos.EaFms.MeetingDecisionDto>();
-        CreateMap<Jarvis5.Entities.EaFms.MeetingAction, Jarvis5.Dtos.EaFms.MeetingActionDto>();
+        CreateMap<Jarvis5.Entities.EaFms.MeetingAction, Jarvis5.Dtos.EaFms.MeetingActionDto>()
+            .ForMember(d => d.DelegationId, opt => opt.Ignore());
         CreateMap<Jarvis5.Entities.EaFms.TatRule, Jarvis5.Dtos.EaFms.TatRuleDto>()
             .ForMember(d => d.ModuleId, opt => opt.MapFrom(s => s.BusinessModuleId))
             .ForMember(d => d.ModuleName, opt => opt.MapFrom(s => s.BusinessModule.Name));
