@@ -141,6 +141,9 @@ public class MeetingAiService : IMeetingAiService
         if (!meetingExists)
             throw new NotFoundException($"Meeting {meetingId} not found.");
 
+        foreach (var action in dto.Actions)
+            await MeetingActionFactory.ValidateAsync(_db, action, ct);
+
         var now = Clock.UtcNowTz;
         var created = new List<MeetingAction>();
 

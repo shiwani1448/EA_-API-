@@ -3,6 +3,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Jarvis5.Common;
+using Jarvis5.Common.EaFms;
 using Jarvis5.Data.EaFms;
 using Jarvis5.Dtos.EaFms;
 using Jarvis5.Entities.EaFms;
@@ -191,6 +192,55 @@ public class MeetingToDelegationTests
         Assert.NotNull(reloaded.CompletedAt);
         Assert.Equal(0, await verify.Delegations.CountAsync(d => d.SourceEntityId != null && d.SourceEntityId.StartsWith("__never__")));
         // No actions existed at all, so nothing tied to this meeting could have been created.
+    }
+
+    // ----------------------------------------------------------------
+    // 1b. Action's startDate / assignee / delegationType carry into the Delegation
+    // ----------------------------------------------------------------
+
+    [Fact]
+    public async Task CompleteAsync_ActionStartDateAssigneeAndDelegationType_AreCarriedIntoTheDelegation()
+    {
+        await using var db = MakeRealDb();
+        var marker = $"fields-{Guid.NewGuid():N}";
+        var type = $"5B3-TYPE-{marker}";
+        var delegationModuleId = await ResolveModuleIdAsync(db, "Delegation");
+        var rule = new TatRule { BusinessModuleId = delegationModuleId, ModuleName = "Delegation", Type = type, TaskType = DelegationTaskType.Actual,
+            TatMinutes = 90, IsActive = true, CreatedBy = "step5b3-ea", CreatedDate = DateTime.UtcNow };
+        db.TatRules.Add(rule);
+        await db.SaveChangesAsync();
+        try
+        {
+            var (meeting, meetingModuleId) = await SeedInProgressMeetingAsync(db, marker);
+            var start = DateTime.UtcNow.Date.AddDays(1).AddHours(10);
+            var action = await AddActionAsync(db, meeting.Id, marker, doerId: "EMP-5B3-FIELDS", doerName: "Fields Doer");
+            action.StartDate = start;
+            action.AssigneeId = "EMP-5B3-ASSIGNEE";
+            action.AssigneeName = "Fields Assignee";
+            action.DelegationType = type;
+            await db.SaveChangesAsync();
+
+            var user = Mock.Of<ICurrentUserService>(u => u.UserName == "step5b3-ea" && u.UserId == 1);
+            var audit = new AuditService(db, user);
+            var lifecycle = MakeLifecycleService(db, user, audit, MakeRealDelegationService(db, user, audit), out _);
+            await lifecycle.CompleteAsync(meeting.Id, MakeCompleteDto(), default);
+
+            await using var verify = MakeRealDb();
+            var delegation = await verify.Delegations.SingleAsync(d =>
+                d.SourceBusinessModuleId == meetingModuleId && d.SourceEntityId == action.Id.ToString());
+            Assert.Equal(start, delegation.StartDate);
+            Assert.Equal(("EMP-5B3-ASSIGNEE", "Fields Assignee"), (delegation.AssigneeId, delegation.AssigneeNameSnapshot));
+            Assert.Equal(("EMP-5B3-FIELDS", "Fields Doer"), (delegation.DoerId, delegation.DoerNameSnapshot)); // doer unaffected
+            Assert.Equal(type, delegation.DelegationType);
+            var task = await verify.Tasks.SingleAsync(t => t.Id == delegation.EaTaskId);
+            Assert.Equal((90, rule.Id), (task.AllottedTatMinutes, task.TatRuleId));   // typed → TAT snapshotted
+        }
+        finally
+        {
+            await using var cleanup = MakeRealDb();
+            await cleanup.Tasks.Where(t => t.TatRuleId == rule.Id).ExecuteUpdateAsync(s => s.SetProperty(t => t.TatRuleId, (long?)null));
+            await cleanup.TatRules.Where(r => r.Id == rule.Id).ExecuteDeleteAsync();
+        }
     }
 
     // ----------------------------------------------------------------

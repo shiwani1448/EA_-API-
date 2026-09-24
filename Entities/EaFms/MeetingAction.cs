@@ -22,6 +22,12 @@ public class MeetingAction
     // PriorityLevel's catalog (PriorityLevel is optional discovery data only).
     public string? Priority { get; set; }
     public DateTime? DueDate { get; set; }
+    // Carried into the Delegation created from this action on Meeting completion
+    // (StartDate, AssigneeId/AssigneeName -> AssigneeNameSnapshot, DelegationType).
+    public DateTime? StartDate { get; set; }
+    public string? AssigneeId { get; set; }
+    public string? AssigneeName { get; set; }
+    public string? DelegationType { get; set; }
     public string? Status { get; set; }
     public DateTime? AcknowledgedAt { get; set; }
     public DateTime? CompletedAt { get; set; }

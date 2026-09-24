@@ -90,6 +90,7 @@ public class DelegationService : IDelegationService
         Title = dto.Title, Description = dto.Description,
         DelegationType = dto.DelegationType, StartDate = dto.StartDate,
         DoerId = dto.DoerId, DoerNameSnapshot = dto.DoerNameSnapshot,
+        AssigneeId = dto.AssigneeId, AssigneeNameSnapshot = dto.AssigneeName,
         Priority = dto.Priority, DueDate = dto.EndDate,
         SourceBusinessModuleId = dto.SourceBusinessModuleId, SourceEntityId = dto.SourceEntityId,
         SourceReference = dto.SourceReference, AdditionalNotes = dto.AdditionalNotes
@@ -148,8 +149,9 @@ public class DelegationService : IDelegationService
         // regardless of who owns the outer transaction. Delegation has no approved TAT
         // classification apart from delegationType, so TAT is resolved only when a delegationType was
         // supplied: module + Type = delegationType, no subtype (backend-only type-only path; a missing rule fails
-        // like any canonical TAT resolution). A blank delegationType, and every Meeting-created Delegation,
-        // keeps the backend-only no-TAT path — no Type is ever fabricated.
+        // like any canonical TAT resolution). A blank delegationType — including a Meeting action without one —
+        // keeps the backend-only no-TAT path; no Type is ever fabricated. A Meeting action's delegationType is
+        // checked against its rule when the action is saved (MeetingActionFactory.ValidateAsync).
         var eaTaskRequest = new CreateEaTaskDto
         {
             ModuleId = delegationModule.Id,
@@ -178,6 +180,8 @@ public class DelegationService : IDelegationService
 
             DoerId = command.DoerId?.Trim() ?? string.Empty,
             DoerNameSnapshot = string.IsNullOrWhiteSpace(command.DoerNameSnapshot) ? null : command.DoerNameSnapshot.Trim(),
+            AssigneeId = string.IsNullOrWhiteSpace(command.AssigneeId) ? null : command.AssigneeId.Trim(),
+            AssigneeNameSnapshot = string.IsNullOrWhiteSpace(command.AssigneeNameSnapshot) ? null : command.AssigneeNameSnapshot.Trim(),
 
             AssignedById = actor,
             AssignedByNameSnapshot = actorName,
@@ -286,6 +290,7 @@ public class DelegationService : IDelegationService
         var snapshot = new
         {
             entity.Title, entity.Description, entity.DoerId, entity.DoerNameSnapshot,
+            entity.AssigneeId, entity.AssigneeNameSnapshot,
             entity.DueDate, entity.DelegationType, entity.StartDate, entity.Priority, entity.SourceBusinessModuleId, entity.SourceEntityId,
             entity.SourceReference, entity.AdditionalNotes
         };
@@ -297,6 +302,8 @@ public class DelegationService : IDelegationService
         entity.Description = string.IsNullOrWhiteSpace(dto.Description) ? null : dto.Description.Trim();
         entity.DoerId = dto.DoerId?.Trim() ?? string.Empty;
         entity.DoerNameSnapshot = string.IsNullOrWhiteSpace(dto.DoerNameSnapshot) ? null : dto.DoerNameSnapshot.Trim();
+        entity.AssigneeId = string.IsNullOrWhiteSpace(dto.AssigneeId) ? null : dto.AssigneeId.Trim();
+        entity.AssigneeNameSnapshot = string.IsNullOrWhiteSpace(dto.AssigneeName) ? null : dto.AssigneeName.Trim();
         entity.DueDate = dto.EndDate;
         entity.DelegationType = delegationType;
         entity.StartDate = dto.StartDate;
@@ -319,6 +326,7 @@ public class DelegationService : IDelegationService
             new
             {
                 entity.Title, entity.Description, entity.DoerId, entity.DoerNameSnapshot,
+                entity.AssigneeId, entity.AssigneeNameSnapshot,
                 entity.DueDate, entity.DelegationType, entity.StartDate, entity.Priority, entity.SourceBusinessModuleId, entity.SourceEntityId,
                 entity.SourceReference, entity.AdditionalNotes
             },
@@ -1644,6 +1652,9 @@ public class DelegationService : IDelegationService
 
             DoerId = d.DoerId,
             DoerName = d.DoerNameSnapshot,
+
+            AssigneeId = d.AssigneeId,
+            AssigneeName = d.AssigneeNameSnapshot,
 
             AssignedById = d.AssignedById,
             AssignedByName = d.AssignedByNameSnapshot,

@@ -1,11 +1,9 @@
 using Jarvis5.Dtos.EaFms;
 using Jarvis5.Services.EaFms;
-using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Jarvis5.Controllers.EaFms;
 
-[Authorize]
 [ApiController]
 [Route("api/ea/followups/{followupId:long}/ai")]
 public class FollowupAiController : ControllerBase

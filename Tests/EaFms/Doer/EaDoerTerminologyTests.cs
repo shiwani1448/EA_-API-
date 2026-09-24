@@ -24,12 +24,29 @@ public class EaDoerTerminologyTests
     private static readonly Type[] AllEaContractTypes = typeof(DelegationEntity).Assembly.GetTypes()
         .Where(t => t.Namespace is "Jarvis5.Dtos.EaFms" or "Jarvis5.Entities.EaFms").ToArray();
 
+    /// <summary>The only allowed "Assignee" names: Delegation's explicit Assignee — a separate person
+    /// from the Doer (requested for the Delegation API). "AssignedTo" stays banned everywhere, and
+    /// no other entity/DTO may use "Assignee".</summary>
+    private static readonly string[] ExplicitAssigneeResponseAliases =
+    {
+        "Delegation.AssigneeId", "Delegation.AssigneeNameSnapshot",
+        "DelegationCreateRequestDto.AssigneeId", "DelegationCreateRequestDto.AssigneeName",
+        "DelegationUpdateRequestDto.AssigneeId", "DelegationUpdateRequestDto.AssigneeName",
+        "DelegationCreateCommand.AssigneeId", "DelegationCreateCommand.AssigneeNameSnapshot",
+        "DelegationResponseDto.AssigneeId", "DelegationResponseDto.AssigneeName",
+        // Meeting action items carry the future Delegation's assignee.
+        "MeetingAction.AssigneeId", "MeetingAction.AssigneeName",
+        "CreateMeetingActionDto.AssigneeId", "CreateMeetingActionDto.AssigneeName",
+        "MeetingActionDto.AssigneeId", "MeetingActionDto.AssigneeName",
+    };
+
     [Fact]
     public void NoEaEntityDtoOrCommand_StillCarriesAssignedToOrAssigneeTerminology()
     {
         var offenders = AllEaContractTypes.Concat(new[] { typeof(DelegationCreateCommand) })
             .SelectMany(t => t.GetProperties().Select(p => $"{t.Name}.{p.Name}"))
             .Where(n => n.Contains("AssignedTo", StringComparison.OrdinalIgnoreCase) || n.Contains("Assignee", StringComparison.OrdinalIgnoreCase))
+            .Except(ExplicitAssigneeResponseAliases)
             .ToList();
 
         Assert.Empty(offenders);
