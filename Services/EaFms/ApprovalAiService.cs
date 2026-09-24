@@ -71,8 +71,8 @@ public class ApprovalAiService : IApprovalAiService
         {
             ApprovalRequestId = approvalRequestId,
             IsLikelyReady = aiResult.IsLikelyReady,
-            MissingFields = aiResult.MissingFields.Where(f => !string.IsNullOrWhiteSpace(f)).ToList(),
-            SuggestedDocuments = aiResult.SuggestedDocuments.Where(d => !string.IsNullOrWhiteSpace(d)).ToList(),
+            MissingFields = (aiResult.MissingFields ?? new List<string>()).Where(f => !string.IsNullOrWhiteSpace(f)).ToList(),
+            SuggestedDocuments = (aiResult.SuggestedDocuments ?? new List<string>()).Where(d => !string.IsNullOrWhiteSpace(d)).ToList(),
             Notes = aiResult.Notes,
             WarningMessage = "Based only on request field values and uploaded file names — AI cannot read the contents of any uploaded document.",
         };

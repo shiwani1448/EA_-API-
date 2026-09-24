@@ -8,6 +8,17 @@ public class Followup
 {
     public long Id { get; set; }
 
+    // The Followup's own central execution task (Follow-up module, TaskType Actual only —
+    // no Review/Rework). Created once at Followup creation time (see FollowupService.CreateAsync,
+    // mirroring DelegationService.CreateCoreAsync); nullable only so pre-existing rows can be
+    // backfilled without a schema-level NOT NULL blocking the migration. Every Followup created
+    // going forward always has one. This is a completely separate concept from BusinessModuleId/
+    // BusinessRecordId below, which identify what OTHER record (Meeting, Delegation, ...) this
+    // follow-up is chasing — that source task's own EaTaskId/Task/Stage/IsPaused are still
+    // surfaced unchanged elsewhere on FollowupResponseDto.
+    public long? EaTaskId { get; set; }
+    public EaTask? EaTask { get; set; }
+
     // Optional link to an IntakeRequest. Followups may instead reference a shared business record.
     public long? IntakeRequestId { get; set; }
     public IntakeRequest? IntakeRequest { get; set; }

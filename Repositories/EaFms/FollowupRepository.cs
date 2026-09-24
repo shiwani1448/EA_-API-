@@ -1,4 +1,5 @@
 using Jarvis5.Common;
+using Jarvis5.Common.EaFms;
 using Jarvis5.Dtos.EaFms;
 using Jarvis5.Data.EaFms;
 using Jarvis5.Entities.EaFms;
@@ -61,7 +62,9 @@ public class FollowupRepository : IFollowupRepository
             DueToday = group.Count(f => f.CompletedAt == null && f.DueAt >= indiaToday && f.DueAt < tomorrow),
             Overdue = group.Count(f => f.CompletedAt == null && f.DueAt != default && f.DueAt < now),
             UpcomingReminders = group.Count(f => f.CompletedAt == null && f.ReminderAt.HasValue && f.ReminderAt.Value > now),
-            Escalated = group.Count(f => _context.Escalations.Any(e => !e.IsDeleted && e.FollowupId == f.Id))
+            Escalated = group.Count(f => _context.Escalations.Any(e => !e.IsDeleted && e.FollowupId == f.Id)),
+            NotStarted = group.Count(f => f.EaTaskId != null
+                && _context.Tasks.Any(t => t.Id == f.EaTaskId && t.ExecutionStatus == EaTaskExecutionStatus.NotStarted))
         }).SingleOrDefaultAsync(ct);
         return result ?? new FollowupSummaryResponseDto();
     }
@@ -88,6 +91,16 @@ public class FollowupRepository : IFollowupRepository
         if (filter.ReminderSendEmail.HasValue) query = query.Where(f => f.ReminderSendEmail == filter.ReminderSendEmail.Value);
         if (filter.IsEscalated.HasValue) query = query.Where(f => _context.Escalations.Any(e => !e.IsDeleted && e.FollowupId == f.Id) == filter.IsEscalated.Value);
         if (filter.EscalationLevelId.HasValue) query = query.Where(f => _context.Escalations.Any(e => !e.IsDeleted && e.FollowupId == f.Id && e.EscalationLevelId == filter.EscalationLevelId.Value));
+        if (!string.IsNullOrWhiteSpace(filter.View))
+        {
+            var view = filter.View.Trim();
+            if (string.Equals(view, "notstarted", StringComparison.OrdinalIgnoreCase))
+                query = query.Where(f => f.EaTaskId != null && _context.Tasks.Any(t => t.Id == f.EaTaskId && t.ExecutionStatus == EaTaskExecutionStatus.NotStarted));
+            else if (string.Equals(view, "started", StringComparison.OrdinalIgnoreCase))
+                query = query.Where(f => f.EaTaskId != null && _context.Tasks.Any(t => t.Id == f.EaTaskId && t.ExecutionStatus == EaTaskExecutionStatus.InProgress));
+            else
+                throw new BadRequestException("View must be notstarted or started.");
+        }
         if (!string.IsNullOrWhiteSpace(filter.Search))
         {
             var term = filter.Search.Trim().ToLowerInvariant();

@@ -28,7 +28,7 @@ public class FollowupEmailSnapshotTests
     private static FollowupService Service(EaFmsDbContext db) => new(
         new FollowupRepository(db), db, Mapper,
         Mock.Of<ICurrentUserService>(x => x.UserId == 7 && x.UserName == "EA User"),
-        Mock.Of<IAuditService>(), new FollowupSourceResolver(db));
+        Mock.Of<IAuditService>(), new FollowupSourceResolver(db), FollowupTestSupport.EaTasks(db), new TatRuleRepository(db));
 
     [Fact]
     public async Task HrmsSnapshot_EmailAction_ReturnsMailtoFromTheStoredSnapshot_NeverUsesUsers()
@@ -55,7 +55,7 @@ public class FollowupEmailSnapshotTests
         Assert.Equal("Reminder / Follow-up - Prepare MOM", action.Subject);
         Assert.Contains("Hello HRMS Recipient,", action.Body);
         Assert.Contains("Module: Meeting", action.Body);
-        Assert.Contains($"Task ID: {created.EaTaskId}", action.Body);
+        Assert.Contains($"Task ID: {created.SourceEaTaskId}", action.Body);
         Assert.Contains("Task: Prepare MOM", action.Body);
         Assert.Contains($"Follow-up Date: {created.ReminderAt:O}", action.Body);
         Assert.Contains("Remark: Please complete the MOM.", action.Body);

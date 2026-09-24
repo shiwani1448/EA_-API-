@@ -363,6 +363,7 @@ public class DelegationService : IDelegationService
         _db.DelegationPhaseTats.Add(new DelegationPhaseTat
         {
             DelegationId = entity.Id, TaskType = DelegationTaskType.Actual, ReviewCycleNumber = 0,
+            StartedById = _user.ActorId(), StartedByName = _user.ActorName(),
             StartedAt = now, AllottedTatMinutes = eaTask.AllottedTatMinutes, TatRuleId = eaTask.TatRuleId,
             CreatedBy = Actor(), CreatedDate = now
         });
@@ -594,8 +595,8 @@ public class DelegationService : IDelegationService
         var now = Clock.UtcNowTz;
         var actor = Actor();
         pause.EndAt = now;
-        pause.ResumedById = _user.UserId.ToString(CultureInfo.InvariantCulture);
-        pause.ResumedByName = _user.UserName;
+        pause.ResumedById = _user.ActorId();
+        pause.ResumedByName = _user.ActorName();
         pause.ModifiedBy = actor;
         pause.ModifiedDate = now;
 
@@ -973,6 +974,7 @@ public class DelegationService : IDelegationService
         _db.DelegationPhaseTats.Add(new DelegationPhaseTat
         {
             DelegationId = delegationId, TaskType = taskType, ReviewCycleNumber = reviewCycleNumber,
+            StartedById = _user.ActorId(), StartedByName = _user.ActorName(),
             StartedAt = now, AllottedTatMinutes = allotted, TatRuleId = ruleId,
             CreatedBy = actor, CreatedDate = now
         });
@@ -1008,6 +1010,8 @@ public class DelegationService : IDelegationService
         var pauses = PausesOverlapping(await LoadDelegationWorkPausesAsync(workflowInstanceId, ct), phase.StartedAt, now);
         var summary = TatSummaryCalculator.Calculate(phase.AllottedTatMinutes ?? 0, phase.StartedAt, now, pauses, now);
         phase.EndedAt = now;
+        phase.EndedById = _user.ActorId();
+        phase.EndedByName = _user.ActorName();
         phase.TatUsedMinutes = phase.AllottedTatMinutes.HasValue ? (int)summary.Tat!.Value.TotalMinutes : null;
         phase.TatPausedMinutes = (int)summary.PauseTime.TotalMinutes;
         phase.TatUsedSeconds = phase.AllottedTatMinutes.HasValue ? DurationSeconds(summary.Tat!.Value) : null;
@@ -1419,7 +1423,7 @@ public class DelegationService : IDelegationService
                 .SingleAsync(ct)
             : null;
 
-    private string Actor() => _user.UserName ?? _user.UserId.ToString(CultureInfo.InvariantCulture);
+    private string Actor() => _user.ActorDisplay();
 
     /// <summary>
     /// Priority is a frontend-owned business string (PriorityLevel is optional discovery

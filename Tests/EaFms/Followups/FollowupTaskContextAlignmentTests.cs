@@ -28,7 +28,7 @@ public class FollowupTaskContextAlignmentTests
     private static FollowupService Svc(EaFmsDbContext db, IFollowupSourceResolver? resolver = null) => new(
         new FollowupRepository(db), db, Mapper,
         Mock.Of<ICurrentUserService>(u => u.UserId == 7 && u.UserName == "EA User"),
-        Mock.Of<IAuditService>(), resolver ?? new FollowupSourceResolver(db));
+        Mock.Of<IAuditService>(), resolver ?? new FollowupSourceResolver(db), FollowupTestSupport.EaTasks(db), new TatRuleRepository(db));
 
     private static EaTask AddTask(EaFmsDbContext db, BusinessModule m, string recordId, string title, string status = "NotStarted", long? workflowId = null)
         => db.Tasks.Add(new EaTask
@@ -76,7 +76,7 @@ public class FollowupTaskContextAlignmentTests
 
         var f = await Svc(s.Db).CreateAsync(Give(s, module));
 
-        Assert.Equal(tasks[module].Id, f.EaTaskId);
+        Assert.Equal(tasks[module].Id, f.SourceEaTaskId);
         Assert.Equal(RecordId(s, module), f.BusinessRecordId);          // source identity preserved separately
         Assert.Equal((s.Modules[module].Id, module, task, stage), (f.BusinessModuleId, f.ModuleName, f.Task, f.Stage));
         Assert.Equal("Need update from design team", f.Remark);
@@ -92,7 +92,7 @@ public class FollowupTaskContextAlignmentTests
         var f = await Svc(s.Db).CreateAsync(Give(s, "EA Approval"));
 
         Assert.Equal("APR-2026-000009", f.BusinessRecordId);
-        Assert.Equal(tasks["EA Approval"].Id, f.EaTaskId);
+        Assert.Equal(tasks["EA Approval"].Id, f.SourceEaTaskId);
     }
 
     // 5: a future EaTask-backed module needs no hardcoded module logic.
@@ -106,7 +106,7 @@ public class FollowupTaskContextAlignmentTests
 
         var f = await Svc(s.Db).CreateAsync(new CreateFollowupRequestDto { BusinessModuleId = m.Id, BusinessRecordId = "V-9", Remark = "r" });
 
-        Assert.Equal((t.Id, "Vendor Management", "Onboard vendor", "Completed"), (f.EaTaskId, f.ModuleName, f.Task, f.Stage));
+        Assert.Equal((t.Id, "Vendor Management", "Onboard vendor", "Completed"), (f.SourceEaTaskId, f.ModuleName, f.Task, f.Stage));
     }
 
     // 9-10: pause is derived; Stage never becomes "Paused".
@@ -128,9 +128,9 @@ public class FollowupTaskContextAlignmentTests
         await s.Db.SaveChangesAsync();
         var resumed = await svc.GetByIdAsync(paused.Id);
 
-        Assert.Equal(("InProgress", true), (paused.Stage, paused.IsPaused));
-        Assert.Null(travel.IsPaused);                            // no pause infrastructure -> null, as in the task API
-        Assert.Equal(("InProgress", false), (resumed.Stage, resumed.IsPaused));
+        Assert.Equal(("InProgress", true), (paused.Stage, paused.SourceIsPaused));
+        Assert.Null(travel.SourceIsPaused);                            // no pause infrastructure -> null, as in the task API
+        Assert.Equal(("InProgress", false), (resumed.Stage, resumed.SourceIsPaused));
         Assert.DoesNotContain("Paused", new[] { paused.Stage, resumed.Stage });
     }
 
@@ -173,7 +173,7 @@ public class FollowupTaskContextAlignmentTests
         var u = await svc.UpdateAsync(f.Id, new UpdateFollowupRequestDto
         { Remark = "new remark", DueAt = Base.AddDays(3), ReminderAt = Base.AddDays(1), ReminderSendEmail = true, ReminderRecipientUserId = 1, ReminderRecipientEmail = "anurag@example.com" });
 
-        Assert.Equal(("new remark", tasks["Delegation"].Id, "Chase vendor", true), (u.Remark, u.EaTaskId, u.Task, u.ReminderSendEmail));
+        Assert.Equal(("new remark", tasks["Delegation"].Id, "Chase vendor", true), (u.Remark, u.SourceEaTaskId, u.Task, u.ReminderSendEmail));
     }
 
     // 14-17: single, list and source-filtered views are the same record; reading creates nothing.
@@ -193,7 +193,7 @@ public class FollowupTaskContextAlignmentTests
         foreach (var r in new[] { single, general, bySource })
         {
             Assert.Equal(created.Id, r.Id);
-            Assert.Equal((tasks["Travel & Hospitality"].Id, "Travel & Hospitality", "TRV-2026-000001", "NotStarted"), (r.EaTaskId, r.ModuleName, r.Task, r.Stage));
+            Assert.Equal((tasks["Travel & Hospitality"].Id, "Travel & Hospitality", "TRV-2026-000001", "NotStarted"), (r.SourceEaTaskId, r.ModuleName, r.Task, r.Stage));
             Assert.Equal((true, "Need update from design team"), (r.ReminderSendEmail, r.Remark));
         }
         Assert.Equal(counts, (await s.Db.Followups.CountAsync(), await s.Db.Tasks.CountAsync()));
@@ -228,8 +228,11 @@ public class FollowupTaskContextAlignmentTests
 
         Assert.NotEqual(a.Id, b.Id);
         Assert.Equal(new[] { "first", "second" }, page.Items.Select(i => i.Remark).OrderBy(x => x));
-        Assert.All(page.Items, i => Assert.Equal(tasks["Meeting"].Id, i.EaTaskId));
-        Assert.Equal(4, await s.Db.Tasks.CountAsync());
+        Assert.All(page.Items, i => Assert.Equal(tasks["Meeting"].Id, i.SourceEaTaskId));
+        // The 4 source tasks are untouched; each follow-up owns exactly one "Follow-up" task.
+        Assert.Equal(4, await s.Db.Tasks.CountAsync(t => t.ModuleName != "Follow-up"));
+        Assert.Equal(2, await s.Db.Tasks.CountAsync(t => t.ModuleName == "Follow-up"));
+        Assert.NotEqual(a.EaTaskId, b.EaTaskId);
     }
 
     // 20: escalation still hangs off the Followup.
@@ -252,14 +255,16 @@ public class FollowupTaskContextAlignmentTests
 
     // 21-25: no side effects.
     [Fact]
-    public async Task GiveReminder_CreatesNoTask_Notification_Escalation()
+    public async Task GiveReminder_CreatesOnlyItsOwnFollowupTask_NoNotification_OrEscalation()
     {
         var (s, _) = await SeedTasksAsync(); await using var _ = s.Db;
         var before = await s.Db.Tasks.CountAsync();
 
-        await Svc(s.Db).CreateAsync(Give(s, "EA Approval"));
+        var f = await Svc(s.Db).CreateAsync(Give(s, "EA Approval"));
 
-        Assert.Equal(before, await s.Db.Tasks.CountAsync());
+        Assert.Equal(before + 1, await s.Db.Tasks.CountAsync());
+        var own = await s.Db.Tasks.SingleAsync(t => t.ModuleName == "Follow-up");
+        Assert.Equal((f.EaTaskId, f.Id.ToString(), "NotStarted"), ((long?)own.Id, own.BusinessRecordId, own.ExecutionStatus));
         Assert.Equal(0, await s.Db.Notifications.CountAsync());
         Assert.Equal(0, await s.Db.Escalations.CountAsync());
         Assert.Equal(1, await s.Db.Followups.CountAsync());
@@ -278,7 +283,7 @@ public class FollowupTaskContextAlignmentTests
         var page = await Svc(s.Db, resolver.Object).GetPagedAsync(new FollowupListQueryDto { PageSize = 50 });
 
         Assert.Equal(12, page.Items.Count);
-        Assert.All(page.Items, i => Assert.NotNull(i.EaTaskId));
+        Assert.All(page.Items, i => Assert.NotNull(i.SourceEaTaskId));
         resolver.Verify(r => r.ResolveAsync(It.IsAny<long?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
@@ -289,7 +294,7 @@ public class FollowupTaskContextAlignmentTests
 
         var f = await Svc(s.Db).CreateAsync(Give(s, "Meeting"));
 
-        Assert.Null(f.EaTaskId);
+        Assert.Null(f.SourceEaTaskId);
         Assert.Null(f.Stage);
         Assert.Equal("Meeting", f.ModuleName);
         Assert.Equal("Board meeting", f.BusinessRecordTitle);
@@ -306,7 +311,7 @@ public class FollowupTaskContextAlignmentTests
         var svc = Svc(db);
 
         var f = await svc.CreateAsync(new CreateFollowupRequestDto { IntakeRequestId = intake.Id, DueAt = Base, Note = "call client" });
-        Assert.Null(f.EaTaskId);
+        Assert.Null(f.SourceEaTaskId);
         Assert.Null(f.ModuleName);
         Assert.Equal("call client", f.Remark);
 
@@ -315,6 +320,7 @@ public class FollowupTaskContextAlignmentTests
         Assert.Equal("left voicemail", recorded.Remark);        // record-followup updates the same remark
         Assert.NotNull(recorded.LastFollowupAt);
 
+        await svc.StartAsync(f.Id);
         var done = await svc.CompleteAsync(f.Id, new CompleteFollowupRequestDto { CompletionNote = "ok" });
         Assert.True(done.IsCompleted);
         Assert.Equal(1, (await svc.GetByIntakeRequestIdAsync(intake.Id)).Count);

@@ -22,7 +22,7 @@ public class CalendarService : ICalendarService
         _user = user;
     }
 
-    private string Actor => _user.UserName ?? _user.UserId.ToString(CultureInfo.InvariantCulture);
+    private string Actor => _user.ActorDisplay();
 
     public async Task<List<CalendarEventDto>> GetEventsAsync(CalendarEventsQueryDto query, CancellationToken ct = default)
     {

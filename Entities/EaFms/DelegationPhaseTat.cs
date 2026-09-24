@@ -22,6 +22,11 @@ public class DelegationPhaseTat
     /// <summary>0 for Actual. For Review/Rework, the review cycle number this phase belongs to.</summary>
     public int ReviewCycleNumber { get; set; }
 
+    public string? StartedById { get; set; }
+    public string? StartedByName { get; set; }
+    public string? EndedById { get; set; }
+    public string? EndedByName { get; set; }
+
     public DateTime StartedAt { get; set; }
     /// <summary>Null while this is the current, still-open phase.</summary>
     public DateTime? EndedAt { get; set; }

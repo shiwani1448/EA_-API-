@@ -105,7 +105,7 @@ public sealed class BusinessModuleService(EaFmsDbContext db, IBusinessModuleRepo
         return (name, description);
     }
 
-    private string Actor() => user.UserName ?? (user.UserId == 0 ? "system" : user.UserId.ToString());
+    private string Actor() => user.ActorDisplay();
     private static BusinessModuleDto ToDto(BusinessModule module) => new()
     {
         Id = module.Id, Name = module.Name, Description = module.Description, IsActive = module.IsActive,

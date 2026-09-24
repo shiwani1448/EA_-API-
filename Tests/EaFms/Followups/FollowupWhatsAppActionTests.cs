@@ -19,7 +19,7 @@ public class FollowupWhatsAppActionTests
     private static FollowupService Service(EaFmsDbContext db) => new(
         new FollowupRepository(db), db, Mapper,
         Mock.Of<ICurrentUserService>(x => x.UserId == 7 && x.UserName == "EA User"),
-        Mock.Of<IAuditService>(), new FollowupSourceResolver(db));
+        Mock.Of<IAuditService>(), new FollowupSourceResolver(db), FollowupTestSupport.EaTasks(db), new TatRuleRepository(db));
 
     [Fact]
     public async Task SendWhatsApp_ReturnsPersistedPhoneAndExistingMessage_ForCompletedTask()
@@ -41,7 +41,7 @@ public class FollowupWhatsAppActionTests
         Assert.Equal("8369543637", handoff.Phone);
         Assert.Contains("Hello HRMS Recipient,", handoff.Message);
         Assert.Contains("Module: Meeting", handoff.Message);
-        Assert.Contains($"Task ID: {followup.EaTaskId}", handoff.Message);
+        Assert.Contains($"Task ID: {followup.SourceEaTaskId}", handoff.Message);
         Assert.Contains("Task: Prepare MOM", handoff.Message);
         Assert.Contains($"Follow-up Date: {followup.ReminderAt:O}", handoff.Message);
         Assert.Contains("Remark: Please complete the MOM.", handoff.Message);

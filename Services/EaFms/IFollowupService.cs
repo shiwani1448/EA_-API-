@@ -16,4 +16,13 @@ public interface IFollowupService
     Task RecordFollowupAsync(long id, RecordFollowupRequestDto dto, CancellationToken ct = default);
     Task<FollowupEmailActionResponseDto> SendEmailAsync(long id, CancellationToken ct = default);
     Task<FollowupWhatsAppActionResponseDto> SendWhatsAppAsync(long id, CancellationToken ct = default);
+
+    // ---- Own execution lifecycle (Start/Pause/Resume), Actual phase only ----
+    Task<FollowupResponseDto> StartAsync(long id, CancellationToken ct = default);
+    Task<FollowupResponseDto> PauseAsync(long id, FollowupPauseRequestDto? request, CancellationToken ct = default);
+    Task<FollowupResponseDto> ResumeAsync(long id, CancellationToken ct = default);
+
+    // ---- Reminder log ----
+    Task<FollowupReminderLogResponseDto> LogReminderAsync(long id, LogFollowupReminderRequestDto dto, CancellationToken ct = default);
+    Task<List<FollowupReminderLogResponseDto>> GetReminderLogAsync(long id, CancellationToken ct = default);
 }

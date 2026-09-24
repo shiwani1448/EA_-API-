@@ -21,6 +21,8 @@ public class EaFmsDbContext : DbContext
     public DbSet<WorkflowHistory> WorkflowHistory { get; set; } = null!;
     public DbSet<FollowupCycle> FollowupCycles { get; set; } = null!;
     public DbSet<Followup> Followups { get; set; } = null!;
+    public DbSet<FollowupPhaseTat> FollowupPhaseTats { get; set; } = null!;
+    public DbSet<FollowupReminderLog> FollowupReminderLogs { get; set; } = null!;
     public DbSet<Meeting> Meetings { get; set; } = null!;
     public DbSet<Escalation> Escalations { get; set; } = null!;
     public DbSet<EscalationLevel> EscalationLevels { get; set; } = null!;
@@ -1259,6 +1261,10 @@ public class EaFmsDbContext : DbContext
             entity.HasKey(e => e.Id);
             entity.Property(e => e.Id).UseIdentityByDefaultColumn();
             entity.Property(e => e.TaskType).IsRequired().HasMaxLength(20);
+            entity.Property(e => e.StartedById).HasMaxLength(100);
+            entity.Property(e => e.StartedByName).HasMaxLength(200);
+            entity.Property(e => e.EndedById).HasMaxLength(100);
+            entity.Property(e => e.EndedByName).HasMaxLength(200);
             entity.Property(e => e.StartedAt).HasColumnType("timestamp with time zone").IsRequired();
             entity.Property(e => e.EndedAt).HasColumnType("timestamp with time zone");
             entity.Property(e => e.TatUsedSeconds).HasPrecision(20, 7);
@@ -1532,6 +1538,10 @@ public class EaFmsDbContext : DbContext
             entity.ToTable("ea_followups", "public");
             entity.HasKey(e => e.Id);
 
+            entity.Property(e => e.EaTaskId);
+            entity.HasOne(e => e.EaTask).WithMany().HasForeignKey(e => e.EaTaskId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasIndex(e => e.EaTaskId).IsUnique();
+
             entity.Property(e => e.IntakeRequestId);
             entity.Property(e => e.BusinessModuleId);
             entity.Property(e => e.BusinessRecordId).HasMaxLength(200);
@@ -1579,6 +1589,57 @@ public class EaFmsDbContext : DbContext
             entity.HasIndex(e => e.IntakeRequestId);
             entity.HasIndex(e => e.BusinessModuleId);
             entity.HasIndex(e => e.DueAt);
+        });
+
+        // Followup phase TAT — mirrors DelegationPhaseTat's own mapping exactly (see that block
+        // above), plus StartedById/StartedByName/EndedById/EndedByName columns Delegation's own
+        // phase table doesn't have. Followup has no Review/Rework: TaskType is always "Actual",
+        // ReviewCycleNumber always 0, so there is at most one row per Followup ever, and at most
+        // one open (EndedAt IS NULL) row per Followup at a time.
+        modelBuilder.Entity<FollowupPhaseTat>(entity =>
+        {
+            entity.ToTable("ea_followup_phase_tat", "public");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).UseIdentityByDefaultColumn();
+            entity.Property(e => e.TaskType).IsRequired().HasMaxLength(20);
+            entity.Property(e => e.StartedAt).HasColumnType("timestamp with time zone").IsRequired();
+            entity.Property(e => e.EndedAt).HasColumnType("timestamp with time zone");
+            entity.Property(e => e.StartedById).HasMaxLength(100);
+            entity.Property(e => e.StartedByName).HasMaxLength(200);
+            entity.Property(e => e.EndedById).HasMaxLength(100);
+            entity.Property(e => e.EndedByName).HasMaxLength(200);
+            entity.Property(e => e.TatUsedSeconds).HasPrecision(20, 7);
+            entity.Property(e => e.TatPausedSeconds).HasPrecision(20, 7);
+            entity.Property(e => e.CreatedBy).IsRequired(false).HasMaxLength(100);
+            entity.Property(e => e.CreatedDate).HasColumnType("timestamp with time zone");
+            entity.Property(e => e.ModifiedBy).HasMaxLength(100);
+            entity.Property(e => e.ModifiedDate).HasColumnType("timestamp with time zone");
+            entity.HasOne(e => e.Followup).WithMany().HasForeignKey(e => e.FollowupId)
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasIndex(e => new { e.FollowupId, e.TaskType, e.ReviewCycleNumber }).IsUnique();
+            entity.HasIndex(e => e.FollowupId).IsUnique();
+            entity.ToTable(t => t.HasCheckConstraint("CK_followup_phase_actual", "\"TaskType\" = 'Actual' AND \"ReviewCycleNumber\" = 0"));
+        });
+
+        // Followup reminder log — an explicit record that a reminder handoff happened (see
+        // FollowupReminderLog's own doc comment). Immutable: one row per handoff, never updated.
+        modelBuilder.Entity<FollowupReminderLog>(entity =>
+        {
+            entity.ToTable("ea_followup_reminder_log", "public");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).UseIdentityByDefaultColumn();
+            entity.Property(e => e.Channel).IsRequired().HasMaxLength(20);
+            entity.Property(e => e.Recipient).IsRequired().HasMaxLength(300);
+            entity.Property(e => e.RecipientName).HasMaxLength(200);
+            entity.Property(e => e.Message).IsRequired().HasColumnType("text");
+            entity.Property(e => e.SentAt).HasColumnType("timestamp with time zone").IsRequired();
+            entity.Property(e => e.SentById).HasMaxLength(100);
+            entity.Property(e => e.SentByName).HasMaxLength(200);
+            entity.Property(e => e.CreatedDate).HasColumnType("timestamp with time zone");
+            entity.HasOne(e => e.Followup).WithMany().HasForeignKey(e => e.FollowupId)
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasIndex(e => e.FollowupId);
+            entity.HasIndex(e => e.SentAt);
         });
 
         // Escalation levels (catalog). Mapped explicitly to the existing EA table; without this

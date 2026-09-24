@@ -65,7 +65,7 @@ public class FollowupSwaggerExampleTests
     {
         await using var db = MakeDb();
         var svc = new FollowupService(new FollowupRepository(db), db, Mapper, Mock.Of<ICurrentUserService>(u => u.UserId == 0),
-            Mock.Of<IAuditService>(), new FollowupSourceResolver(db));
+            Mock.Of<IAuditService>(), new FollowupSourceResolver(db), FollowupTestSupport.EaTasks(db), new TatRuleRepository(db));
         // Disallow-unmapped-members deserialization proves every example key is a real DTO property.
         var dto = JsonSerializer.Deserialize<CreateFollowupRequestDto>(BuildExample().ToJsonString(), new JsonSerializerOptions(JsonSerializerDefaults.Web))!;
 
@@ -79,15 +79,15 @@ public class FollowupSwaggerExampleTests
         Assert.Null(row.ReminderRecipientName); Assert.Null(row.ReminderWhatsAppNumber);
         Assert.False(row.ReminderSendEmail || row.ReminderSendWhatsApp);
         Assert.Equal(1, row.DueAt.Year);          // no invented September 2026 date
-        Assert.Equal("0", f.CreatedBy);
+        Assert.Equal("system", f.CreatedBy);      // no token identity: never "0"
     }
 
     [Fact]
     public async Task RealValuesSentByTheFrontend_AreStillProcessedAndStored()
     {
         await using var db = MakeDb();
-        var svc = new FollowupService(new FollowupRepository(db), db, Mapper, Mock.Of<ICurrentUserService>(u => u.UserId == 0),
-            Mock.Of<IAuditService>(), new FollowupSourceResolver(db));
+        var svc = new FollowupService(new FollowupRepository(db), db, Mapper, FollowupTestSupport.User("S5I-1013", "Siddhi Jadhav"),
+            Mock.Of<IAuditService>(), new FollowupSourceResolver(db), FollowupTestSupport.EaTasks(db), new TatRuleRepository(db));
 
         var f = await svc.CreateAsync(new CreateFollowupRequestDto
         {

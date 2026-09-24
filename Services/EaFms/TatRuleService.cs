@@ -50,9 +50,13 @@ public class TatRuleService(EaFmsDbContext db, ITatRuleRepository repository,
         // everywhere else. Format (one of Actual/Review/Rework) was already checked by the validator.
         var taskType = string.IsNullOrWhiteSpace(dto.TaskType) ? null : dto.TaskType.Trim();
         if (taskType is null && typeOnlyModule)
-            throw new BadRequestException("TaskType is required for Delegation TAT rules.");
+            throw new BadRequestException("TaskType is required for Delegation/Follow-up TAT rules.");
         if (taskType is not null && !typeOnlyModule)
             throw new BadRequestException($"{module.Name} TAT rules do not use TaskType; it must be omitted.");
+        // Follow-up has no Review/Rework cycle: TaskType must always be Actual for it.
+        if (taskType is not null && string.Equals(module.Name.Trim(), "Follow-up", StringComparison.OrdinalIgnoreCase)
+            && !string.Equals(taskType, DelegationTaskType.Actual, StringComparison.Ordinal))
+            throw new BadRequestException("Follow-up TAT rules only support TaskType Actual.");
         if (dto.IsActive == true && subtype is not null && await db.TatRules.AnyAsync(x => x.BusinessModuleId == dto.ModuleId
             && x.Type != null && x.Subtype != null && TatClassification.TrimForMatch(x.Type).ToLower() == typeKey && TatClassification.TrimForMatch(x.Subtype).ToLower() == subtypeKey
             && x.IsActive && !x.IsDeleted && (!id.HasValue || x.Id != id.Value), ct))

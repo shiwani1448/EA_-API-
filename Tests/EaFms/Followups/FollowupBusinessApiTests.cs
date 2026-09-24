@@ -41,7 +41,7 @@ public class FollowupBusinessApiTests
     private static FollowupService MakeService(EaFmsDbContext db, Mock<IAuditService>? audit = null) => new(
         new FollowupRepository(db), db, Mapper,
         Mock.Of<ICurrentUserService>(u => u.UserId == 7 && u.UserName == "EA User"),
-        (audit ?? new Mock<IAuditService>()).Object, new FollowupSourceResolver(db));
+        (audit ?? new Mock<IAuditService>()).Object, new FollowupSourceResolver(db), FollowupTestSupport.EaTasks(db), new TatRuleRepository(db));
 
     internal sealed class Seed
     {
@@ -341,6 +341,7 @@ public class FollowupBusinessApiTests
         var svc = MakeService(s.Db);
         var created = await svc.CreateAsync(Create(s.Modules["EA Approval"].Id, "APR-2026-000009"));
 
+        await svc.StartAsync(created.Id);
         var done = await svc.CompleteAsync(created.Id, new CompleteFollowupRequestDto { CompletionNote = "sorted", OutcomeCode = "RESOLVED" });
 
         Assert.True(done.IsCompleted);
@@ -350,7 +351,7 @@ public class FollowupBusinessApiTests
             (done.CompletionNote, done.OutcomeCode, done.CompletedById, done.CompletedByName));
         Assert.Equal("APR-2026-000009", done.BusinessRecordId);
 
-        var repeat = await Assert.ThrowsAsync<BadRequestException>(() => svc.CompleteAsync(created.Id, new CompleteFollowupRequestDto()));
+        var repeat = await Assert.ThrowsAsync<BusinessRuleException>(() => svc.CompleteAsync(created.Id, new CompleteFollowupRequestDto()));   // 409 invalid state
         Assert.Contains("already completed", repeat.Message);
         Assert.Equal(done.CompletedAt, (await svc.GetByIdAsync(created.Id)).CompletedAt);
         await Assert.ThrowsAsync<NotFoundException>(() => svc.CompleteAsync(99999, new CompleteFollowupRequestDto()));
@@ -364,6 +365,7 @@ public class FollowupBusinessApiTests
         var mid = s.Modules["Delegation"].Id;
         var a = await svc.CreateAsync(Create(mid, s.Delegation.Id.ToString(), "a"));
         await svc.CreateAsync(Create(mid, s.Delegation.Id.ToString(), "b"));
+        await svc.StartAsync(a.Id);
         await svc.CompleteAsync(a.Id, new CompleteFollowupRequestDto());
 
         var completed = await svc.GetPagedAsync(new FollowupListQueryDto { Status = "Completed" });
@@ -382,6 +384,7 @@ public class FollowupBusinessApiTests
         var svc = MakeService(s.Db, audit);
         var created = await svc.CreateAsync(Create(s.Modules["Meeting"].Id, s.Meeting.Id.ToString()));
         await svc.UpdateAsync(created.Id, new UpdateFollowupRequestDto { Subject = "x", DueAt = Base });
+        await svc.StartAsync(created.Id);
         await svc.CompleteAsync(created.Id, new CompleteFollowupRequestDto());
 
         foreach (var action in new[] { "FOLLOWUP_CREATE", "FOLLOWUP_UPDATE", "FOLLOWUP_COMPLETE" })
@@ -391,7 +394,7 @@ public class FollowupBusinessApiTests
 
     // 16, 17, 19, 20: no side effects on other structures.
     [Fact]
-    public async Task Create_DoesNotCreateEaTask_Notification_OrEscalation()
+    public async Task Create_OnlyCreatesItsOwnFollowupTask_NoNotification_OrEscalation()
     {
         var s = await SeedAsync(); await using var _ = s.Db;
         var tasksBefore = await s.Db.Tasks.CountAsync();
@@ -399,9 +402,11 @@ public class FollowupBusinessApiTests
 
         var f = await svc.CreateAsync(Create(s.Modules["Travel & Hospitality"].Id, s.Travel.Id.ToString()));
         await svc.UpdateAsync(f.Id, new UpdateFollowupRequestDto { Subject = "u", DueAt = Base, ReminderAt = Base.AddHours(-1) });
+        await svc.StartAsync(f.Id);
         await svc.CompleteAsync(f.Id, new CompleteFollowupRequestDto());
 
-        Assert.Equal(tasksBefore, await s.Db.Tasks.CountAsync());
+        Assert.Equal(tasksBefore + 1, await s.Db.Tasks.CountAsync());
+        Assert.Equal("Completed", (await s.Db.Tasks.SingleAsync(t => t.Id == f.EaTaskId)).ExecutionStatus);
         Assert.Equal(0, await s.Db.Notifications.CountAsync());
         Assert.Equal(0, await s.Db.Escalations.CountAsync());
         Assert.Null((await s.Db.Followups.SingleAsync()).LastFollowupAt);
@@ -426,7 +431,9 @@ public class FollowupBusinessApiTests
         var after = await tasks.QueryWorkspaceAsync(new EaTaskWorkspaceQueryDto(), default);
 
         Assert.Equal(1, before.TotalCount);
-        Assert.Equal(before.TotalCount, after.TotalCount);     // 1 task, 2 follow-ups: still 1 task row
+        // The Meeting's own task row is unchanged; each follow-up adds only its own "Follow-up" task.
+        Assert.Equal(1, after.Items.Count(t => t.ModuleName == "Meeting"));
+        Assert.Equal(2, after.Items.Count(t => t.ModuleName == "Follow-up"));
         Assert.Equal(2, await s.Db.Followups.CountAsync());
     }
 

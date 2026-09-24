@@ -23,6 +23,10 @@ public class FollowupListQueryDto
     public DateTime? ReminderTo { get; set; }
     public bool? IsEscalated { get; set; }
     public int? EscalationLevelId { get; set; }
+    /// <summary>Filters by the Followup's OWN execution status: notstarted | started (InProgress).
+    /// Distinct from the existing Stage/IsPaused filters above, which reference the matched
+    /// source-record task, not the Followup's own lifecycle.</summary>
+    public string? View { get; set; }
     public int Page { get; set; } = 1;
     public int PageSize { get; set; } = 50;
 }
