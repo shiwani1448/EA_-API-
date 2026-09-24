@@ -1,253 +1,291 @@
 using Jarvis5.Common;
+using Jarvis5.Controllers;
 using Jarvis5.Data.EaFms;
 using Jarvis5.Dtos.EaFms;
 using Jarvis5.Entities.EaFms;
 using Jarvis5.Repositories.EaFms;
 using Jarvis5.Services;
-using Jarvis5.Services.Ai;
 using Jarvis5.Services.EaFms;
 using Jarvis5.Validators;
-using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Logging.Abstractions;
-using Microsoft.Extensions.Options;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Moq;
 using Xunit;
 
 namespace Jarvis5.Tests.EaFms.Meetings;
 
-/// <summary>
-/// Confirm's interaction with the REAL Meeting -> Delegation lifecycle (Step 5B-3) needs
-/// real Postgres transactions/row locks, same limitation already documented in
-/// MeetingToDelegationTests — reuses that file's connection/seeding pattern. Proves:
-/// (a) AI-confirmed MeetingActions become Delegations exactly like manual ones, but only
-/// at the same lifecycle point (Meeting completion) that already existed; (b) confirming
-/// after completion does not retroactively create Delegations — current architecture,
-/// not something this phase changes; (c) a genuine Postgres constraint failure mid-batch
-/// rolls back the whole confirmation.
-/// </summary>
-public class MeetingAiActionConfirmLifecycleTests
+public class MeetingAiActionConfirmLifecycleTests(MeetingDelegationDatabase database) : IClassFixture<MeetingDelegationDatabase>
 {
-    private const string ConnectionString = "Host=localhost;Port=5432;Database=DB_Studio5Jarvis;Username=postgres;Password=123456";
-
-    private static EaFmsDbContext MakeRealDb() =>
-        new(new DbContextOptionsBuilder<EaFmsDbContext>().UseNpgsql(ConnectionString).Options);
-
-    private static async Task<long> ResolveModuleIdAsync(EaFmsDbContext db, string name) =>
-        await db.BusinessModules.Where(m => m.Name == name && m.IsActive && !m.IsDeleted).Select(m => m.Id).SingleAsync();
-
-    private static async Task<int> ResolveInProgressStatusIdAsync(EaFmsDbContext db) =>
-        await db.Statuses.Where(s => s.Name == "In Progress").Select(s => s.Id).FirstAsync();
-
-    private static IServiceProvider MakeServiceProvider(IClaudeClient claude)
+    private static MeetingDelegationService Service(EaFmsDbContext db)
     {
-        var sp = new Mock<IServiceProvider>();
-        sp.Setup(s => s.GetService(typeof(IClaudeClient))).Returns(claude);
-        return sp.Object;
-    }
-
-    private static MeetingAiService MakeAiService(EaFmsDbContext db) => new(
-        db,
-        MakeServiceProvider(Mock.Of<IClaudeClient>()),
-        Mock.Of<IMeetingActionExtractionPromptBuilder>(),
-        Mock.Of<hrms_api.Services.IDocumentExtractionService>(),
-        Mock.Of<IMeetingCompletionFileStore>(),
-        NullLogger<MeetingAiService>.Instance,
-        Options.Create(new ClaudeOptions()));
-
-    private static DelegationService MakeRealDelegationService(EaFmsDbContext db, ICurrentUserService user, IAuditService audit)
-    {
-        var eaTasks = new EaTaskService(db, new EaTaskRepository(db), new TatRuleRepository(db),
+        var user = Mock.Of<ICurrentUserService>(u => u.UserName == "ea" && u.UserId == 1);
+        var audit = new AuditService(db, user);
+        var tasks = new EaTaskService(db, new EaTaskRepository(db), new TatRuleRepository(db),
             new CreateEaTaskDtoValidator(), user, audit);
-        return new DelegationService(db, user, audit, new DelegationRepository(db), eaTasks,
+        var delegations = new DelegationService(db, user, audit, new DelegationRepository(db), tasks,
             Mock.Of<Microsoft.AspNetCore.Hosting.IWebHostEnvironment>(),
-            new TaskReviewService(db, new TaskReviewRepository(db), user, audit),
-            new TatRuleRepository(db));
+            new TaskReviewService(db, new TaskReviewRepository(db), user, audit), new TatRuleRepository(db));
+        return new(db, delegations, audit);
     }
-
-    private static async Task<(Meeting meeting, long meetingModuleId)> SeedInProgressMeetingAsync(EaFmsDbContext db, string marker, string actor = "ai-confirm-test")
+    private static async Task<Meeting> Seed(EaFmsDbContext db, bool completed = true)
     {
-        var meetingModuleId = await ResolveModuleIdAsync(db, "Meeting");
-        var inProgressStatusId = await ResolveInProgressStatusIdAsync(db);
-        var now = DateTime.UtcNow;
-
-        var meeting = new Meeting
-        {
-            Title = $"AI confirm lifecycle test meeting {marker} (disposable test)",
-            MeetingNumber = $"MTG-AICONFIRM-{marker}",
-            DoerIds = Array.Empty<string>(), DoerNames = Array.Empty<string>(),
-            CreatedBy = actor, CreatedDate = now, IsDeleted = false
-        };
+        var meeting = new Meeting { Title = "Delegate flow", CreatedBy = "test", CreatedDate = DateTime.UtcNow,
+            CompletedAt = completed ? DateTime.UtcNow : null };
         db.Meetings.Add(meeting);
         await db.SaveChangesAsync();
+        return meeting;
+    }
+    private static CreateMeetingActionDto Item(long? id = null, string title = "Task") => new()
+    {
+        MeetingActionId = id, Title = title, Description = "Description", DoerId = " EMP1 ", DoerName = "Doer",
+        Priority = "High", DueDate = DateTime.UtcNow.Date.AddDays(3)
+    };
+    private static ConfirmMeetingAiActionsRequestDto Request(params CreateMeetingActionDto[] items) => new() { Actions = items.ToList() };
 
-        var workflow = new WorkflowInstance
-        {
-            BusinessModuleId = meetingModuleId,
-            BusinessRecordId = meeting.Id.ToString(),
-            StatusId = inProgressStatusId,
-            StartedAt = now.AddMinutes(-10),
-            TatStartedAt = now.AddMinutes(-10),
-            IsActive = true,
-            CreatedBy = actor, CreatedDate = now
-        };
-        db.WorkflowInstances.Add(workflow);
+    [Fact]
+    public async Task MixedItems_UpdatesExisting_CreatesPendingDelegations_AndPreservesFirstDecisionOnReopen()
+    {
+        await using var db = database.CreateContext();
+        var meeting = await Seed(db);
+        var existing = MeetingActionFactory.Build(meeting.Id, Item(title: "Old"), "original", DateTime.UtcNow);
+        db.MeetingActions.Add(existing);
+        db.MeetingActionExtractions.Add(new MeetingActionExtraction { MeetingId = meeting.Id, ProposedActionsJson = "[]", CreatedBy = "test", CreatedDate = DateTime.UtcNow });
         await db.SaveChangesAsync();
-
-        meeting.WorkflowInstanceId = workflow.Id;
-        await db.SaveChangesAsync();
-
-        db.Tasks.Add(new EaTask
-        {
-            BusinessModuleId = meetingModuleId, ModuleName = "Meeting", BusinessRecordId = meeting.Id.ToString(),
-            Task = meeting.Title!, ExecutionStatus = "InProgress", StartedAt = workflow.TatStartedAt,
-            WorkflowInstanceId = workflow.Id, IsActive = true, CreatedBy = actor, CreatedDate = now
-        });
-        await db.SaveChangesAsync();
-
-        return (meeting, meetingModuleId);
+        var result = await Service(db).ConfirmAsync(meeting.Id, Request(Item(existing.Id, "Updated"), Item(), Item()), "first");
+        Assert.Equal(3, result.CreatedDelegationCount);
+        Assert.Equal("Delegated", result.DelegationDecision);
+        Assert.Equal(existing.Id, result.CreatedActions[0].Id);
+        Assert.Equal("Updated", result.CreatedActions[0].Title);
+        Assert.Equal(3, await db.MeetingActions.CountAsync(a => a.MeetingId == meeting.Id));
+        Assert.All(result.CreatedActions, a => Assert.NotNull(a.DelegationId));
+        var delegationIds = result.CreatedActions.Select(a => a.DelegationId!.Value).ToList();
+        var delegations = await db.Delegations.Where(d => delegationIds.Contains(d.Id)).ToListAsync();
+        Assert.Equal(3, delegations.Count);
+        Assert.All(delegations, d => { Assert.Equal("Pending", d.Status); Assert.Equal("EMP1", d.DoerId); Assert.Equal("Doer", d.DoerNameSnapshot); Assert.Equal("High", d.Priority); });
+        Assert.True((await db.MeetingActionExtractions.SingleAsync(e => e.MeetingId == meeting.Id)).IsApplied);
+        await db.Entry(meeting).ReloadAsync();
+        var decidedAt = meeting.DelegationDecidedAt;
+        var second = await Service(db).ConfirmAsync(meeting.Id, Request(Item()), "second");
+        Assert.Equal(1, second.CreatedDelegationCount);
+        Assert.Equal(decidedAt, meeting.DelegationDecidedAt);
+        Assert.Equal("first", meeting.DelegationDecidedBy);
+        Assert.Equal(4, await db.MeetingActions.CountAsync(a => a.MeetingId == meeting.Id));
     }
 
-    private static Mock<IMeetingCompletionFileStore> MakeFileStoreMock()
-    {
-        var files = new Mock<IMeetingCompletionFileStore>();
-        files.Setup(f => f.ValidateAsync(It.IsAny<IFormFile>(), It.IsAny<CancellationToken>())).ReturnsAsync(new byte[] { 0x25, 0x50, 0x44, 0x46 });
-        files.Setup(f => f.SaveAsync(It.IsAny<long>(), It.IsAny<byte[]>(), It.IsAny<CancellationToken>())).ReturnsAsync("Content/MeetingCompletion/disposable-ai-confirm-test.pdf");
-        return files;
-    }
-
-    private static MeetingLifecycleService MakeLifecycleService(EaFmsDbContext db, ICurrentUserService user, IAuditService audit, DelegationService delegations)
-    {
-        var execution = new Mock<IWorkflowExecutionService>();
-        execution.Setup(x => x.CompleteAsync(It.IsAny<long>(), It.IsAny<CompleteWorkRequestDto>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new CompleteWorkResponseDto { Workflow = new WorkflowResponseDto() });
-        var meetings = new Mock<IMeetingService>();
-        meetings.Setup(x => x.GetByIdAsync(It.IsAny<long>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new MeetingDetailResponseDto { TatSummary = new MeetingTatSummaryDto() });
-        return new MeetingLifecycleService(db, execution.Object, user, audit, meetings.Object, MakeFileStoreMock().Object, delegations, NullLogger<MeetingLifecycleService>.Instance);
-    }
-
-    private static IFormFile MakeFakePdf() => Mock.Of<IFormFile>(f => f.FileName == "test.pdf");
-
-    // (a) Confirm BEFORE completion, then Complete -> existing Delegation conversion picks
-    // up the AI-confirmed actions exactly like manually created ones.
     [Fact]
-    public async Task ConfirmBeforeCompletion_ThenComplete_ConvertsAiConfirmedActionsToDelegations_ExactlyLikeManual()
+    public async Task ManualConfirmation_NeedsNoAnalysis_AndGetReturnsLinksIncludingHistoricalDelegations()
     {
-        await using var db = MakeRealDb();
-        var marker = $"before-{Guid.NewGuid():N}";
-        var (meeting, meetingModuleId) = await SeedInProgressMeetingAsync(db, marker);
-
-        var confirmResult = await MakeAiService(db).ConfirmActionsAsync(meeting.Id, new ConfirmMeetingAiActionsRequestDto
-        {
-            Actions = { new CreateMeetingActionDto { Title = $"AI action {marker}", DoerId = $"EMP-AI-{marker}", DoerName = "AI Confirmed Doer", Priority = "High" } }
-        }, "ea-actor");
-        var actionId = confirmResult.CreatedActions.Single().Id;
-
-        // Zero Delegations exist yet — confirm alone never creates one.
-        Assert.Equal(0, await db.Delegations.CountAsync(d => d.SourceBusinessModuleId == meetingModuleId && d.SourceEntityId == actionId.ToString()));
-
-        var user = Mock.Of<ICurrentUserService>(u => u.UserName == "ea-actor" && u.UserId == 1);
-        var audit = new AuditService(db, user);
-        var delegations = MakeRealDelegationService(db, user, audit);
-        var lifecycle = MakeLifecycleService(db, user, audit, delegations);
-        await lifecycle.CompleteAsync(meeting.Id, new MeetingCompleteRequestDto { CompletionMom = "Done", CompletionPdf = MakeFakePdf() }, default);
-
-        await using var verify = MakeRealDb();
-        var delegation = await verify.Delegations.SingleAsync(d => d.SourceBusinessModuleId == meetingModuleId && d.SourceEntityId == actionId.ToString());
-        Assert.Equal($"AI action {marker}", delegation.Title);
-        Assert.Equal($"EMP-AI-{marker}", delegation.DoerId);
-        Assert.Equal("AI Confirmed Doer", delegation.DoerNameSnapshot);
-    }
-
-    // (b) Confirm AFTER completion -> no Delegation is retroactively created. Current
-    // architecture behavior (Delegation conversion only happens inside CompleteAsync,
-    // which already ran) — not changed or "fixed" by this phase.
-    [Fact]
-    public async Task ConfirmAfterCompletion_CreatesNoDelegation_CurrentArchitectureBehavior()
-    {
-        await using var db = MakeRealDb();
-        var marker = $"after-{Guid.NewGuid():N}";
-        var (meeting, meetingModuleId) = await SeedInProgressMeetingAsync(db, marker);
-
-        var user = Mock.Of<ICurrentUserService>(u => u.UserName == "ea-actor" && u.UserId == 1);
-        var audit = new AuditService(db, user);
-        var delegations = MakeRealDelegationService(db, user, audit);
-        var lifecycle = MakeLifecycleService(db, user, audit, delegations);
-        await lifecycle.CompleteAsync(meeting.Id, new MeetingCompleteRequestDto { CompletionMom = "Done", CompletionPdf = MakeFakePdf() }, default);
-
-        var confirmResult = await MakeAiService(db).ConfirmActionsAsync(meeting.Id, new ConfirmMeetingAiActionsRequestDto
-        {
-            Actions = { new CreateMeetingActionDto { Title = $"Post-completion AI action {marker}", DoerId = $"EMP-POST-{marker}" } }
-        }, "ea-actor");
-        var actionId = confirmResult.CreatedActions.Single().Id;
-
-        await using var verify = MakeRealDb();
-        Assert.True(await verify.MeetingActions.AnyAsync(a => a.Id == actionId)); // the MeetingAction itself IS created
-        Assert.Equal(0, await verify.Delegations.CountAsync(d => d.SourceBusinessModuleId == meetingModuleId && d.SourceEntityId == actionId.ToString())); // but no Delegation
-        var reloadedMeeting = await verify.Meetings.SingleAsync(m => m.Id == meeting.Id);
-        Assert.NotNull(reloadedMeeting.CompletedAt); // meeting stays completed, confirm didn't touch it
-    }
-
-    // (c) Real Postgres constraint failure mid-batch rolls back the whole confirmation —
-    // FluentValidation would normally reject a >500-char Title at the API layer; this test
-    // calls the service directly (as a compromised/older client bypassing validation would)
-    // to prove the database-level safety net still holds for the whole transaction.
-    [Fact]
-    public async Task Confirm_TransactionRollsBackEntireBatch_OnRealColumnConstraintViolation()
-    {
-        await using var db = MakeRealDb();
-        var marker = $"rollback-{Guid.NewGuid():N}";
-        var (meeting, _) = await SeedInProgressMeetingAsync(db, marker);
-
-        var request = new ConfirmMeetingAiActionsRequestDto
-        {
-            Actions =
-            {
-                new CreateMeetingActionDto { Title = $"Valid first action {marker}", DoerId = "EMP-VALID" },
-                new CreateMeetingActionDto { Title = new string('x', 501) }, // exceeds ea_meeting_actions."Title" varchar(500)
-            },
-        };
-
-        await Assert.ThrowsAnyAsync<Exception>(() => MakeAiService(db).ConfirmActionsAsync(meeting.Id, request, "ea-actor"));
-
-        await using var verify = MakeRealDb();
-        Assert.Equal(0, await verify.MeetingActions.CountAsync(a => a.MeetingId == meeting.Id));
-    }
-
-    // Manual + AI-confirmed actions on the same Meeting are treated identically at
-    // completion (both convert to Delegations together, no special-casing by origin).
-    [Fact]
-    public async Task ManualAndAiConfirmedActions_OnSameMeeting_BothConvertToDelegations()
-    {
-        await using var db = MakeRealDb();
-        var marker = $"mixed-{Guid.NewGuid():N}";
-        var (meeting, meetingModuleId) = await SeedInProgressMeetingAsync(db, marker);
-
-        // Manual action, created the existing way (direct entity insert, same as the
-        // manual controller's own persistence shape).
-        var manual = new MeetingAction
-        {
-            MeetingId = meeting.Id, Title = $"Manual action {marker}", DoerId = $"EMP-MANUAL-{marker}",
-            CreatedBy = "ea-actor", CreatedDate = DateTime.UtcNow,
-        };
+        await using var db = database.CreateContext();
+        var meeting = await Seed(db);
+        var result = await Service(db).ConfirmAsync(meeting.Id, Request(Item()), "ea");
+        // Historical rows have source links but no decision fields.
+        meeting.DelegationDecision = null; meeting.DelegationDecidedAt = null; meeting.DelegationDecidedBy = null;
+        var manual = MeetingActionFactory.Build(meeting.Id, Item(), "test", DateTime.UtcNow);
         db.MeetingActions.Add(manual);
         await db.SaveChangesAsync();
-
-        var confirmResult = await MakeAiService(db).ConfirmActionsAsync(meeting.Id, new ConfirmMeetingAiActionsRequestDto
-        {
-            Actions = { new CreateMeetingActionDto { Title = $"AI action {marker}", DoerId = $"EMP-AI-{marker}" } }
-        }, "ea-actor");
-        var aiActionId = confirmResult.CreatedActions.Single().Id;
-
-        var user = Mock.Of<ICurrentUserService>(u => u.UserName == "ea-actor" && u.UserId == 1);
-        var audit = new AuditService(db, user);
-        var delegations = MakeRealDelegationService(db, user, audit);
-        var lifecycle = MakeLifecycleService(db, user, audit, delegations);
-        await lifecycle.CompleteAsync(meeting.Id, new MeetingCompleteRequestDto { CompletionMom = "Done", CompletionPdf = MakeFakePdf() }, default);
-
-        await using var verify = MakeRealDb();
-        Assert.Equal(1, await verify.Delegations.CountAsync(d => d.SourceBusinessModuleId == meetingModuleId && d.SourceEntityId == manual.Id.ToString()));
-        Assert.Equal(1, await verify.Delegations.CountAsync(d => d.SourceBusinessModuleId == meetingModuleId && d.SourceEntityId == aiActionId.ToString()));
+        var get = Assert.IsType<OkObjectResult>(await new MeetingsActionsController(db).Get(meeting.Id, default));
+        var items = Assert.IsType<List<MeetingActionDto>>(get.Value);
+        Assert.Equal(result.CreatedActions[0].DelegationId, items.Single(a => a.Id == result.CreatedActions[0].Id).DelegationId);
+        Assert.Null(items.Single(a => a.Id == manual.Id).DelegationId);
+        Assert.False(await db.MeetingActionExtractions.AnyAsync(e => e.MeetingId == meeting.Id));
     }
+
+    [Fact]
+    public async Task Decline_IsPermanent_AndSecondDeclineAndConfirmConflict()
+    {
+        await using var db = database.CreateContext();
+        var meeting = await Seed(db);
+        await Service(db).DeclineAsync(meeting.Id, "ea");
+        Assert.Equal("Declined", meeting.DelegationDecision);
+        Assert.NotNull(meeting.DelegationDecidedAt);
+        Assert.Equal("ea", meeting.DelegationDecidedBy);
+        Assert.Equal("Delegation has already been decided for this meeting.",
+            (await Assert.ThrowsAsync<BusinessRuleException>(() => Service(db).DeclineAsync(meeting.Id, "ea"))).Message);
+        Assert.Equal("Delegation was declined for this meeting.",
+            (await Assert.ThrowsAsync<BusinessRuleException>(() => Service(db).ConfirmAsync(meeting.Id, Request(Item()), "ea"))).Message);
+        Assert.False(await db.MeetingActions.AnyAsync(a => a.MeetingId == meeting.Id));
+    }
+
+    [Fact]
+    public async Task IncompleteMeeting_RejectsBothDecisions()
+    {
+        await using var db = database.CreateContext();
+        var meeting = await Seed(db, false);
+        Assert.Equal("Complete the meeting before choosing whether to delegate tasks.",
+            (await Assert.ThrowsAsync<BusinessRuleException>(() => Service(db).DeclineAsync(meeting.Id, "ea"))).Message);
+        Assert.Equal("Complete the meeting before delegating tasks.",
+            (await Assert.ThrowsAsync<BusinessRuleException>(() => Service(db).ConfirmAsync(meeting.Id, Request(Item()), "ea"))).Message);
+    }
+
+    [Theory]
+    [InlineData("empty")]
+    [InlineData("title")]
+    [InlineData("doerId")]
+    [InlineData("doerName")]
+    [InlineData("duplicate")]
+    [InlineData("foreign")]
+    [InlineData("deleted")]
+    public async Task InvalidBatch_SavesNothing(string scenario)
+    {
+        await using var db = database.CreateContext();
+        var meeting = await Seed(db);
+        var action = MeetingActionFactory.Build(meeting.Id, Item(), "test", DateTime.UtcNow);
+        if (scenario == "foreign") action.MeetingId = (await Seed(db)).Id;
+        if (scenario == "deleted") action.IsDeleted = true;
+        db.MeetingActions.Add(action);
+        await db.SaveChangesAsync();
+        var invalid = Item(action.Id);
+        if (scenario == "title") invalid.Title = " ";
+        if (scenario == "doerId") invalid.DoerId = null;
+        if (scenario == "doerName") invalid.DoerName = " ";
+        var request = scenario == "empty" ? Request() : scenario == "duplicate" ? Request(invalid, invalid) : Request(Item(), invalid);
+        var before = await db.MeetingActions.CountAsync();
+        await Assert.ThrowsAsync<BusinessRuleException>(() => Service(db).ConfirmAsync(meeting.Id, request, "ea"));
+        Assert.Equal(before, await db.MeetingActions.CountAsync());
+        Assert.Null((await db.Meetings.FindAsync(meeting.Id))!.DelegationDecision);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task AlreadyDelegated_RejectsEntireBatch_EvenWhenDelegationDeleted(bool deleted)
+    {
+        await using var db = database.CreateContext();
+        var meeting = await Seed(db);
+        var first = await Service(db).ConfirmAsync(meeting.Id, Request(Item()), "ea");
+        var delegation = await db.Delegations.FindAsync(first.CreatedActions[0].DelegationId);
+        delegation!.IsDeleted = deleted;
+        await db.SaveChangesAsync();
+        Assert.Equal("Action 'Task' is already delegated.",
+            (await Assert.ThrowsAsync<BusinessRuleException>(() => Service(db).ConfirmAsync(meeting.Id,
+                Request(Item(), Item(first.CreatedActions[0].Id)), "ea"))).Message);
+        Assert.Equal(1, await db.MeetingActions.CountAsync(a => a.MeetingId == meeting.Id));
+    }
+
+    [Fact]
+    public async Task DelegationInsertFailure_RollsBackActionsDecisionAndExtraction()
+    {
+        await using var db = database.CreateContext();
+        var meeting = await Seed(db);
+        var action = MeetingActionFactory.Build(meeting.Id, Item(title: "Original"), "test", DateTime.UtcNow);
+        db.MeetingActions.Add(action);
+        await db.SaveChangesAsync();
+        db.MeetingActionExtractions.Add(new MeetingActionExtraction { MeetingId = meeting.Id, ProposedActionsJson = "[]", CreatedBy = "test", CreatedDate = DateTime.UtcNow });
+        await db.SaveChangesAsync();
+        // A database constraint rejects the SECOND delegation after the first has been inserted.
+        await db.Database.ExecuteSqlRawAsync("ALTER TABLE public.ea_delegations ADD CONSTRAINT meeting_test_failure CHECK (\"Title\" <> 'FAIL_INSERT')");
+        try
+        {
+            var count = await db.Delegations.CountAsync();
+            var taskCount = await db.Tasks.CountAsync();
+            await Assert.ThrowsAsync<DbUpdateException>(() => Service(db).ConfirmAsync(meeting.Id,
+                Request(Item(action.Id, "Updated"), Item(title: "FAIL_INSERT")), "ea"));
+            Assert.False((await db.MeetingActionExtractions.SingleAsync(e => e.MeetingId == meeting.Id)).IsApplied);
+            Assert.Equal(count, await db.Delegations.CountAsync());
+            Assert.Equal(taskCount, await db.Tasks.CountAsync());
+            Assert.Single(await db.MeetingActions.Where(a => a.MeetingId == meeting.Id).ToListAsync());
+            Assert.Equal("Original", (await db.MeetingActions.FindAsync(action.Id))!.Title);
+            Assert.Null((await db.Meetings.FindAsync(meeting.Id))!.DelegationDecision);
+        }
+        finally { await db.Database.ExecuteSqlRawAsync("ALTER TABLE public.ea_delegations DROP CONSTRAINT meeting_test_failure"); }
+    }
+
+    [Fact]
+    public async Task ConcurrentConfirmation_DelegatesExistingActionOnlyOnce()
+    {
+        await using var db = database.CreateContext();
+        var meeting = await Seed(db);
+        var action = MeetingActionFactory.Build(meeting.Id, Item(), "test", DateTime.UtcNow);
+        db.MeetingActions.Add(action); await db.SaveChangesAsync();
+        async Task<Exception?> Confirm()
+        {
+            await using var context = database.CreateContext();
+            return await Record.ExceptionAsync(() => Service(context).ConfirmAsync(meeting.Id, Request(Item(action.Id)), "ea"));
+        }
+        var results = await Task.WhenAll(Confirm(), Confirm());
+        Assert.Single(results.Where(e => e is null));
+        Assert.IsType<BusinessRuleException>(results.Single(e => e is not null));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task MissingOrDeletedMeeting_ReturnsNotFound(bool deleted)
+    {
+        await using var db = database.CreateContext();
+        var meeting = await Seed(db);
+        meeting.IsDeleted = deleted; await db.SaveChangesAsync();
+        var id = deleted ? meeting.Id : long.MaxValue;
+        await Assert.ThrowsAsync<NotFoundException>(() => Service(db).DeclineAsync(id, "ea"));
+        await Assert.ThrowsAsync<NotFoundException>(() => Service(db).ConfirmAsync(id, Request(Item()), "ea"));
+    }
+    [Fact]
+    public async Task DeclineAfterDelegated_IsRejected()
+    {
+        await using var db = database.CreateContext();
+        var meeting = await Seed(db);
+        await Service(db).ConfirmAsync(meeting.Id, Request(Item()), "ea");
+        Assert.Equal("Delegation has already been decided for this meeting.",
+            (await Assert.ThrowsAsync<BusinessRuleException>(() => Service(db).DeclineAsync(meeting.Id, "ea"))).Message);
+    }
+
+    [Fact]
+    public async Task ManualAdd_BeforeAndAfterCompletion_NeverDelegates()
+    {
+        await using var db = database.CreateContext();
+        var meeting = await Seed(db, false);
+        var controller = new MeetingsActionsController(db);
+        Assert.IsType<CreatedAtActionResult>(await controller.Create(meeting.Id, new CreateMeetingActionDto { Title = "Before" }, default));
+        meeting.CompletedAt = DateTime.UtcNow;
+        await db.SaveChangesAsync();
+        Assert.IsType<CreatedAtActionResult>(await controller.Create(meeting.Id, new CreateMeetingActionDto { Title = "After" }, default));
+        var actions = await db.MeetingActions.Where(a => a.MeetingId == meeting.Id).ToListAsync();
+        Assert.Equal(2, actions.Count);
+        Assert.Empty(await MeetingDelegationService.LoadDelegationIdsAsync(db, actions.Select(a => a.Id), default));
+    }
+
+    [Fact]
+    public async Task DetailAndList_ExposeDecisionFields()
+    {
+        await using var db = database.CreateContext();
+        var meeting = await Seed(db);
+        await Service(db).DeclineAsync(meeting.Id, "ea");
+        var user = Mock.Of<ICurrentUserService>();
+        var service = new MeetingService(new MeetingRepository(db), db,
+            Jarvis5.Tests.EaFms.Followups.FollowupBusinessApiTests.Mapper, user,
+            Mock.Of<IAuditService>(), Mock.Of<IWorkflowService>(), Mock.Of<IEaTaskService>());
+        db.ChangeTracker.Clear();
+        var detail = await service.GetByIdAsync(meeting.Id);
+        var list = Assert.Single((await service.QueryAsync(pageSize: 1000)).Where(m => m.MeetingId == meeting.Id));
+        Assert.Equal("Declined", detail.DelegationDecision);
+        Assert.Equal("ea", detail.DelegationDecidedBy);
+        Assert.NotNull(detail.DelegationDecidedAt);
+        Assert.Equal(detail.DelegationDecision, list.DelegationDecision);
+        Assert.Equal(detail.DelegationDecidedBy, list.DelegationDecidedBy);
+        Assert.Equal(detail.DelegationDecidedAt, list.DelegationDecidedAt);
+    }
+
+    [Fact]
+    public async Task Migration_AddsNullableDecisionFields_AndPreservesExistingMeetings()
+    {
+        await using var db = database.CreateContext();
+        var meeting = await Seed(db);
+        await using var transaction = await db.Database.BeginTransactionAsync();
+        var migration = new Studio5JarvisMasterApi.Migrations.MeetingDelegationDecision();
+        var generator = db.GetService<IMigrationsSqlGenerator>();
+        foreach (var command in generator.Generate(migration.DownOperations, db.Model))
+            await db.Database.ExecuteSqlRawAsync(command.CommandText);
+        foreach (var command in generator.Generate(migration.UpOperations, db.Model))
+            await db.Database.ExecuteSqlRawAsync(command.CommandText);
+        db.ChangeTracker.Clear();
+        var historical = await db.Meetings.SingleAsync(m => m.Id == meeting.Id);
+        Assert.Null(historical.DelegationDecision);
+        Assert.Null(historical.DelegationDecidedAt);
+        Assert.Null(historical.DelegationDecidedBy);
+        Assert.Equal(meeting.Title, historical.Title);
+        await transaction.RollbackAsync();
+    }
+
 }

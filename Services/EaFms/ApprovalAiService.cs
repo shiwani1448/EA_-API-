@@ -84,7 +84,7 @@ public class ApprovalAiService : IApprovalAiService
         var aiResult = await GenerateAndParseAsync<ApprovalAiReadinessResultDto>(
             systemPrompt, userPrompt, "Approval readiness check", ct);
 
-        return new ApprovalAiReadinessResponseDto
+        var response = new ApprovalAiReadinessResponseDto
         {
             ApprovalRequestId = approvalRequestId,
             IsLikelyReady = aiResult.IsLikelyReady,
@@ -93,7 +93,8 @@ public class ApprovalAiService : IApprovalAiService
             Notes = aiResult.Notes,
             WarningMessage = "Based only on request field values and uploaded file names — AI cannot read the contents of any uploaded document.",
         };
-        await AiSuggestionWriters.LogApprovalReadinessCheckAsync(_db, approvalRequestId, response, ct);
+        if (approvalRequestId.HasValue)
+            await AiSuggestionWriters.LogApprovalReadinessCheckAsync(_db, approvalRequestId.Value, response, ct);
         return response;
     }
 
@@ -123,7 +124,8 @@ public class ApprovalAiService : IApprovalAiService
                 Reasoning = "This request has no department set, so there is no historical group to compare it against.",
                 WarningMessage = warning,
             };
-            await AiSuggestionWriters.LogApprovalApproverRecommendationAsync(_db, approvalRequestId, noDepartmentResponse, ct);
+            if (approvalRequestId.HasValue)
+                await AiSuggestionWriters.LogApprovalApproverRecommendationAsync(_db, approvalRequestId.Value, noDepartmentResponse, ct);
             return noDepartmentResponse;
         }
 
@@ -149,7 +151,8 @@ public class ApprovalAiService : IApprovalAiService
                 Reasoning = "No approved requests were found for this department yet — there is no history to base a recommendation on.",
                 WarningMessage = warning,
             };
-            await AiSuggestionWriters.LogApprovalApproverRecommendationAsync(_db, approvalRequestId, noHistoryResponse, ct);
+            if (approvalRequestId.HasValue)
+                await AiSuggestionWriters.LogApprovalApproverRecommendationAsync(_db, approvalRequestId.Value, noHistoryResponse, ct);
             return noHistoryResponse;
         }
 
@@ -176,7 +179,8 @@ public class ApprovalAiService : IApprovalAiService
             Reasoning = aiResult.Reasoning,
             WarningMessage = warning,
         };
-        await AiSuggestionWriters.LogApprovalApproverRecommendationAsync(_db, approvalRequestId, response, ct);
+        if (approvalRequestId.HasValue)
+            await AiSuggestionWriters.LogApprovalApproverRecommendationAsync(_db, approvalRequestId.Value, response, ct);
         return response;
     }
 

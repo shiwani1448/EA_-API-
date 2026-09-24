@@ -20,7 +20,6 @@ public class MeetingLifecycleService : IMeetingLifecycleService
     private readonly IAuditService _audit;
     private readonly IMeetingService _meetings;
     private readonly IMeetingCompletionFileStore _files;
-    private readonly DelegationService _delegations;
     private readonly ILogger<MeetingLifecycleService> _logger;
 
     public MeetingLifecycleService(
@@ -28,7 +27,6 @@ public class MeetingLifecycleService : IMeetingLifecycleService
         IWorkflowExecutionService execution,
         ICurrentUserService user,
         IAuditService audit, IMeetingService meetings, IMeetingCompletionFileStore files,
-        DelegationService delegations,
         ILogger<MeetingLifecycleService> logger)
     {
         _db = db;
@@ -37,7 +35,6 @@ public class MeetingLifecycleService : IMeetingLifecycleService
         _audit = audit;
         _meetings = meetings;
         _files = files;
-        _delegations = delegations;
         _logger = logger;
     }
 
@@ -196,13 +193,6 @@ public class MeetingLifecycleService : IMeetingLifecycleService
             var tasks = await _db.Tasks.Where(x => x.BusinessModuleId == wf.BusinessModuleId && x.BusinessRecordId == meeting.Id.ToString(CultureInfo.InvariantCulture) && !x.IsDeleted).Take(2).ToListAsync(ct);
             if (tasks.Count > 1) throw new BusinessRuleException("Meeting has ambiguous EA task snapshots.");
 
-            // Meeting -> Doer Delegation (Step 5B-3): every persisted, non-deleted
-            // MeetingAction becomes its own real Delegation owned by the same Doer,
-            // created inside this same transaction so a missing-doer failure (or any other
-            // failure) rolls back the whole Meeting completion — validated and created
-            // before the PDF is written to storage below.
-            await CreateDelegationsForMeetingActionsAsync(meeting, ct);
-
             var now = Clock.UtcNowTz;
             if (content is not null)
             {
@@ -268,81 +258,4 @@ public class MeetingLifecycleService : IMeetingLifecycleService
         return response;
     }
 
-    /// <summary>
-    /// Meeting -> Doer Delegation (Step 5B-3). Converts every persisted, non-deleted
-    /// MeetingAction belonging to this Meeting into its own real Delegation owned by
-    /// the same Doer (MeetingAction.DoerId/DoerName copied verbatim — never
-    /// fabricated, never the current EA actor). Reuses
-    /// DelegationService.CreateCoreAsync, which is transaction-composable (never begins or
-    /// commits its own transaction), so every Delegation this creates joins the caller's
-    /// already-open Meeting-completion transaction: any failure — including a missing
-    /// Doer on a later action — rolls back everything, including actions already
-    /// converted earlier in this same call. Zero actions is valid and creates zero
-    /// Delegations. Deleted MeetingActions are excluded by the query itself.
-    /// </summary>
-    private async Task CreateDelegationsForMeetingActionsAsync(Meeting meeting, CancellationToken ct)
-    {
-        var actions = await _db.MeetingActions
-            .Where(a => a.MeetingId == meeting.Id && !a.IsDeleted)
-            .ToListAsync(ct);
-        if (actions.Count == 0) return;
-
-        // Validate every action BEFORE creating any Delegation. A single missing Doer
-        // fails the whole Meeting completion — this is integrity at the exact point a real
-        // Delegation is created, not a re-imposition of MeetingAction's ordinary (frontend-
-        // owned) DoerId optionality during normal create/edit.
-        var missing = actions.Where(a => string.IsNullOrWhiteSpace(a.DoerId)).ToList();
-        if (missing.Count > 0)
-        {
-            var names = string.Join(", ", missing.Select(a =>
-                string.IsNullOrWhiteSpace(a.Title) ? $"action #{a.Id}" : $"\"{a.Title.Trim()}\""));
-            throw new BusinessRuleException(
-                $"Meeting cannot be completed because {(missing.Count == 1 ? "action" : "actions")} {names} " +
-                $"{(missing.Count == 1 ? "has" : "have")} no assigned doer.");
-        }
-
-        // Meeting BusinessModule resolved dynamically (never hardcoded) — same
-        // name-based convention already used by RequireLinkedWorkflowAsync above.
-        var meetingModule = await _db.BusinessModules
-            .Where(b => b.IsActive && !b.IsDeleted && b.Name.Trim().ToLower() == "meeting")
-            .SingleAsync(ct);
-
-        // Idempotency: a MeetingAction whose Delegation already exists (same
-        // SourceBusinessModuleId + SourceEntityId = MeetingAction.Id) is skipped rather
-        // than duplicated. Structurally, two concurrent completions of the SAME meeting
-        // cannot both reach here — RequireLinkedWorkflowAsync's caller already takes a
-        // Postgres row lock (SELECT ... FOR UPDATE) on this Meeting row before this point,
-        // so the second request blocks until the first commits or rolls back, then sees
-        // meeting.CompletedAt already set and fails the earlier "Meeting is completed..."
-        // precondition before ever reaching MeetingAction/Delegation logic. This check
-        // remains as defense in depth for any future retry path, not because the race is
-        // currently reachable.
-        var actionIds = actions.Select(a => a.Id.ToString(CultureInfo.InvariantCulture)).ToList();
-        var alreadyLinked = await _db.Delegations.AsNoTracking()
-            .Where(d => !d.IsDeleted && d.SourceBusinessModuleId == meetingModule.Id
-                && d.SourceEntityId != null && actionIds.Contains(d.SourceEntityId))
-            .Select(d => d.SourceEntityId!)
-            .ToListAsync(ct);
-        var alreadyLinkedSet = alreadyLinked.ToHashSet();
-
-        foreach (var action in actions)
-        {
-            var sourceEntityId = action.Id.ToString(CultureInfo.InvariantCulture);
-            if (alreadyLinkedSet.Contains(sourceEntityId)) continue;
-
-            var command = new DelegationCreateCommand
-            {
-                Title = action.Title,
-                Description = action.Description,
-                DoerId = action.DoerId,
-                DoerNameSnapshot = action.DoerName,
-                Priority = action.Priority,
-                DueDate = action.DueDate,
-                SourceBusinessModuleId = meetingModule.Id,
-                SourceEntityId = sourceEntityId,
-                SourceReference = meeting.MeetingNumber
-            };
-            await _delegations.CreateCoreAsync(command, ct);
-        }
-    }
 }

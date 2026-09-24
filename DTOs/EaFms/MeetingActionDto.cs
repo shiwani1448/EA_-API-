@@ -4,6 +4,7 @@ namespace Jarvis5.Dtos.EaFms;
 
 public class MeetingActionDto
 {
+    public long? DelegationId { get; set; }
     public long Id { get; set; }
     public string? Title { get; set; }
     public string? Description { get; set; }

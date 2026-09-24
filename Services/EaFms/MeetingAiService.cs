@@ -15,12 +15,8 @@ namespace Jarvis5.Services.EaFms;
 /// logic (Claude HTTP/SDK, JSON parsing, PDF/OCR extraction) lives in already-registered
 /// shared services; this class never talks to Claude or the filesystem directly.
 ///
-/// Never writes to the database: no MeetingAction, Delegation or EaTask row is created,
-/// and Meeting/TAT/completion fields are never touched. The Meeting -> Delegation
-/// conversion timing mismatch (MeetingAction->Delegation conversion currently happens
-/// during Meeting Complete, while this analyzes evidence after completion) is a known,
-/// deliberately deferred concern for the future confirmation phase — this phase stops at
-/// returning a proposal for EA review.
+/// Analysis returns proposals and logs the extraction. Confirmation delegates the reviewed
+/// action items through the shared post-completion transaction flow.
 /// </summary>
 public class MeetingAiService : IMeetingAiService
 {
@@ -137,48 +133,8 @@ public class MeetingAiService : IMeetingAiService
     public async Task<MeetingAiActionsConfirmResponseDto> ConfirmActionsAsync(
         long meetingId, ConfirmMeetingAiActionsRequestDto dto, string actor, CancellationToken ct = default)
     {
-        var meetingExists = await _db.Meetings.AnyAsync(m => m.Id == meetingId && !m.IsDeleted, ct);
-        if (!meetingExists)
-            throw new NotFoundException($"Meeting {meetingId} not found.");
-
-        var now = Clock.UtcNowTz;
-        var created = new List<MeetingAction>();
-
-        // One transaction for the whole batch: either every confirmed action is created or
-        // none is (a single SaveChangesAsync call is itself atomic) — no per-action business
-        // rule exists at this stage (no doer-existence check, no cross-action uniqueness), so
-        // application-level partial failure mid-loop is not reachable; this transaction is
-        // defense-in-depth for infrastructure-level failures, same pattern as
-        // MeetingLifecycleService.CompleteAsync.
-        await using var tx = await _db.Database.BeginTransactionAsync(ct);
-        try
-        {
-            foreach (var action in dto.Actions)
-            {
-                var entity = MeetingActionFactory.Build(meetingId, action, actor, now);
-                _db.MeetingActions.Add(entity);
-                created.Add(entity);
-            }
-
-            await _db.SaveChangesAsync(ct);
-            await tx.CommitAsync(ct);
-        }
-        catch
-        {
-            await tx.RollbackAsync(CancellationToken.None);
-            throw;
-        }
-
-        var response = new MeetingAiActionsConfirmResponseDto
-        {
-            MeetingId = meetingId,
-            CreatedActions = created.Select(a => MeetingActionFactory.ToDto(a, now)).ToList(),
-        };
-        // Links this confirmation back to the extraction suggestion it came from — if the EA
-        // never called /ai/actions/extract first (e.g. typed the actions manually), there is
-        // nothing to link and this is a no-op.
-        await AiSuggestionWriters.MarkMeetingActionExtractionAppliedAsync(_db, meetingId, response, ct);
-        return response;
+        return await _serviceProvider.GetRequiredService<MeetingDelegationService>()
+            .ConfirmAsync(meetingId, dto, actor, ct);
     }
 
     // Same retry-on-malformed-JSON pattern as AnalysisService.GenerateAndParseAsync: reuses

@@ -39,6 +39,10 @@ public class MeetingsActionsController : ControllerBase
             IsOverdue = a.CompletedAt == null && a.DueDate != null && a.DueDate < now
         }).ToList();
 
+        var links = await MeetingDelegationService.LoadDelegationIdsAsync(_context, list.Select(a => a.Id), ct);
+        foreach (var action in result)
+            action.DelegationId = links.TryGetValue(action.Id, out var delegationId) ? delegationId : null;
+
         return Ok(result);
     }
 

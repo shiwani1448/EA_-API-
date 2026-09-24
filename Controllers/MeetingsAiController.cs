@@ -1,5 +1,6 @@
 using Jarvis5.Dtos.EaFms;
 using Jarvis5.Services.EaFms;
+using Jarvis5.Services;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Jarvis5.Controllers;
@@ -9,10 +10,12 @@ namespace Jarvis5.Controllers;
 public class MeetingsAiController : ControllerBase
 {
     private readonly IMeetingAiService _meetingAi;
+    private readonly ICurrentUserService _user;
 
-    public MeetingsAiController(IMeetingAiService meetingAi)
+    public MeetingsAiController(IMeetingAiService meetingAi, ICurrentUserService user)
     {
         _meetingAi = meetingAi;
+        _user = user;
     }
 
     /// <summary>Preview only. Analyzes the Meeting's existing completion evidence
@@ -27,17 +30,15 @@ public class MeetingsAiController : ControllerBase
         return Ok(result);
     }
 
-    /// <summary>EA confirmation of (possibly edited) AI-proposed actions. Creates real
-    /// MeetingAction rows from exactly the submitted values — never the original AI
-    /// suggestion — using the same creation logic as the manual actions endpoint. Never
-    /// calls Claude and never creates a Delegation/EaTask directly.</summary>
+    /// <summary>Saves reviewed action items and creates their delegations atomically.
+    /// Accepts existing action IDs and new manual or AI-proposed rows after completion.</summary>
     [HttpPost("actions/confirm")]
     [ProducesResponseType(typeof(MeetingAiActionsConfirmResponseDto), StatusCodes.Status200OK)]
     public async Task<ActionResult<MeetingAiActionsConfirmResponseDto>> ConfirmActions(
         long meetingId, [FromBody] ConfirmMeetingAiActionsRequestDto? dto, CancellationToken ct)
     {
         dto ??= new ConfirmMeetingAiActionsRequestDto();
-        var actor = User?.Identity?.Name ?? string.Empty;
+        var actor = _user.UserName ?? _user.UserId.ToString();
         var result = await _meetingAi.ConfirmActionsAsync(meetingId, dto, actor, ct);
         return Ok(result);
     }

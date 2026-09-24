@@ -372,6 +372,7 @@ builder.Services.AddScoped<Jarvis5.Services.EaFms.IMeetingLifecycleService, Jarv
 // AiJsonResponseParser/IDocumentExtractionService registered below; only the Meeting-
 // specific prompt builder and orchestrator are new.
 builder.Services.AddScoped<Jarvis5.Services.EaFms.IMeetingActionExtractionPromptBuilder, Jarvis5.Services.EaFms.MeetingActionExtractionPromptBuilder>();
+builder.Services.AddScoped<Jarvis5.Services.EaFms.MeetingDelegationService>();
 builder.Services.AddScoped<Jarvis5.Services.EaFms.IMeetingAiService, Jarvis5.Services.EaFms.MeetingAiService>();
 builder.Services.AddScoped<Jarvis5.Services.EaFms.IAuditService, Jarvis5.Services.EaFms.AuditService>();
 // EA notifications
@@ -409,7 +410,7 @@ builder.Services.AddScoped<Jarvis5.Services.EaFms.ITravelAiService, Jarvis5.Serv
 // Delegation services
 builder.Services.AddScoped<Jarvis5.Repositories.EaFms.IDelegationNumberRepository, Jarvis5.Repositories.EaFms.DelegationRepository>();
 // Registered as the concrete type too (same scoped instance as IDelegationService) so
-// source-module callers such as MeetingLifecycleService can inject DelegationService
+// source-module callers such as MeetingDelegationService can inject DelegationService
 // directly and reuse its transaction-composable CreateCoreAsync inside their own already-
 // open transaction — the exact reuse path CreateCoreAsync's own XML doc anticipates.
 builder.Services.AddScoped<Jarvis5.Services.EaFms.DelegationService>();

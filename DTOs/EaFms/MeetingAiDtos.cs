@@ -29,12 +29,8 @@ public class MeetingAiProposedActionDto
     public DateTime? DueDate { get; set; }
 }
 
-/// <summary>Request for POST /api/ea/meetings/{meetingId}/ai/actions/confirm. Each entry
-/// is the EA-confirmed (possibly edited) final value for one action — reuses
-/// CreateMeetingActionDto verbatim, the same shape the manual
-/// POST /api/ea/meetings/{meetingId}/actions endpoint already accepts, so a confirmed
-/// action is indistinguishable from a manually created one. The AI's own suggestion is
-/// never read here; only what the EA/frontend actually submits is persisted.</summary>
+/// <summary>Reviewed manual or AI-proposed actions. MeetingActionId updates an existing
+/// undelegated action; null inserts a new action. All submitted items are delegated.</summary>
 public class ConfirmMeetingAiActionsRequestDto
 {
     public List<CreateMeetingActionDto> Actions { get; set; } = new();
@@ -45,6 +41,8 @@ public class ConfirmMeetingAiActionsRequestDto
 /// inventing a parallel AI response shape.</summary>
 public class MeetingAiActionsConfirmResponseDto
 {
+    public int CreatedDelegationCount { get; set; }
+    public string? DelegationDecision { get; set; }
     public long MeetingId { get; set; }
     public List<MeetingActionDto> CreatedActions { get; set; } = new();
 }
