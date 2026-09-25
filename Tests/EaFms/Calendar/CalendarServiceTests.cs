@@ -11,9 +11,9 @@ using Xunit;
 namespace Jarvis5.Tests.EaFms.Calendar;
 
 /// <summary>
-/// CalendarService: a standalone tool, exactly like Google Calendar. The EA types every
-/// entry in herself; ea_calendar_events is the only table this module ever reads or writes —
-/// there is no aggregation over Meeting/Delegation/Approval/Travel/Followup.
+/// CalendarService: the EA's own entries (ea_calendar_events, full CRUD) — the part that works
+/// exactly like Google Calendar. Module entries shown automatically are covered in
+/// CalendarLinkedEventsTests.
 /// </summary>
 public class CalendarServiceTests
 {

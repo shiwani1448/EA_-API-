@@ -13,19 +13,21 @@ public interface IEmEmployeeReportService
     Task<EmKpiResponseDto> GetKpisAsync(EmEmployeeReportQueryDto query, CancellationToken ct);
     Task<EmTrendResponseDto> GetTrendsAsync(EmEmployeeTrendQueryDto query, CancellationToken ct);
     Task<PagedResult<EmWorkItemDto>> GetWorkItemsAsync(EmWorkItemQueryDto query, CancellationToken ct);
+    Task<EmSectionsResponseDto> GetSectionsAsync(EmSectionsQueryDto query, CancellationToken ct);
 }
 
 /// <summary>
-/// Read-only EM Employee Report. Every module's work is normalised into one list of work items:
-/// Delegation and Approval phases (Actual / Review / Rework — all counted for the doer), Meetings
-/// (one item per matching doer), Follow-ups and Travel requests. A work item belongs to the ISO
-/// week of its planned date in India time, Monday–Saturday. Performance: completed within TAT or
-/// by the due date = OnTime, completed late = Delayed, open and past TAT/due date = Overdue, open
-/// and still within time = Pending, completed with neither TAT nor due date = NotMeasured.
-/// Approval and Travel store only a display name for the EA who did the work, so they are matched
-/// by name. Nothing is written.
+/// Read-only EM report for one EA — by default the logged-in EA — covering everything she handled:
+/// delegations she assigned or was assigned (every Actual / Review / Rework phase), meetings she
+/// organised, is a doer of or attended, follow-ups she owns, recorded or does, approvals and travel
+/// she raised (or approves), documents she uploaded and every pause. Each unit of work is a work
+/// item placed in the ISO week of its planned date (India time, Monday–Saturday) and judged on TAT
+/// only (allotted vs used, used = elapsed minus pauses): Pending = not started, InProgress = open
+/// within TAT, Overdue = open over TAT, OnTime/Delayed = completed within/over TAT, NoTat = started
+/// or completed with no TAT allotted. A person is matched against the stored id or display name
+/// (several modules store only a name). Nothing is written.
 /// </summary>
-public sealed class EmEmployeeReportService(EaFmsDbContext db) : IEmEmployeeReportService
+public sealed class EmEmployeeReportService(EaFmsDbContext db, ICurrentUserService currentUser) : IEmEmployeeReportService
 {
     public const string ModDelegation = "Delegation", ModApproval = "Approval", ModMeeting = "Meeting",
         ModFollowup = "Follow-up", ModTravel = "Travel";
@@ -33,17 +35,22 @@ public sealed class EmEmployeeReportService(EaFmsDbContext db) : IEmEmployeeRepo
     private const string StNotStarted = "NotStarted", StInProgress = "InProgress", StPaused = "Paused",
         StCompleted = "Completed", StCancelled = "Cancelled";
     private const string PerfOnTime = "OnTime", PerfDelayed = "Delayed", PerfOverdue = "Overdue",
-        PerfPending = "Pending", PerfNotMeasured = "NotMeasured";
+        PerfPending = "Pending", PerfInProgress = "InProgress", PerfNoTat = "NoTat", PerfCancelled = "Cancelled";
+    private const string RelDelegatedByMe = "DelegatedByMe", RelDelegatedToMe = "DelegatedToMe", RelSelf = "Self",
+        RelOrganizer = "Organizer", RelDoer = "Doer", RelAttendee = "Attendee", RelOwner = "Owner",
+        RelFollowedUp = "FollowedUp", RelRaised = "Raised", RelApprover = "Approver";
     private static readonly string[] Modules = [ModDelegation, ModApproval, ModMeeting, ModFollowup, ModTravel];
+    private static readonly string[] TaskTypes = [TypeActual, TypeReview, TypeRework, TypeMeeting];
 
     // =================================================================================== public API
 
     public async Task<EmKpiResponseDto> GetKpisAsync(EmEmployeeReportQueryDto query, CancellationToken ct)
     {
+        var who = Resolve(query);
         var (year, week) = ResolveWeek(query.Year, query.Week);
         var (start, end) = WeekRange(year, week);
         var (prevYear, prevWeek) = Shift(year, week, -1);
-        var items = await LoadAsync(query.EmployeeId, query.EmployeeName, ct);
+        var items = (await LoadAsync(who, ct)).Items;
 
         var current = items.Where(i => i.Year == year && i.Week == week && i.Status != StCancelled).ToList();
         var previous = items.Where(i => i.Year == prevYear && i.Week == prevWeek && i.Status != StCancelled).ToList();
@@ -62,7 +69,7 @@ public sealed class EmEmployeeReportService(EaFmsDbContext db) : IEmEmployeeRepo
 
         var response = new EmKpiResponseDto
         {
-            EmployeeId = Clean(query.EmployeeId), EmployeeName = Clean(query.EmployeeName),
+            EmployeeId = who.Id, EmployeeName = who.DisplayName,
             Year = year, Week = week, WeekStart = start, WeekEnd = end,
             Matrix = new EmKpiMatrixDto
             {
@@ -84,9 +91,10 @@ public sealed class EmEmployeeReportService(EaFmsDbContext db) : IEmEmployeeRepo
     public async Task<EmTrendResponseDto> GetTrendsAsync(EmEmployeeTrendQueryDto query, CancellationToken ct)
     {
         if (query.Weeks is < 1 or > 12) throw new BadRequestException("Weeks must be between 1 and 12.");
+        var who = Resolve(query);
         var (year, week) = ResolveWeek(query.Year, query.Week);
-        var items = await LoadAsync(query.EmployeeId, query.EmployeeName, ct);
-        var response = new EmTrendResponseDto { EmployeeId = Clean(query.EmployeeId), EmployeeName = Clean(query.EmployeeName) };
+        var items = (await LoadAsync(who, ct)).Items;
+        var response = new EmTrendResponseDto { EmployeeId = who.Id, EmployeeName = who.DisplayName };
         for (var offset = query.Weeks - 1; offset >= 0; offset--)
         {
             var (y, w) = Shift(year, week, -offset);
@@ -110,11 +118,12 @@ public sealed class EmEmployeeReportService(EaFmsDbContext db) : IEmEmployeeRepo
         if (query.Page < 1) throw new BadRequestException("Page must be 1 or greater.");
         if (query.PageSize is < 1 or > 200) throw new BadRequestException("PageSize must be between 1 and 200.");
         var module = Allowed(query.Module, Modules, "Module");
-        var taskType = Allowed(query.TaskType, [TypeActual, TypeReview, TypeRework, TypeMeeting], "TaskType");
+        var taskType = Allowed(query.TaskType, TaskTypes, "TaskType");
         var status = Allowed(query.Status, [StNotStarted, StInProgress, StPaused, StCompleted, StCancelled], "Status");
-        var performance = Allowed(query.Performance, [PerfOnTime, PerfDelayed, PerfOverdue, PerfPending, PerfNotMeasured], "Performance");
+        var performance = Allowed(query.Performance, [PerfPending, PerfInProgress, PerfOverdue, PerfOnTime, PerfDelayed, PerfNoTat], "Performance");
+        var who = Resolve(query);
 
-        IEnumerable<WorkItem> items = await LoadAsync(query.EmployeeId, query.EmployeeName, ct);
+        IEnumerable<WorkItem> items = (await LoadAsync(who, ct)).Items;
         if (!query.AllWeeks)
         {
             var (year, week) = ResolveWeek(query.Year, query.Week);
@@ -127,49 +136,306 @@ public sealed class EmEmployeeReportService(EaFmsDbContext db) : IEmEmployeeRepo
         if (!string.IsNullOrWhiteSpace(query.Search))
         {
             var term = query.Search.Trim();
-            items = items.Where(i => Contains(i.Title, term) || Contains(i.ReferenceNo, term) || Contains(i.OwnerName, term));
+            items = items.Where(i => Contains(i.Title, term) || Contains(i.ReferenceNo, term) || Contains(i.OwnerName, term) || Contains(i.Counterparty, term));
         }
 
-        var ordered = items.OrderByDescending(i => i.PlannedDate ?? DateTime.MinValue).ThenBy(i => i.ItemKey, StringComparer.Ordinal).ToList();
+        var ordered = Newest(items).ToList();
         return new PagedResult<EmWorkItemDto>
         {
             PageNumber = query.Page, PageSize = query.PageSize, TotalCount = ordered.Count,
-            Items = ordered.Skip((query.Page - 1) * query.PageSize).Take(query.PageSize).Select(ToDto).ToList(),
+            Items = ordered.Skip((query.Page - 1) * query.PageSize).Take(query.PageSize).Select(i => Fill(new EmWorkItemDto(), i)).ToList(),
         };
+    }
+
+    public async Task<EmSectionsResponseDto> GetSectionsAsync(EmSectionsQueryDto query, CancellationToken ct)
+    {
+        if (query.MaxRows is < 1 or > 1000) throw new BadRequestException("MaxRows must be between 1 and 1000.");
+        var who = Resolve(query);
+        var loaded = await LoadAsync(who, ct);
+        var response = new EmSectionsResponseDto
+        {
+            EmployeeId = who.Id, EmployeeName = who.DisplayName, IsTeamView = who.IsTeam, AllWeeks = query.AllWeeks
+        };
+
+        Func<DateTime?, bool> inPeriod = _ => true;
+        if (!query.AllWeeks)
+        {
+            var (year, week) = ResolveWeek(query.Year, query.Week);
+            var (start, end) = WeekRange(year, week);
+            (response.Year, response.Week, response.WeekStart, response.WeekEnd) = (year, week, start, end);
+            inPeriod = d => d.HasValue && WeekOf(IndiaBusinessCalendar.ToIndiaDate(d.Value)) == (year, week);
+        }
+        var items = loaded.Items.Where(i => i.Status != StCancelled && (query.AllWeeks || inPeriod(i.PlannedDate))).ToList();
+        var max = query.MaxRows;
+        var now = Clock.UtcNowTz;
+
+        // ---- Delegations
+        var del = items.Where(i => i.Module == ModDelegation).ToList();
+        var delRecords = del.Select(i => i.RecordId).Distinct().Select(id => loaded.Delegations[id]).ToList();
+        response.Delegations = new EmDelegationSectionDto
+        {
+            Kpi = BuildCell(del),
+            DelegatedByMe = BuildCell(del.Where(i => i.Relation is RelDelegatedByMe or RelSelf)),
+            DelegatedToMe = BuildCell(del.Where(i => i.Relation is RelDelegatedToMe or RelSelf)),
+            ByType = Breakdown(del, i => i.Category ?? "(No type)"),
+            ByDoer = Breakdown(del.Where(i => i.Relation is RelDelegatedByMe or RelSelf), i => i.OwnerName ?? i.OwnerId ?? "(Unknown)"),
+            ByPhase = Breakdown(del, i => i.TaskType),
+            DelegationCount = delRecords.Count,
+            ReviewCycles = del.Where(i => i.TaskType == TypeReview).Select(i => (i.RecordId, i.ReviewCycleNumber)).Distinct().Count(),
+            TotalRows = del.Count,
+            Items = Newest(del).Take(max).Select(i => Fill(new EmWorkItemDto(), i)).ToList(),
+        };
+
+        // ---- Meetings
+        var meet = items.Where(i => i.Module == ModMeeting).ToList();
+        var meetingIds = meet.Select(i => i.RecordId).ToHashSet();
+        var myAttendance = meet.Select(i => loaded.MyAttendance.GetValueOrDefault(i.RecordId)).Where(a => a is not null).Select(a => a!).ToList();
+        response.Meetings = new EmMeetingSectionDto
+        {
+            Kpi = BuildCell(meet),
+            Organized = meet.Count(i => i.Relation == RelOrganizer),
+            AsDoer = meet.Count(i => i.Relation == RelDoer || loaded.MeetingDoerOf.Contains(i.RecordId)),
+            Attended = myAttendance.Count(IsAttended),
+            AttendanceByStatus = Counts(myAttendance, a => a.AttendanceStatus ?? (a.AttendedAt.HasValue ? "Attended" : "(Not marked)")),
+            ByType = Breakdown(meet, i => i.Category ?? "(No type)"),
+            ActionItems = loaded.Actions.Where(a => meetingIds.Contains(a.MeetingId)).Count(),
+            ActionItemsDelegated = loaded.Actions.Count(a => meetingIds.Contains(a.MeetingId) && loaded.DelegatedActionIds.Contains(a.Id)),
+            TotalRows = meet.Count,
+            Items = Newest(meet).Take(max).Select(i =>
+            {
+                var m = loaded.Meetings[i.RecordId];
+                var att = loaded.MyAttendance.GetValueOrDefault(m.Id);
+                var actions = loaded.Actions.Where(a => a.MeetingId == m.Id).ToList();
+                var row = Fill(new EmMeetingRowDto(), i);
+                row.StartDateTime = m.StartDateTime; row.EndDateTime = m.EndDateTime; row.MeetingMode = m.MeetingMode;
+                row.Location = m.Location; row.OrganizerName = m.OrganizerName; row.AttendanceStatus = att?.AttendanceStatus;
+                row.AttendedAt = att?.AttendedAt; row.ActionItemCount = actions.Count;
+                row.DelegatedActionCount = actions.Count(a => loaded.DelegatedActionIds.Contains(a.Id));
+                row.DelegationDecision = m.DelegationDecision;
+                return row;
+            }).ToList(),
+        };
+
+        // ---- Follow-ups
+        var fol = items.Where(i => i.Module == ModFollowup).ToList();
+        var folIds = fol.Select(i => i.RecordId).ToHashSet();
+        var cycles = loaded.Cycles.Where(c => folIds.Contains(c.FollowupId)).ToList();
+        var reminders = loaded.Reminders.Where(r => folIds.Contains(r.FollowupId)).ToList();
+        var escalations = loaded.Escalations.Where(e => e.FollowupId.HasValue && folIds.Contains(e.FollowupId.Value)).ToList();
+        response.Followups = new EmFollowupSectionDto
+        {
+            Kpi = BuildCell(fol),
+            ByType = Breakdown(fol, i => i.Category ?? "(No type)"),
+            Attempts = cycles.Count,
+            RemindersSent = reminders.Count,
+            RemindersByChannel = Counts(reminders, r => r.Channel),
+            Escalations = escalations.Count,
+            OpenEscalations = escalations.Count(e => e.ResolvedAt is null),
+            ByRecipient = Counts(fol, i => i.Counterparty ?? "(Not set)"),
+            TotalRows = fol.Count,
+            Items = Newest(fol).Take(max).Select(i =>
+            {
+                var f = loaded.Followups[i.RecordId];
+                var row = Fill(new EmFollowupRowDto(), i);
+                row.WaitingOn = f.WaitingOnName ?? f.WaitingOnExternal; row.ReminderRecipientName = f.ReminderRecipientName;
+                row.ReminderRecipientEmail = f.ReminderRecipientEmail; row.ReminderAt = f.ReminderAt; row.LastFollowupAt = f.LastFollowupAt;
+                row.NextFollowupAt = f.NextFollowupAt; row.OutcomeCode = f.OutcomeCode;
+                row.OpenEscalations = escalations.Count(e => e.FollowupId == f.Id && e.ResolvedAt is null);
+                row.AttemptLog = cycles.Where(c => c.FollowupId == f.Id).OrderBy(c => c.FollowedUpAt).ThenBy(c => c.Id).Select(c => new EmFollowupAttemptDto
+                {
+                    SequenceNumber = c.SequenceNumber, FollowedUpAt = c.FollowedUpAt, ById = c.FollowedUpByEmployeeId,
+                    ByName = c.FollowedUpByEmployeeName ?? c.CreatedBy, Note = c.Note, OutcomeCode = c.OutcomeCode, NextFollowupAt = c.NextFollowupAt
+                }).ToList();
+                row.ReminderLog = reminders.Where(r => r.FollowupId == f.Id).OrderBy(r => r.SentAt).Select(r => new EmReminderDto
+                {
+                    Channel = r.Channel, Recipient = r.Recipient, RecipientName = r.RecipientName, SentAt = r.SentAt, SentByName = r.SentByName
+                }).ToList();
+                return row;
+            }).ToList(),
+        };
+
+        // ---- Approvals
+        var appr = items.Where(i => i.Module == ModApproval).ToList();
+        var apprRecords = appr.Select(i => i.RecordId).Distinct().Select(id => loaded.Approvals[id]).ToList();
+        response.Approvals = new EmApprovalSectionDto
+        {
+            Kpi = BuildCell(appr),
+            RequestCount = apprRecords.Count,
+            ByStatus = Counts(apprRecords, a => a.WorkflowStatus ?? "Draft"),
+            ByType = Breakdown(appr, i => i.Category ?? "(No type)"),
+            ByApprover = Counts(apprRecords, a => a.ApproverName ?? a.ApproverId ?? "(Not set)"),
+            ByPhase = Breakdown(appr, i => i.TaskType),
+            ReviewCycles = appr.Where(i => i.TaskType == TypeReview).Select(i => (i.RecordId, i.ReviewCycleNumber)).Distinct().Count(),
+            TotalRows = appr.Count,
+            Items = Newest(appr).Take(max).Select(i => Fill(new EmWorkItemDto(), i)).ToList(),
+        };
+
+        // ---- Travel
+        var trv = items.Where(i => i.Module == ModTravel).ToList();
+        response.Travel = new EmTravelSectionDto
+        {
+            Kpi = BuildCell(trv),
+            ByType = Breakdown(trv, i => i.Category ?? "(No type)"),
+            ByState = Counts(trv, i => loaded.Travel[i.RecordId].BusinessState),
+            TotalRows = trv.Count,
+            Items = Newest(trv).Take(max).Select(i => Fill(new EmWorkItemDto(), i)).ToList(),
+        };
+
+        // ---- Documents (by upload time)
+        var docs = loaded.Documents.Where(d => query.AllWeeks || inPeriod(d.UploadedAt)).OrderByDescending(d => d.UploadedAt).ThenByDescending(d => d.Id).ToList();
+        response.Documents = new EmDocumentSectionDto
+        {
+            Total = docs.Count,
+            ByModule = Counts(docs, d => d.RelatedModule ?? "(Unknown)"),
+            TotalRows = docs.Count,
+            Items = docs.Take(max).Select(d => new EmDocumentRowDto
+            {
+                AttachmentId = d.Id, Module = d.RelatedModule, RelatedEntity = d.RelatedEntity, RelatedEntityId = d.RelatedEntityId,
+                FileName = d.OriginalFileName, Size = d.Size, UploadedBy = d.UploadedBy, UploadedAt = d.UploadedAt
+            }).ToList(),
+        };
+
+        // ---- Pauses (inside the working window of the period's work items)
+        var pauses = items.SelectMany(i => i.PauseList.Select(p => (Item: i, Pause: p))).ToList();
+        int Minutes(WorkPause p) => (int)((p.EndAt ?? now) - p.StartAt).TotalMinutes;
+        response.Pauses = new EmPauseSectionDto
+        {
+            Count = pauses.Count,
+            TotalMinutes = pauses.Sum(x => Minutes(x.Pause)),
+            OpenNow = pauses.Count(x => x.Pause.EndAt is null),
+            ByModule = Counts(pauses, x => x.Item.Module),
+            TopReasons = Counts(pauses, x => string.IsNullOrWhiteSpace(x.Pause.Reason) ? "(No reason)" : x.Pause.Reason!.Trim()).Take(10).ToList(),
+            TotalRows = pauses.Count,
+            Items = pauses.OrderByDescending(x => x.Pause.StartAt).Take(max).Select(x => new EmPauseRowDto
+            {
+                ItemKey = x.Item.ItemKey, Module = x.Item.Module, TaskType = x.Item.TaskType, Title = x.Item.Title,
+                StartAt = x.Pause.StartAt, EndAt = x.Pause.EndAt, Minutes = Minutes(x.Pause), Reason = x.Pause.Reason
+            }).ToList(),
+        };
+
+        // ---- Cumulative summary
+        response.Summary = new EmSummarySectionDto
+        {
+            Kpi = BuildCell(items),
+            ByModule = Modules.Select(m => new EmBreakdownDto { Key = m, Kpi = BuildCell(items.Where(i => i.Module == m)) }).ToList(),
+            ByTaskType = TaskTypes.Select(t => new EmBreakdownDto { Key = t, Kpi = BuildCell(items.Where(i => i.TaskType == t)) }).ToList(),
+            PauseCount = response.Pauses.Count,
+            PausedMinutes = response.Pauses.TotalMinutes,
+            DocumentCount = response.Documents.Total,
+        };
+        return response;
+    }
+
+    // =================================================================================== identity
+
+    /// <summary>The person the report is for. IsTeam = everyone (no matching).</summary>
+    private sealed record Who(string? Id, string? Name, string? DisplayName, bool IsTeam)
+    {
+        /// <summary>True when any stored value (an id or a display name) identifies this person.</summary>
+        public bool Is(params string?[] stored)
+        {
+            if (IsTeam) return true;
+            foreach (var value in stored)
+            {
+                if (string.IsNullOrWhiteSpace(value)) continue;
+                if (Id is not null && string.Equals(value.Trim(), Id, StringComparison.OrdinalIgnoreCase)) return true;
+                if (Name is not null && NormName(value) == Name) return true;
+            }
+            return false;
+        }
+    }
+
+    /// <summary>Team flag → everyone; explicit employee filters → that person; otherwise the logged-in EA; no login → everyone.</summary>
+    private Who Resolve(EmEmployeeReportQueryDto query)
+    {
+        if (query.Team) return new Who(null, null, null, true);
+        var id = Clean(query.EmployeeId);
+        var name = Clean(query.EmployeeName);
+        if (id is null && name is null)
+        {
+            id = currentUser.ActorId();
+            name = currentUser.ActorName();
+        }
+        return id is null && name is null ? new Who(null, null, null, true) : new Who(id, NormName(name), name, false);
     }
 
     // =================================================================================== loading
 
     private sealed class WorkItem
     {
-        public string ItemKey = "", Module = "", TaskType = "", Status = "", Performance = "";
-        public int ReviewCycleNumber;
+        public string ItemKey = "", Module = "", TaskType = "", Status = "", Performance = "", Relation = "";
+        public int ReviewCycleNumber, PauseCount, PausedMinutes;
         public long RecordId;
         public long? EaTaskId;
-        public string? ReferenceNo, Title, OwnerId, OwnerName;
+        public string? ReferenceNo, Title, OwnerId, OwnerName, Category, Counterparty;
         public DateTime? PlannedDate, PlannedIndiaDate, DueDate, StartedAt, CompletedAt;
         public int? Year, Week, AllottedTatMinutes, TatUsedMinutes;
         public bool IsPaused;
+        public List<WorkPause> PauseList = [];
     }
 
-    /// <summary>Loads and normalises every module's work for the employee (all weeks).</summary>
-    private async Task<List<WorkItem>> LoadAsync(string? employeeId, string? employeeName, CancellationToken ct)
+    private sealed class Loaded
     {
-        var id = Clean(employeeId);
-        var name = NormName(employeeName);
+        public List<WorkItem> Items = [];
+        public Dictionary<long, Entities.EaFms.Delegation> Delegations = [];
+        public Dictionary<long, ApprovalRequest> Approvals = [];
+        public Dictionary<long, Meeting> Meetings = [];
+        public Dictionary<long, Followup> Followups = [];
+        public Dictionary<long, TravelRequest> Travel = [];
+        public Dictionary<long, MeetingAttendee> MyAttendance = [];
+        public HashSet<long> MeetingDoerOf = [];
+        public List<MeetingAction> Actions = [];
+        public HashSet<long> DelegatedActionIds = [];
+        public List<FollowupCycle> Cycles = [];
+        public List<FollowupReminderLog> Reminders = [];
+        public List<Escalation> Escalations = [];
+        public List<Attachment> Documents = [];
+    }
+
+    /// <summary>Loads and normalises every module's work for the person (all weeks).</summary>
+    private async Task<Loaded> LoadAsync(Who who, CancellationToken ct)
+    {
         var now = Clock.UtcNowTz;
         var today = IndiaBusinessCalendar.ToIndiaDate(now);
+        var loaded = new Loaded();
 
-        // ---- source rows (small, per-employee sets; matching is done in memory so id and name rules stay identical)
+        // ---- source rows; matching is in memory so id and name rules are identical everywhere
         var delegations = (await db.Delegations.AsNoTracking().Where(d => !d.IsDeleted).ToListAsync(ct))
-            .Where(d => MatchesById(id, name, d.DoerId, d.DoerNameSnapshot)).ToList();
+            .Where(d => who.Is(d.AssignedById, d.AssignedByNameSnapshot) || who.Is(d.DoerId, d.DoerNameSnapshot)).ToList();
         var approvals = (await db.ApprovalRequests.AsNoTracking().Where(a => !a.IsDeleted).ToListAsync(ct))
-            .Where(a => MatchesByName(id, name, a.RequestedBy ?? a.CreatedBy)).ToList();
-        var meetings = await db.Meetings.AsNoTracking().Where(m => !m.IsDeleted).ToListAsync(ct);
-        var followups = (await db.Followups.AsNoTracking().Where(f => !f.IsDeleted && f.EaTaskId != null).ToListAsync(ct))
-            .Where(f => MatchesById(id, name, f.DoerId, f.DoerName)).ToList();
+            .Where(a => who.Is(a.RequestedBy, a.CreatedBy) || who.Is(a.ApproverId, a.ApproverName)).ToList();
+        var attendees = await db.MeetingAttendees.AsNoTracking().Where(a => !a.IsDeleted).ToListAsync(ct);
+        var myAttendance = who.IsTeam ? new Dictionary<long, MeetingAttendee>()
+            : attendees.Where(a => who.Is(a.ParticipantId, a.ParticipantName)).GroupBy(a => a.MeetingId).ToDictionary(g => g.Key, g => g.First());
+        var meetings = (await db.Meetings.AsNoTracking().Where(m => !m.IsDeleted).ToListAsync(ct))
+            .Where(m => who.Is(m.CreatedBy, m.OrganizerId, m.OrganizerName) || IsMeetingDoer(who, m) || myAttendance.ContainsKey(m.Id)).ToList();
+        var allFollowups = await db.Followups.AsNoTracking().Where(f => !f.IsDeleted && f.EaTaskId != null).ToListAsync(ct);
+        var allCycles = await db.FollowupCycles.AsNoTracking().ToListAsync(ct);
+        var followedUpByMe = allCycles.Where(c => who.Is(c.FollowedUpByEmployeeId, c.FollowedUpByEmployeeName)).Select(c => c.FollowupId).ToHashSet();
+        var followups = allFollowups.Where(f => who.Is(f.CreatedByEmployeeId, f.CreatedByEmployeeName, f.CreatedBy)
+            || who.Is(f.DoerId, f.DoerName) || followedUpByMe.Contains(f.Id)).ToList();
         var travel = (await db.TravelRequests.AsNoTracking().Where(t => !t.IsDeleted).ToListAsync(ct))
-            .Where(t => MatchesByName(id, name, t.CreatedBy)).ToList();
+            .Where(t => who.Is(t.CreatedBy) || who.Is(t.ApproverId, t.ApproverNameSnapshot)).ToList();
+
+        loaded.Delegations = delegations.ToDictionary(d => d.Id);
+        loaded.Approvals = approvals.ToDictionary(a => a.Id);
+        loaded.Meetings = meetings.ToDictionary(m => m.Id);
+        loaded.Followups = followups.ToDictionary(f => f.Id);
+        loaded.Travel = travel.ToDictionary(t => t.Id);
+        loaded.MyAttendance = myAttendance;
+        loaded.MeetingDoerOf = who.IsTeam ? [] : meetings.Where(m => IsMeetingDoer(who, m)).Select(m => m.Id).ToHashSet();
+
+        var followupIds = followups.Select(f => f.Id).ToHashSet();
+        loaded.Cycles = allCycles.Where(c => followupIds.Contains(c.FollowupId)).ToList();
+        loaded.Reminders = followupIds.Count == 0 ? [] : await db.FollowupReminderLogs.AsNoTracking().Where(r => followupIds.Contains(r.FollowupId)).ToListAsync(ct);
+        loaded.Escalations = followupIds.Count == 0 ? [] : await db.Escalations.AsNoTracking()
+            .Where(e => !e.IsDeleted && e.FollowupId.HasValue && followupIds.Contains(e.FollowupId.Value)).ToListAsync(ct);
+        var meetingIds = meetings.Select(m => m.Id).ToList();
+        loaded.Actions = meetingIds.Count == 0 ? [] : await db.MeetingActions.AsNoTracking().Where(a => !a.IsDeleted && meetingIds.Contains(a.MeetingId)).ToListAsync(ct);
+        loaded.DelegatedActionIds = loaded.Actions.Count == 0 ? []
+            : (await MeetingDelegationService.LoadDelegationIdsAsync(db, loaded.Actions.Select(a => a.Id), ct)).Keys.ToHashSet();
+        loaded.Documents = (await db.Attachments.AsNoTracking().Where(a => a.IsActive && !a.IsDeleted).ToListAsync(ct))
+            .Where(a => !who.IsTeam ? who.Is(a.UploadedBy, a.CreatedBy) : true).ToList();
 
         var delegationIds = delegations.Select(d => d.Id).ToList();
         var approvalIds = approvals.Select(a => a.Id).ToList();
@@ -196,12 +462,17 @@ public sealed class EmEmployeeReportService(EaFmsDbContext db) : IEmEmployeeRepo
         IReadOnlyCollection<WorkPause> Pauses(long? workflowId) =>
             workflowId.HasValue && pausesByWorkflow.TryGetValue(workflowId.Value, out var list) ? list : [];
 
-        var items = new List<WorkItem>();
+        var items = loaded.Items;
 
-        // ---- Delegation: one item per phase (Actual / Review n / Rework n); all counted for the doer
+        // ---- Delegation: one item per phase; relation = assigned by me / to me / self
         var phasesByDelegation = delegationPhases.GroupBy(p => p.DelegationId).ToDictionary(g => g.Key, g => g.ToList());
         foreach (var d in delegations)
         {
+            var byMe = !who.IsTeam && who.Is(d.AssignedById, d.AssignedByNameSnapshot);
+            var toMe = !who.IsTeam && who.Is(d.DoerId, d.DoerNameSnapshot);
+            var relation = who.IsTeam ? "" : byMe && toMe ? RelSelf : byMe ? RelDelegatedByMe : RelDelegatedToMe;
+            var counterparty = relation == RelDelegatedByMe ? d.DoerNameSnapshot ?? d.DoerId
+                : relation == RelDelegatedToMe ? d.AssignedByNameSnapshot ?? d.AssignedById : null;
             taskById.TryGetValue(d.EaTaskId, out var task);
             var pauses = Pauses(task?.WorkflowInstanceId);
             var phases = phasesByDelegation.GetValueOrDefault(d.Id) ?? [];
@@ -211,8 +482,9 @@ public sealed class EmEmployeeReportService(EaFmsDbContext db) : IEmEmployeeRepo
                 var completed = d.Status == DelegationStatus.Completed;
                 items.Add(NewItem(ModDelegation, TypeActual, 0, d.Id, d.EaTaskId, d.ReferenceNo, d.Title, d.DoerId, d.DoerNameSnapshot,
                     planned: d.DueDate ?? d.CreatedDate, due: d.DueDate, started: d.StartedAt, completedAt: completed ? d.CompletedAt : null,
-                    status: completed ? StCompleted : StNotStarted, isPaused: false,
-                    allotted: task?.AllottedTatMinutes, used: completed ? task?.TatUsedMinutes : null, now, today));
+                    status: completed ? StCompleted : StNotStarted, isPaused: false, allotted: task?.AllottedTatMinutes,
+                    used: completed ? task?.TatUsedMinutes ?? Elapsed(d.StartedAt, d.CompletedAt, pauses) : null,
+                    relation, d.DelegationType, counterparty, pauses, now, today));
                 continue;
             }
             foreach (var p in phases.OrderBy(p => p.ReviewCycleNumber).ThenBy(p => p.Id))
@@ -222,14 +494,16 @@ public sealed class EmEmployeeReportService(EaFmsDbContext db) : IEmEmployeeRepo
                 items.Add(NewItem(ModDelegation, p.TaskType, p.ReviewCycleNumber, d.Id, d.EaTaskId, d.ReferenceNo, d.Title, d.DoerId, d.DoerNameSnapshot,
                     planned: isActual ? d.DueDate ?? p.StartedAt ?? p.CreatedDate : p.StartedAt ?? p.CreatedDate,
                     due: isActual ? d.DueDate : null, started: p.StartedAt, completedAt: p.EndedAt,
-                    status, paused, p.AllottedTatMinutes, used, now, today));
+                    status, paused, p.AllottedTatMinutes, used, relation, d.DelegationType, counterparty, pauses, now, today));
             }
         }
 
-        // ---- Approval: one item per phase; owner is the EA who raised it (matched by name)
+        // ---- Approval: one item per phase; relation = raised by me / I approve
         var phasesByApproval = approvalPhases.GroupBy(p => p.ApprovalRequestId).ToDictionary(g => g.Key, g => g.ToList());
         foreach (var a in approvals)
         {
+            var relation = who.IsTeam ? "" : who.Is(a.RequestedBy, a.CreatedBy) ? RelRaised : RelApprover;
+            var counterparty = relation == RelApprover ? a.RequestedBy ?? a.CreatedBy : a.ApproverName ?? a.ApproverId;
             taskById.TryGetValue(a.EaTaskId, out var task);
             var pauses = Pauses(task?.WorkflowInstanceId);
             var ownerName = a.RequestedBy ?? a.CreatedBy;
@@ -241,7 +515,8 @@ public sealed class EmEmployeeReportService(EaFmsDbContext db) : IEmEmployeeRepo
                 items.Add(NewItem(ModApproval, TypeActual, 0, a.Id, a.EaTaskId, a.ReferenceNo, a.RequestTitle, null, ownerName,
                     planned: a.RequiredApprovalDate ?? a.CreatedAt, due: a.RequiredApprovalDate, started: a.SubmittedAt,
                     completedAt: approved ? a.ApprovedAt : null, status: approved ? StCompleted : rejected ? StCancelled : StNotStarted,
-                    isPaused: false, allotted: task?.AllottedTatMinutes, used: approved ? task?.TatUsedMinutes : null, now, today));
+                    isPaused: false, allotted: task?.AllottedTatMinutes, used: approved ? task?.TatUsedMinutes ?? Elapsed(a.SubmittedAt, a.ApprovedAt, pauses) : null,
+                    relation, a.RequestType, counterparty, pauses, now, today));
                 continue;
             }
             foreach (var p in phases.OrderBy(p => p.ReviewCycleNumber).ThenBy(p => p.Id))
@@ -252,77 +527,108 @@ public sealed class EmEmployeeReportService(EaFmsDbContext db) : IEmEmployeeRepo
                 items.Add(NewItem(ModApproval, p.TaskType, p.ReviewCycleNumber, a.Id, a.EaTaskId, a.ReferenceNo, a.RequestTitle, null, ownerName,
                     planned: isActual ? a.RequiredApprovalDate ?? p.StartedAt ?? p.CreatedDate : p.StartedAt ?? p.CreatedDate,
                     due: isActual ? a.RequiredApprovalDate : null, started: p.StartedAt, completedAt: p.EndedAt,
-                    status, paused, p.AllottedTatMinutes, used, now, today));
+                    status, paused, p.AllottedTatMinutes, used, relation, a.RequestType, counterparty, pauses, now, today));
             }
         }
 
-        // ---- Meeting: one item per matching doer (whole-team view: one item per meeting)
+        // ---- Meeting: one item per meeting; relation = organizer / doer / attendee
         foreach (var m in meetings)
         {
-            var owners = MeetingOwners(m, id, name);
-            if (owners.Count == 0) continue;
+            var relation = who.IsTeam ? "" : who.Is(m.CreatedBy, m.OrganizerId, m.OrganizerName) ? RelOrganizer
+                : IsMeetingDoer(who, m) ? RelDoer : RelAttendee;
             meetingTaskByRecord.TryGetValue(m.Id.ToString(CultureInfo.InvariantCulture), out var task);
-            var (status, paused, used) = TaskState(task, Pauses(task?.WorkflowInstanceId ?? m.WorkflowInstanceId), now, fallbackCompletedAt: m.CompletedAt);
+            var pauses = Pauses(task?.WorkflowInstanceId ?? m.WorkflowInstanceId);
+            var (status, paused, used) = TaskState(task, pauses, now, fallbackCompletedAt: m.CompletedAt);
             var meetingDate = m.StartDateTime ?? m.MeetingDate;
-            foreach (var (ownerId, ownerName) in owners)
-                items.Add(NewItem(ModMeeting, TypeMeeting, 0, m.Id, task?.Id, m.MeetingNumber, m.Title, ownerId, ownerName,
-                    planned: meetingDate ?? m.CreatedDate, due: meetingDate, started: task?.StartedAt, completedAt: task?.CompletedAt ?? m.CompletedAt,
-                    status, paused, task?.AllottedTatMinutes, used, now, today, keySuffix: ownerId));
+            var doers = m.DoerNames.Length == 0 ? null : string.Join(", ", m.DoerNames);
+            items.Add(NewItem(ModMeeting, TypeMeeting, 0, m.Id, task?.Id, m.MeetingNumber, m.Title, m.OrganizerId, m.OrganizerName ?? m.CreatedBy,
+                planned: meetingDate ?? m.CreatedDate, due: meetingDate, started: task?.StartedAt, completedAt: task?.CompletedAt ?? m.CompletedAt,
+                status, paused, task?.AllottedTatMinutes, used, relation, m.MeetingType, doers, pauses, now, today));
         }
 
-        // ---- Follow-up: its own Actual execution task
+        // ---- Follow-up: its own Actual execution task; relation = owner / doer / followed up
         foreach (var f in followups)
         {
+            var relation = who.IsTeam ? "" : who.Is(f.CreatedByEmployeeId, f.CreatedByEmployeeName, f.CreatedBy) ? RelOwner
+                : who.Is(f.DoerId, f.DoerName) ? RelDoer : RelFollowedUp;
             taskById.TryGetValue(f.EaTaskId!.Value, out var task);
-            var (status, paused, used) = TaskState(task, Pauses(task?.WorkflowInstanceId), now, fallbackCompletedAt: f.CompletedAt);
+            var pauses = Pauses(task?.WorkflowInstanceId);
+            var (status, paused, used) = TaskState(task, pauses, now, fallbackCompletedAt: f.CompletedAt);
             items.Add(NewItem(ModFollowup, TypeActual, 0, f.Id, f.EaTaskId, null, f.Subject, f.DoerId, f.DoerName,
                 planned: f.DueAt, due: f.DueAt, started: task?.StartedAt, completedAt: task?.CompletedAt ?? f.CompletedAt,
-                status, paused, task?.AllottedTatMinutes, used, now, today));
+                status, paused, task?.AllottedTatMinutes, used, relation, f.Type,
+                f.WaitingOnName ?? f.WaitingOnExternal ?? f.ReminderRecipientName, pauses, now, today));
         }
 
-        // ---- Travel: one item per request (owner matched by name)
+        // ---- Travel: one item per request; relation = raised by me / I approve
         foreach (var t in travel)
         {
+            var relation = who.IsTeam ? "" : who.Is(t.CreatedBy) ? RelRaised : RelApprover;
             taskById.TryGetValue(t.EaTaskId, out var task);
-            var (status, paused, used) = TaskState(task, Pauses(task?.WorkflowInstanceId), now, fallbackCompletedAt: t.CompletedAt);
+            var pauses = Pauses(task?.WorkflowInstanceId);
+            var (status, paused, used) = TaskState(task, pauses, now, fallbackCompletedAt: t.CompletedAt);
             items.Add(NewItem(ModTravel, TypeActual, 0, t.Id, t.EaTaskId, t.ReferenceNo, t.Purpose ?? $"Travel {t.ReferenceNo}", null, t.CreatedBy,
                 planned: t.RequiredDate ?? t.CreatedDate, due: t.RequiredDate, started: task?.StartedAt ?? t.StartedAt,
-                completedAt: task?.CompletedAt ?? t.CompletedAt, status, paused, task?.AllottedTatMinutes, used, now, today));
+                completedAt: task?.CompletedAt ?? t.CompletedAt, status, paused, task?.AllottedTatMinutes, used,
+                relation, t.TravelType, relation == RelApprover ? t.CreatedBy : t.ApproverNameSnapshot ?? t.ApproverId, pauses, now, today));
         }
 
-        return items;
+        return loaded;
     }
+
+    private static bool IsMeetingDoer(Who who, Meeting m)
+    {
+        if (who.IsTeam) return false;
+        for (var i = 0; i < m.DoerIds.Length; i++)
+            if (who.Is(m.DoerIds[i], i < m.DoerNames.Length ? m.DoerNames[i] : null)) return true;
+        return m.DoerNames.Any(n => who.Is(n));
+    }
+
+    private static bool IsAttended(MeetingAttendee a) =>
+        a.AttendedAt.HasValue || (a.AttendanceStatus?.Trim().ToLowerInvariant() is "attended" or "present");
 
     private static WorkItem NewItem(string module, string taskType, int cycle, long recordId, long? eaTaskId, string? reference, string? title,
         string? ownerId, string? ownerName, DateTime? planned, DateTime? due, DateTime? started, DateTime? completedAt,
-        string status, bool isPaused, int? allotted, int? used, DateTime now, DateTime today, string? keySuffix = null)
+        string status, bool isPaused, int? allotted, int? used, string relation, string? category, string? counterparty,
+        IReadOnlyCollection<WorkPause> workflowPauses, DateTime now, DateTime today)
     {
         var plannedIndia = planned.HasValue ? IndiaBusinessCalendar.ToIndiaDate(planned.Value) : (DateTime?)null;
         var (year, week) = plannedIndia.HasValue ? WeekOf(plannedIndia.Value) : (null, null);
         var item = new WorkItem
         {
-            ItemKey = $"{module}:{recordId}:{taskType}:{cycle}" + (keySuffix is null ? "" : $":{keySuffix}"),
+            ItemKey = $"{module}:{recordId}:{taskType}:{cycle}",
             Module = module, TaskType = taskType, ReviewCycleNumber = cycle, RecordId = recordId, EaTaskId = eaTaskId,
             ReferenceNo = reference, Title = title, OwnerId = ownerId, OwnerName = ownerName,
+            Relation = relation, Category = string.IsNullOrWhiteSpace(category) ? null : category.Trim(), Counterparty = counterparty,
             PlannedDate = planned, PlannedIndiaDate = plannedIndia, Year = year, Week = week,
             DueDate = due, StartedAt = started, CompletedAt = status == StCompleted ? completedAt : null,
             Status = status, IsPaused = isPaused, AllottedTatMinutes = allotted, TatUsedMinutes = used,
         };
+        // Pauses inside this item's own working window (a phase only owns the pauses during that phase).
+        if (started.HasValue)
+        {
+            var windowEnd = item.CompletedAt ?? now;
+            item.PauseList = workflowPauses.Where(p => WorkPauseClassifier.IsSimplePause(p) && p.StartAt >= started.Value && p.StartAt < windowEnd).ToList();
+            item.PauseCount = item.PauseList.Count;
+            item.PausedMinutes = (int)WorkPauseClassifier.GetPausedDuration(started.Value, windowEnd, item.PauseList).TotalMinutes;
+        }
         item.Performance = Classify(item, today);
         return item;
     }
 
-    /// <summary>Phase row state: frozen values once ended, live TAT (pauses excluded) while open.</summary>
+    /// <summary>Phase row state: frozen TAT used once ended (or elapsed minus pauses when nothing was frozen), live while open.</summary>
     private static (string Status, bool Paused, int? Used) PhaseState(DateTime? startedAt, DateTime? endedAt, int? allotted, int? frozenUsed,
         IReadOnlyCollection<WorkPause> pauses, DateTime now)
     {
-        if (endedAt.HasValue) return (StCompleted, false, frozenUsed);
+        if (endedAt.HasValue) return (StCompleted, false, frozenUsed ?? Elapsed(startedAt, endedAt, pauses));
         if (!startedAt.HasValue) return (StNotStarted, false, null);
-        var relevant = pauses.Where(p => WorkPauseClassifier.IsSimplePause(p) && p.StartAt < now && (p.EndAt ?? DateTime.MaxValue) > startedAt.Value).ToList();
-        var paused = relevant.Any(p => p.EndAt is null);
-        int? used = allotted.HasValue ? (int)TatSummaryCalculator.Calculate(allotted.Value, startedAt, null, relevant, now).Tat!.Value.TotalMinutes : null;
-        return (paused ? StPaused : StInProgress, paused, used);
+        var paused = pauses.Any(p => p.EndAt is null && WorkPauseClassifier.IsSimplePause(p) && p.StartAt >= startedAt.Value);
+        return (paused ? StPaused : StInProgress, paused, Elapsed(startedAt, now, pauses));
     }
+
+    /// <summary>TAT used = elapsed minus simple pauses (the shared canonical calculation); null when not started.</summary>
+    private static int? Elapsed(DateTime? start, DateTime? end, IReadOnlyCollection<WorkPause> pauses) =>
+        start.HasValue && end.HasValue && end.Value >= start.Value ? EaTaskService.CalculateActiveTatMinutes(start.Value, end.Value, pauses) : null;
 
     /// <summary>EaTask-based state (Meeting, Follow-up, Travel) using the shared TAT calculation.</summary>
     private static (string Status, bool Paused, int? Used) TaskState(EaTask? task, IReadOnlyCollection<WorkPause> pauses, DateTime now, DateTime? fallbackCompletedAt)
@@ -336,26 +642,23 @@ public sealed class EmEmployeeReportService(EaFmsDbContext db) : IEmEmployeeRepo
             EaTaskExecutionStatus.InProgress => paused ? StPaused : StInProgress,
             _ => StNotStarted
         };
-        var used = status == StCancelled ? null : EaTaskService.CalculateCurrentTatUsedMinutes(task, pauses, now);
+        int? used = status switch
+        {
+            StCancelled or StNotStarted => null,
+            StCompleted => task.TatUsedMinutes ?? Elapsed(task.StartedAt, task.CompletedAt, pauses),
+            _ => Elapsed(task.StartedAt, now, pauses),
+        };
         return (status, paused, used);
     }
 
-    /// <summary>TAT wins when present; otherwise the business due date; otherwise not measured.</summary>
+    /// <summary>TAT-only judgement: allotted vs used. Due dates are informational only.</summary>
     private static string Classify(WorkItem i, DateTime today)
     {
-        if (i.Status == StCancelled) return PerfNotMeasured;
-        var hasTat = i.AllottedTatMinutes.HasValue && i.TatUsedMinutes.HasValue;
-        var dueDay = i.DueDate.HasValue ? IndiaBusinessCalendar.ToIndiaDate(i.DueDate.Value) : (DateTime?)null;
-        if (i.Status == StCompleted)
-        {
-            if (hasTat) return i.TatUsedMinutes <= i.AllottedTatMinutes ? PerfOnTime : PerfDelayed;
-            if (dueDay.HasValue && i.CompletedAt.HasValue)
-                return IndiaBusinessCalendar.ToIndiaDate(i.CompletedAt.Value) <= dueDay.Value ? PerfOnTime : PerfDelayed;
-            return PerfNotMeasured;
-        }
-        if (hasTat && i.TatUsedMinutes > i.AllottedTatMinutes) return PerfOverdue;
-        if (dueDay.HasValue && today > dueDay.Value) return PerfOverdue;
-        return PerfPending;
+        if (i.Status == StCancelled) return PerfCancelled;
+        if (i.Status == StNotStarted) return PerfPending;
+        if (!i.AllottedTatMinutes.HasValue || !i.TatUsedMinutes.HasValue) return PerfNoTat;
+        var over = i.TatUsedMinutes.Value > i.AllottedTatMinutes.Value;
+        return i.Status == StCompleted ? (over ? PerfDelayed : PerfOnTime) : (over ? PerfOverdue : PerfInProgress);
     }
 
     // =================================================================================== KPI math
@@ -363,21 +666,32 @@ public sealed class EmEmployeeReportService(EaFmsDbContext db) : IEmEmployeeRepo
     private static EmKpiCellDto BuildCell(IEnumerable<WorkItem> source)
     {
         var items = source.ToList();
+        var tat = BuildTat(items);
         var cell = new EmKpiCellDto
         {
             Planned = items.Count,
             Completed = items.Count(i => i.Status == StCompleted),
             OnTime = items.Count(i => i.Performance == PerfOnTime),
             Delayed = items.Count(i => i.Performance == PerfDelayed),
-            NotMeasured = items.Count(i => i.Status == StCompleted && i.Performance == PerfNotMeasured),
+            InProgress = items.Count(i => i.Performance == PerfInProgress),
             Overdue = items.Count(i => i.Performance == PerfOverdue),
             Pending = items.Count(i => i.Performance == PerfPending),
+            NoTat = items.Count(i => i.Performance == PerfNoTat),
+            AllottedMinutes = tat.AllottedMinutes, UsedMinutes = tat.UsedMinutes, DifferenceMinutes = tat.DifferenceMinutes,
         };
         cell.NotCompleted = cell.Planned - cell.Completed;
         cell.NotCompletedPct = Pct(cell.NotCompleted, cell.Planned);
         cell.DelayedPct = Pct(cell.Delayed, cell.Completed);
         return cell;
     }
+
+    private static List<EmBreakdownDto> Breakdown(IEnumerable<WorkItem> items, Func<WorkItem, string> key) =>
+        items.GroupBy(key).Select(g => new EmBreakdownDto { Key = g.Key, Kpi = BuildCell(g) })
+            .OrderByDescending(b => b.Kpi.Planned).ThenBy(b => b.Key, StringComparer.OrdinalIgnoreCase).ToList();
+
+    private static List<EmCountDto> Counts<T>(IEnumerable<T> items, Func<T, string> key) =>
+        items.GroupBy(key).Select(g => new EmCountDto { Key = g.Key, Count = g.Count() })
+            .OrderByDescending(c => c.Count).ThenBy(c => c.Key, StringComparer.OrdinalIgnoreCase).ToList();
 
     private static EmTrendPointDto Point(IEnumerable<WorkItem> source)
     {
@@ -386,6 +700,7 @@ public sealed class EmEmployeeReportService(EaFmsDbContext db) : IEmEmployeeRepo
         {
             Planned = items.Count, Completed = items.Count(i => i.Status == StCompleted),
             OnTime = items.Count(i => i.Performance == PerfOnTime), Delayed = items.Count(i => i.Performance == PerfDelayed),
+            Overdue = items.Count(i => i.Performance == PerfOverdue),
         };
     }
 
@@ -398,12 +713,14 @@ public sealed class EmEmployeeReportService(EaFmsDbContext db) : IEmEmployeeRepo
             Rework = items.Count(i => i.TaskType == TypeRework),
             OnTime = nonRework.Count(i => i.Performance == PerfOnTime),
             Delayed = nonRework.Count(i => i.Performance == PerfDelayed),
+            InProgress = nonRework.Count(i => i.Performance == PerfInProgress),
             Overdue = nonRework.Count(i => i.Performance == PerfOverdue),
             Pending = nonRework.Count(i => i.Performance == PerfPending),
-            NotMeasured = nonRework.Count(i => i.Performance == PerfNotMeasured),
+            NoTat = nonRework.Count(i => i.Performance == PerfNoTat),
         };
     }
 
+    /// <summary>TAT totals over the started/completed work that has an allotted TAT.</summary>
     private static EmTatDto BuildTat(IReadOnlyCollection<WorkItem> items)
     {
         var measured = items.Where(i => i.AllottedTatMinutes.HasValue && i.TatUsedMinutes.HasValue).ToList();
@@ -420,12 +737,16 @@ public sealed class EmEmployeeReportService(EaFmsDbContext db) : IEmEmployeeRepo
         if (s.Planned == 0) return focus;
         var completionPct = 100m - s.NotCompletedPct;
         if (completionPct >= 90) focus.Strengths.Add("High completion rate");
-        if (s.Completed > 0 && s.DelayedPct <= 20) focus.Strengths.Add("Mostly completed on time");
+        // TAT-based strengths only count when most completed work was actually judged on TAT.
+        var judged = s.OnTime + s.Delayed;
+        var mostlyJudged = judged > 0 && judged * 2 >= s.Completed;
+        if (mostlyJudged && s.Delayed * 100m / judged <= 20) focus.Strengths.Add("Mostly completed on time");
         if (r.Matrix.Rework.Planned == 0 && s.Completed > 0) focus.Strengths.Add("No rework this week");
-        if (r.Tat.MeasuredItems > 0 && !r.Tat.IsOver) focus.Strengths.Add("Within the allotted TAT");
+        if (mostlyJudged && r.Tat.MeasuredItems > 0 && !r.Tat.IsOver) focus.Strengths.Add("Within the allotted TAT");
         if (s.Delayed > 0) focus.Improve.Add($"Reduce delays ({s.Delayed} delayed)");
-        if (s.Overdue > 0) focus.Improve.Add($"Clear overdue work ({s.Overdue} overdue)");
-        if (s.Pending > 0) focus.Improve.Add($"Complete the remaining planned work ({s.Pending} still open)");
+        if (s.Overdue > 0) focus.Improve.Add($"Finish work already over TAT ({s.Overdue} overdue)");
+        if (s.Pending > 0) focus.Improve.Add($"Start pending work ({s.Pending} not started)");
+        if (s.NoTat > 0) focus.Improve.Add($"Configure TAT for {s.NoTat} task(s) with no TAT");
         if (r.Matrix.Rework.Planned > 0) focus.Improve.Add($"Reduce rework ({r.Matrix.Rework.Planned} rework tasks)");
         if (r.Tat.IsOver) focus.Improve.Add("TAT used is over the allotted limit");
         if (r.CarryForwardOverdue > 0) focus.Improve.Add($"Close {r.CarryForwardOverdue} overdue task(s) from earlier weeks");
@@ -464,49 +785,23 @@ public sealed class EmEmployeeReportService(EaFmsDbContext db) : IEmEmployeeRepo
         return (year.Value, week.Value);
     }
 
-    // =================================================================================== matching / helpers
+    // =================================================================================== helpers
 
-    /// <summary>Id-based modules: the employee id wins; with no id, match by name; with neither, include everything.</summary>
-    private static bool MatchesById(string? id, string? name, string? candidateId, string? candidateName)
+    private static IEnumerable<WorkItem> Newest(IEnumerable<WorkItem> items) =>
+        items.OrderByDescending(i => i.PlannedDate ?? DateTime.MinValue).ThenBy(i => i.ItemKey, StringComparer.Ordinal);
+
+    private static T Fill<T>(T dto, WorkItem i) where T : EmWorkItemDto
     {
-        if (id is not null) return string.Equals(candidateId?.Trim(), id, StringComparison.OrdinalIgnoreCase);
-        if (name is not null) return NormName(candidateName) == name;
-        return true;
+        dto.ItemKey = i.ItemKey; dto.Relation = i.Relation; dto.Category = i.Category; dto.Counterparty = i.Counterparty;
+        dto.Module = i.Module; dto.TaskType = i.TaskType; dto.ReviewCycleNumber = i.ReviewCycleNumber;
+        dto.RecordId = i.RecordId; dto.EaTaskId = i.EaTaskId; dto.ReferenceNo = i.ReferenceNo; dto.Title = i.Title;
+        dto.OwnerId = i.OwnerId; dto.OwnerName = i.OwnerName; dto.PlannedDate = i.PlannedDate; dto.Year = i.Year; dto.Week = i.Week;
+        dto.DueDate = i.DueDate; dto.StartedAt = i.StartedAt; dto.CompletedAt = i.CompletedAt; dto.Status = i.Status; dto.IsPaused = i.IsPaused;
+        dto.Performance = i.Performance; dto.AllottedTatMinutes = i.AllottedTatMinutes; dto.TatUsedMinutes = i.TatUsedMinutes;
+        dto.TatDifferenceMinutes = i.AllottedTatMinutes.HasValue && i.TatUsedMinutes.HasValue ? i.AllottedTatMinutes - i.TatUsedMinutes : null;
+        dto.PauseCount = i.PauseCount; dto.PausedMinutes = i.PausedMinutes;
+        return dto;
     }
-
-    /// <summary>Name-only modules (Approval, Travel): the stored display name is compared with the name (or, with only an id, with the id).</summary>
-    private static bool MatchesByName(string? id, string? name, string? candidateName)
-    {
-        if (name is not null) return NormName(candidateName) == name;
-        if (id is not null) return string.Equals(candidateName?.Trim(), id, StringComparison.OrdinalIgnoreCase);
-        return true;
-    }
-
-    private static List<(string? Id, string? Name)> MeetingOwners(Meeting m, string? id, string? name)
-    {
-        var owners = new List<(string? Id, string? Name)>();
-        if (id is null && name is null)
-        {
-            owners.Add((null, m.DoerNames.Length == 0 ? null : string.Join(", ", m.DoerNames)));
-            return owners;
-        }
-        for (var i = 0; i < m.DoerIds.Length; i++)
-        {
-            var doerName = i < m.DoerNames.Length ? m.DoerNames[i] : null;
-            if (MatchesById(id, name, m.DoerIds[i], doerName)) owners.Add((m.DoerIds[i], doerName));
-        }
-        return owners;
-    }
-
-    private static EmWorkItemDto ToDto(WorkItem i) => new()
-    {
-        ItemKey = i.ItemKey, Module = i.Module, TaskType = i.TaskType, ReviewCycleNumber = i.ReviewCycleNumber,
-        RecordId = i.RecordId, EaTaskId = i.EaTaskId, ReferenceNo = i.ReferenceNo, Title = i.Title,
-        OwnerId = i.OwnerId, OwnerName = i.OwnerName, PlannedDate = i.PlannedDate, Year = i.Year, Week = i.Week,
-        DueDate = i.DueDate, StartedAt = i.StartedAt, CompletedAt = i.CompletedAt, Status = i.Status, IsPaused = i.IsPaused,
-        Performance = i.Performance, AllottedTatMinutes = i.AllottedTatMinutes, TatUsedMinutes = i.TatUsedMinutes,
-        TatDifferenceMinutes = i.AllottedTatMinutes.HasValue && i.TatUsedMinutes.HasValue ? i.AllottedTatMinutes - i.TatUsedMinutes : null,
-    };
 
     private static string? Allowed(string? value, string[] allowed, string field)
     {
