@@ -17,6 +17,9 @@ public sealed class DelegationCreateCommand
     public string? DoerId { get; init; }
     public string? DoerNameSnapshot { get; init; }
 
+    public string? AssigneeId { get; init; }
+    public string? AssigneeNameSnapshot { get; init; }
+
     public string? Priority { get; init; }
     public DateTime? DueDate { get; init; }
 

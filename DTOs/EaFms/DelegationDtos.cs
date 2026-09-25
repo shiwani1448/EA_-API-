@@ -28,6 +28,13 @@ public class DelegationCreateRequestDto
     /// <summary>Display-only doer name snapshot.</summary>
     public string? DoerNameSnapshot { get; set; }
 
+    /// <summary>Optional. Stable/opaque identifier of the Assignee — a separate person from the Doer. Max 100.</summary>
+    [System.ComponentModel.DataAnnotations.MaxLength(100)]
+    public string? AssigneeId { get; set; }
+    /// <summary>Optional. Display-only assignee name (stored as Delegation.AssigneeNameSnapshot). Max 200.</summary>
+    [System.ComponentModel.DataAnnotations.MaxLength(200)]
+    public string? AssigneeName { get; set; }
+
     /// <summary>PLANNED/business start date. Not the actual execution timestamp (startedAt) and does not gate /start.</summary>
     public DateTime? StartDate { get; set; }
     /// <summary>PLANNED/business end date (persisted in the DueDate column).</summary>
@@ -63,6 +70,13 @@ public class DelegationUpdateRequestDto
     /// <summary>Display-only doer name snapshot.</summary>
     public string? DoerNameSnapshot { get; set; }
 
+    /// <summary>Optional. Stable/opaque identifier of the Assignee — a separate person from the Doer. Max 100.</summary>
+    [System.ComponentModel.DataAnnotations.MaxLength(100)]
+    public string? AssigneeId { get; set; }
+    /// <summary>Optional. Display-only assignee name (stored as Delegation.AssigneeNameSnapshot). Max 200.</summary>
+    [System.ComponentModel.DataAnnotations.MaxLength(200)]
+    public string? AssigneeName { get; set; }
+
     /// <summary>PLANNED/business start date. Not the actual execution timestamp (startedAt) and does not gate /start.</summary>
     public DateTime? StartDate { get; set; }
     /// <summary>PLANNED/business end date (persisted in the DueDate column).</summary>
@@ -97,6 +111,12 @@ public class DelegationResponseDto
     public string DoerId { get; set; } = string.Empty;
     /// <summary>The doer's display name snapshot (Delegation.DoerNameSnapshot).</summary>
     public string? DoerName { get; set; }
+
+    /// <summary>The assignee's identifier (Delegation.AssigneeId) — a separate person from the Doer;
+    /// not to be confused with AssignedById (who created the assignment). Null when not supplied.</summary>
+    public string? AssigneeId { get; set; }
+    /// <summary>The assignee's display name snapshot (Delegation.AssigneeNameSnapshot).</summary>
+    public string? AssigneeName { get; set; }
 
     public string AssignedById { get; set; } = string.Empty;
     public string? AssignedByName { get; set; }

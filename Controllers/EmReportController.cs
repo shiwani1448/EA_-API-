@@ -6,7 +6,7 @@ namespace Jarvis5.Controllers;
 
 [ApiController]
 [Route("api/ea/em-report")]
-public class EmReportController(IEmReportService service) : ControllerBase
+public class EmReportController(IEmReportService service, IEmEmployeeReportService employeeReport) : ControllerBase
 {
     [HttpGet("overview")]
     [ProducesResponseType(typeof(EmReportOverviewResponseDto), StatusCodes.Status200OK)]
@@ -29,4 +29,27 @@ public class EmReportController(IEmReportService service) : ControllerBase
     [ProducesResponseType(typeof(Jarvis5.Common.PagedResult<EmReportTaskRowDto>), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetTasks([FromQuery] EmReportTaskRegisterQueryDto query, CancellationToken ct) =>
         Ok(await service.GetTasksAsync(query, ct));
+
+    // ------------------------------------------------------------------ Employee report (per employee, per week)
+
+    /// <summary>KPIs for one employee (or the whole team when no employee is sent) for an ISO week (Mon–Sat, India time):
+    /// the matrix (Summary of all FMS / Actual / Review / Rework / Meeting), per-module numbers, task status, TAT, carry-forward overdue
+    /// and focus areas. Every count also carries its change versus the previous week.</summary>
+    [HttpGet("kpis")]
+    [ProducesResponseType(typeof(EmKpiResponseDto), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetKpis([FromQuery] EmEmployeeReportQueryDto query, CancellationToken ct) =>
+        Ok(await employeeReport.GetKpisAsync(query, ct));
+
+    /// <summary>Weekly chart data for the N weeks ending with the selected week (default 6).</summary>
+    [HttpGet("trends")]
+    [ProducesResponseType(typeof(EmTrendResponseDto), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetTrends([FromQuery] EmEmployeeTrendQueryDto query, CancellationToken ct) =>
+        Ok(await employeeReport.GetTrendsAsync(query, ct));
+
+    /// <summary>All work in one list: Delegation and Approval phases (Actual / Review / Rework), Meetings, Follow-ups and Travel,
+    /// filterable by module, task type, status and performance (OnTime / Delayed / Overdue / Pending / NotMeasured).</summary>
+    [HttpGet("work-items")]
+    [ProducesResponseType(typeof(Jarvis5.Common.PagedResult<EmWorkItemDto>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetWorkItems([FromQuery] EmWorkItemQueryDto query, CancellationToken ct) =>
+        Ok(await employeeReport.GetWorkItemsAsync(query, ct));
 }

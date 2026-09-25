@@ -27,17 +27,7 @@ public class MeetingsActionsController : ControllerBase
         var list = await _context.MeetingActions.Where(a => a.MeetingId == meetingId && !a.IsDeleted).ToListAsync(ct);
 
         var now = Jarvis5.Common.Clock.UtcNowTz;
-        var result = list.Select(a => new MeetingActionDto {
-            Id = a.Id,
-            Title = a.Title,
-            Description = a.Description,
-            DoerId = a.DoerId,
-            DoerName = a.DoerName,
-            Priority = a.Priority,
-            DueDate = a.DueDate,
-            Status = a.Status,
-            IsOverdue = a.CompletedAt == null && a.DueDate != null && a.DueDate < now
-        }).ToList();
+        var result = list.Select(a => MeetingActionFactory.ToDto(a, now)).ToList();
 
         var links = await MeetingDelegationService.LoadDelegationIdsAsync(_context, list.Select(a => a.Id), ct);
         foreach (var action in result)
@@ -52,6 +42,7 @@ public class MeetingsActionsController : ControllerBase
         dto ??= new CreateMeetingActionDto();
         var m = await _context.Meetings.FirstOrDefaultAsync(x => x.Id == meetingId && !x.IsDeleted, ct);
         if (m is null) return NotFound();
+        await MeetingActionFactory.ValidateAsync(_context, dto, ct);
 
         var now = Jarvis5.Common.Clock.UtcNowTz;
         var a = MeetingActionFactory.Build(meetingId, dto, User?.Identity?.Name ?? string.Empty, now);

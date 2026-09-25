@@ -24,6 +24,10 @@ public class Delegation
     public string DoerId { get; set; } = string.Empty;
     public string? DoerNameSnapshot { get; set; }
 
+    // Optional Assignee — a separate person from the Doer, supplied by the frontend like the Doer.
+    public string? AssigneeId { get; set; }
+    public string? AssigneeNameSnapshot { get; set; }
+
     // Always resolved server-side from ICurrentUserService; never frontend-supplied.
     public string AssignedById { get; set; } = string.Empty;
     public string? AssignedByNameSnapshot { get; set; }

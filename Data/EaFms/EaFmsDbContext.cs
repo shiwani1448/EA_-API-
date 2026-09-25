@@ -358,6 +358,8 @@ public class EaFmsDbContext : DbContext
             entity.Property(e => e.Description).HasColumnType("text");
             entity.Property(e => e.DoerId).HasMaxLength(100).IsRequired();
             entity.Property(e => e.DoerNameSnapshot).HasMaxLength(200);
+            entity.Property(e => e.AssigneeId).HasMaxLength(100);
+            entity.Property(e => e.AssigneeNameSnapshot).HasMaxLength(200);
             entity.Property(e => e.AssignedById).HasMaxLength(100).IsRequired();
             entity.Property(e => e.AssignedByNameSnapshot).HasMaxLength(200);
             entity.Property(e => e.Priority).HasMaxLength(100);
@@ -1209,6 +1211,10 @@ public class EaFmsDbContext : DbContext
             entity.Property(e => e.DoerName).HasMaxLength(200);
             entity.Property(e => e.Priority).HasMaxLength(100);
             entity.Property(e => e.DueDate);
+            entity.Property(e => e.StartDate).HasColumnType("timestamp with time zone");
+            entity.Property(e => e.AssigneeId).HasMaxLength(100);
+            entity.Property(e => e.AssigneeName).HasMaxLength(200);
+            entity.Property(e => e.DelegationType).HasMaxLength(200);
             entity.Property(e => e.Status).HasMaxLength(200);
             entity.Property(e => e.ActionRecordId).HasMaxLength(200);
             entity.Property(e => e.AcknowledgedAt);

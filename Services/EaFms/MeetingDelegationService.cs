@@ -62,6 +62,10 @@ public class MeetingDelegationService(
             if (request.Actions.Any(a => a is null || string.IsNullOrWhiteSpace(a.Title)
                 || string.IsNullOrWhiteSpace(a.DoerId) || string.IsNullOrWhiteSpace(a.DoerName)))
                 throw new BusinessRuleException("Each action requires title, doerId and doerName.");
+            // A delegationType must resolve to exactly one Delegation TAT rule, otherwise the
+            // Delegation created below would fail; reject it here with a readable 409.
+            foreach (var item in request.Actions)
+                await MeetingActionFactory.ValidateAsync(db, item, ct);
             var ids = request.Actions.Where(a => a.MeetingActionId.HasValue).Select(a => a.MeetingActionId!.Value).ToList();
             if (ids.Distinct().Count() != ids.Count)
                 throw new BusinessRuleException("An action may only be submitted once per request.");
@@ -88,6 +92,10 @@ public class MeetingDelegationService(
                     action.DoerName = values.DoerName;
                     action.Priority = values.Priority;
                     action.DueDate = values.DueDate;
+                    action.StartDate = values.StartDate;
+                    action.AssigneeId = values.AssigneeId;
+                    action.AssigneeName = values.AssigneeName;
+                    action.DelegationType = values.DelegationType;
                     action.ModifiedBy = actor;
                     action.ModifiedDate = now;
                     saved.Add(action);
@@ -147,6 +155,8 @@ public class MeetingDelegationService(
         {
             Title = action.Title, Description = action.Description,
             DoerId = action.DoerId, DoerNameSnapshot = action.DoerName,
+            AssigneeId = action.AssigneeId, AssigneeNameSnapshot = action.AssigneeName,
+            DelegationType = action.DelegationType, StartDate = action.StartDate,
             Priority = action.Priority, DueDate = action.DueDate,
             SourceBusinessModuleId = moduleId,
             SourceEntityId = action.Id.ToString(CultureInfo.InvariantCulture),
