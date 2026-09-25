@@ -341,6 +341,7 @@ builder.Services.AddScoped<Jarvis5.Services.EaFms.ITatRuleService, Jarvis5.Servi
 builder.Services.AddScoped<Jarvis5.Services.EaFms.IBusinessModuleService, Jarvis5.Services.EaFms.BusinessModuleService>();
 builder.Services.AddScoped<Jarvis5.Services.EaFms.IEaTaskService, Jarvis5.Services.EaFms.EaTaskService>();
 builder.Services.AddScoped<Jarvis5.Services.EaFms.IEmReportService, Jarvis5.Services.EaFms.EmReportService>();
+builder.Services.AddScoped<Jarvis5.Services.EaFms.IEmEmployeeReportService, Jarvis5.Services.EaFms.EmEmployeeReportService>();
 builder.Services.AddScoped<Jarvis5.Services.EaFms.IDocumentRegisterService, Jarvis5.Services.EaFms.DocumentRegisterService>();
 builder.Services.AddScoped<Jarvis5.Repositories.EaFms.IIntakeRepository, Jarvis5.Repositories.EaFms.IntakeRepository>();
 builder.Services.AddScoped<Jarvis5.Services.EaFms.IIntakeService, Jarvis5.Services.EaFms.IntakeService>();
