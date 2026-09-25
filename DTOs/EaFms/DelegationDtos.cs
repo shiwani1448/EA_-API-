@@ -238,6 +238,9 @@ public class DelegationListQueryDto
     public DateTime? EndDate { get; set; }
     /// <summary>all | pending | inProgress | notstarted | started | dueToday | overdue | completed. pending/inProgress filter lifecycle status; notstarted/started filter phase execution.</summary>
     public string? View { get; set; }
+    /// <summary>open | completed. open = every lifecycle status except Completed (the register's
+    /// default tab); completed = Completed only. Omitted = no constraint. Combines with view/status.</summary>
+    public string? Scope { get; set; }
 
     public int PageNumber { get; set; } = 1;
     public int PageSize { get; set; } = 50;

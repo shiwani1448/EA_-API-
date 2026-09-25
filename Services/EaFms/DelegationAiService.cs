@@ -263,6 +263,8 @@ public class DelegationAiService : IDelegationAiService
         DelegationType = d.DelegationType,
         DoerId = d.DoerId,
         DoerNameSnapshot = d.DoerName,
+        AssigneeId = d.AssigneeId,
+        AssigneeName = d.AssigneeName,
         StartDate = d.StartDate,
         EndDate = d.EndDate,
         Priority = d.Priority,

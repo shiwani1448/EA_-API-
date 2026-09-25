@@ -1436,6 +1436,14 @@ public class DelegationService : IDelegationService
         if (status is not null)
             q = q.Where(d => d.Status == status);
 
+        switch (query.Scope?.Trim().ToLowerInvariant())
+        {
+            case null or "" or "all": break;
+            case "open": q = q.Where(d => d.Status != DelegationStatus.Completed); break;
+            case "completed": q = q.Where(d => d.Status == DelegationStatus.Completed); break;
+            default: throw new BadRequestException($"Unsupported scope '{query.Scope}'.");
+        }
+
         var page = query.PageNumber < 1 ? 1 : query.PageNumber;
         var pageSize = query.PageSize < 1 ? 50 : query.PageSize > 200 ? 200 : query.PageSize;
 

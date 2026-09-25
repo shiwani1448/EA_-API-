@@ -24,7 +24,7 @@ public class MeetingsKpisController : ControllerBase
         var total = await meetings.CountAsync(ct);
         var completed = await meetings.CountAsync(m => m.CompletedAt != null, ct);
         var pending = await meetings.CountAsync(m => m.CompletedAt == null, ct);
-        var today = await meetings.CountAsync(m => m.MeetingDate != null && m.MeetingDate.Value.Date == now.Date, ct);
+        var today = await CountTodayAsync(meetings, ct);
 
         // Minutes pending: meeting completed or started and no submitted minutes
         var minutesPending = await meetings.Where(m => (m.CompletedAt != null || (m.StartDateTime != null && m.StartDateTime <= now)))
@@ -66,8 +66,7 @@ public class MeetingsKpisController : ControllerBase
     [HttpGet("/api/ea/meetings/kpis/today")]
     public async Task<IActionResult> Today(CancellationToken ct)
     {
-        var now = Jarvis5.Common.Clock.UtcNowTz;
-        var today = await _context.Meetings.CountAsync(m => !m.IsDeleted && m.MeetingDate != null && m.MeetingDate.Value.Date == now.Date, ct);
+        var today = await CountTodayAsync(_context.Meetings.Where(m => !m.IsDeleted), ct);
         return Ok(new { Today = today });
     }
 
@@ -86,5 +85,21 @@ public class MeetingsKpisController : ControllerBase
         var now = Jarvis5.Common.Clock.UtcNowTz;
         var count = await _context.MeetingActions.CountAsync(a => !a.IsDeleted && a.CompletedAt == null && a.DueDate != null && a.DueDate < now, ct);
         return Ok(new { OverdueActions = count });
+    }
+
+    // "Today" is the India business day, and only meetings not yet completed count — a meeting
+    // completed today is already handled. A meeting counts on its MeetingDate, or on its
+    // StartDateTime when no MeetingDate was captured (the New Meeting form no longer asks for
+    // one). Both columns are timestamptz (UTC instants), so compare against the UTC range that
+    // the India calendar day covers rather than the UTC calendar date.
+    private static Task<int> CountTodayAsync(IQueryable<Jarvis5.Entities.EaFms.Meeting> meetings, CancellationToken ct)
+    {
+        var from = DateTime.SpecifyKind(Jarvis5.Common.IndiaBusinessCalendar.Today - new TimeSpan(5, 30, 0), DateTimeKind.Utc);
+        var to = from.AddDays(1);
+        return meetings.CountAsync(m =>
+            m.CompletedAt == null &&
+            (m.MeetingDate ?? m.StartDateTime) != null &&
+            (m.MeetingDate ?? m.StartDateTime) >= from &&
+            (m.MeetingDate ?? m.StartDateTime) < to, ct);
     }
 }
