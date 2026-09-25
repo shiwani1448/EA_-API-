@@ -21,24 +21,18 @@ public class EaActorResolver : IEaActorResolver
         return user is null ? null : new EaUserContact(user.Id, (user.FirstName + " " + user.LastName).Trim(), user.Email);
     }
 
-    public async Task<string> ResolveDisplayNameAsync(int? userId, string operationDescription, CancellationToken ct = default)
+    // CreatedBy/UploadedBy columns are varchar(100).
+    private const int MaxActorNameLength = 100;
+
+    public Task<string> ResolveDisplayNameAsync(string? employeeId, string? employeeName, string operationDescription, CancellationToken ct = default)
     {
-        if (!userId.HasValue || userId.Value <= 0)
-            throw new BusinessRuleException($"A valid userId is required to {operationDescription}.");
-
-        // Same FullName composition GET /api/Users already uses (UsersController.GetAll) —
-        // one canonical formula, not a second copy that could drift from it.
-        var user = await _hrmsDb.Users.AsNoTracking()
-            .Where(u => u.Id == userId.Value)
-            .Select(u => new { u.FirstName, u.LastName })
-            .FirstOrDefaultAsync(ct);
-        if (user is null)
-            throw new BusinessRuleException($"User {userId.Value} does not exist.");
-
-        var fullName = (user.FirstName + " " + user.LastName).Trim();
-        if (string.IsNullOrWhiteSpace(fullName))
-            throw new BusinessRuleException($"User {userId.Value} has no resolvable name.");
-
-        return fullName;
+        if (string.IsNullOrWhiteSpace(employeeId))
+            throw new BusinessRuleException($"A valid employeeId is required to {operationDescription}.");
+        var name = employeeName?.Trim();
+        if (string.IsNullOrWhiteSpace(name))
+            throw new BusinessRuleException($"A valid employeeName is required to {operationDescription}.");
+        if (name.Length > MaxActorNameLength)
+            throw new BusinessRuleException($"employeeName must not exceed {MaxActorNameLength} characters.");
+        return Task.FromResult(name);
     }
 }

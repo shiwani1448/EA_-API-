@@ -369,11 +369,11 @@ public class TravelHistoryTests
         {
             var env = Mock.Of<IWebHostEnvironment>(e => e.ContentRootPath == temp);
             var actorResolver = Mock.Of<IEaActorResolver>(r =>
-                r.ResolveDisplayNameAsync(It.IsAny<int?>(), It.IsAny<string>(), It.IsAny<CancellationToken>()) == Task.FromResult("reviewer"));
+                r.ResolveDisplayNameAsync(It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<string>(), It.IsAny<CancellationToken>()) == Task.FromResult("reviewer"));
             var docSvc = new TravelDocumentService(db, user, audit, env, actorResolver);
             var ms = new Microsoft.AspNetCore.Http.FormFile(new MemoryStream(new byte[] { 1, 2, 3 }), 0, 3, "file", "itinerary.pdf")
             { Headers = new Microsoft.AspNetCore.Http.HeaderDictionary(), ContentType = "application/pdf" };
-            var doc = await docSvc.UploadAsync(1, ms, "Itinerary", userId: 1);
+            var doc = await docSvc.UploadAsync(1, ms, "Itinerary", employeeId: "S5I-1001", employeeName: "reviewer");
             await docSvc.DeleteAsync(doc.Id);
 
             var history = await travelSvc.GetHistoryAsync(1);

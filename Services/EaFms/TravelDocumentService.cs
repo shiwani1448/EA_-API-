@@ -46,7 +46,7 @@ public class TravelDocumentService : ITravelDocumentService
     }
 
     public async Task<TravelDocumentResponseDto> UploadAsync(
-        long travelRequestId, IFormFile file, string? documentCategory, int? userId = null, CancellationToken ct = default)
+        long travelRequestId, IFormFile file, string? documentCategory, string? employeeId = null, string? employeeName = null, CancellationToken ct = default)
     {
         if (file is null) throw new BusinessRuleException("File must be provided.");
         if (file.Length == 0) throw new BusinessRuleException("File must not be empty.");
@@ -70,11 +70,10 @@ public class TravelDocumentService : ITravelDocumentService
         if (!travelExists) throw new NotFoundException($"Travel request {travelRequestId} not found.");
 
         // EA APIs run without JWT, so ICurrentUserService is never populated here — the
-        // frontend instead supplies its logged-in user's stable HRMS User.Id, and the
-        // backend resolves the real display name itself (never trusts a frontend-supplied
-        // name). See IEaActorResolver. Resolved before any file I/O so an invalid actor
-        // fails fast without writing anything to disk.
-        var actorDisplayName = await _actorResolver.ResolveDisplayNameAsync(userId, "upload a Travel document", ct);
+        // frontend instead supplies its logged-in user's employee code and name from the
+        // HRMS login session. See IEaActorResolver. Resolved before any file I/O so an
+        // invalid actor fails fast without writing anything to disk.
+        var actorDisplayName = await _actorResolver.ResolveDisplayNameAsync(employeeId, employeeName, "upload a Travel document", ct);
 
         // Prepare storage key (same layout convention as Approval documents).
         var generated = $"{Guid.NewGuid():N}{ext}";

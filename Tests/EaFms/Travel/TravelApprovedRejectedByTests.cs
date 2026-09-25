@@ -32,7 +32,7 @@ public class TravelApprovedRejectedByTests
 
         public Fx()
         {
-            Resolver.Setup(r => r.ResolveDisplayNameAsync(It.IsAny<int?>(), It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync("EA User");
+            Resolver.Setup(r => r.ResolveDisplayNameAsync(It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync("EA User");
             var module = new BusinessModule { Name = TravelRequestService.TravelBusinessModuleName, IsActive = true, CreatedBy = "t", CreatedDate = DateTime.UtcNow };
             Db.BusinessModules.Add(module);
             Db.SaveChanges();
@@ -55,7 +55,7 @@ public class TravelApprovedRejectedByTests
 
         public Task<TravelRequestCreatedDto> CreateAsync(Action<CreateTravelRequestDto>? tweak = null, bool approval = true)
         {
-            var d = new CreateTravelRequestDto { UserId = 1, ApprovalRequired = approval, ApproverId = "manager-1" };
+            var d = new CreateTravelRequestDto { EmployeeId = "S5I-1001", EmployeeName = "EA User", ApprovalRequired = approval, ApproverId = "manager-1" };
             tweak?.Invoke(d);
             return Service.CreateDraftAsync(d);
         }
@@ -183,7 +183,7 @@ public class TravelApprovedRejectedByTests
         var approved = await f.Service.ApproveAsync(500, new ApproveTravelRequestDto { ExpectedCycleNo = 1, EmployeeName = "A" });
         var detail = await f.Service.GetByIdAsync(500);
 
-        f.Resolver.Verify(r => r.ResolveDisplayNameAsync(It.IsAny<int?>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+        f.Resolver.Verify(r => r.ResolveDisplayNameAsync(It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
         f.Resolver.Verify(r => r.FindUserContactAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()), Times.Never);
         Assert.Equal("A", approved.ApprovedBy);
         Assert.Equal(("A", null), (detail.Approval.ApprovedBy, detail.Approval.RejectedBy));

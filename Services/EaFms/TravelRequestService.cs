@@ -65,10 +65,9 @@ public partial class TravelRequestService : ITravelRequestService
         }
 
         // EA APIs run without JWT, so ICurrentUserService is never populated here — the
-        // frontend instead supplies its logged-in user's stable HRMS User.Id, and the
-        // backend resolves the real display name itself (never trusts a frontend-supplied
-        // name). See IEaActorResolver.
-        var actor = await _actorResolver.ResolveDisplayNameAsync(dto.UserId, "create a Travel request", ct);
+        // frontend instead supplies its logged-in user's employee code and name from the
+        // HRMS login session. See IEaActorResolver.
+        var actor = await _actorResolver.ResolveDisplayNameAsync(dto.EmployeeId, dto.EmployeeName, "create a Travel request", ct);
         var now = Clock.UtcNowTz;
         var referenceNo = await _travelNumbers.GenerateNextReferenceNoAsync(ct);
 

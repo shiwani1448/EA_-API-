@@ -1,6 +1,25 @@
 namespace Jarvis5.Dtos.EaFms;
 
 // ============================================================
+// Draft request (New Delegation form — no delegation row exists yet)
+// ============================================================
+
+/// <summary>Request for POST /api/ea/delegations/ai/suggest-owner and
+/// /api/ea/delegations/ai/predict-due-date. The unsaved form values the suggestion is based
+/// on; DelegationType is required since both suggestions group history by it.</summary>
+public class DelegationAiDraftRequestDto
+{
+    public string? Title { get; set; }
+    public string? Description { get; set; }
+    public string? DelegationType { get; set; }
+    public string? Priority { get; set; }
+    public string? SourceModuleName { get; set; }
+
+    /// <summary>Planned start date; the predicted due date is anchored here (or on now).</summary>
+    public DateTime? StartDate { get; set; }
+}
+
+// ============================================================
 // Suggest owner (preview only — advisory; no employee/role directory exists)
 // ============================================================
 

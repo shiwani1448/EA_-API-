@@ -39,15 +39,15 @@ public class TravelRequestServiceTests
 
     /// <summary>
     /// EA APIs run without JWT, so CreateDraftAsync no longer resolves the actor from
-    /// ICurrentUserService — it resolves CreateTravelRequestDto.UserId against the
-    /// existing HRMS Users source via IEaActorResolver. Tests that exercise
+    /// ICurrentUserService — it takes CreateTravelRequestDto.EmployeeId/EmployeeName
+    /// via IEaActorResolver. Tests that exercise
     /// CreateDraftAsync but aren't specifically about actor-identity resolution (that's
     /// TravelActorIdentityTests' job) use this fixed, always-valid resolver so they keep
     /// testing what they already test.
     /// </summary>
     private static IEaActorResolver MakeActorResolver(string name = "Test EA User") =>
         Mock.Of<IEaActorResolver>(r =>
-            r.ResolveDisplayNameAsync(It.IsAny<int?>(), It.IsAny<string>(), It.IsAny<CancellationToken>()) == Task.FromResult(name));
+            r.ResolveDisplayNameAsync(It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<string>(), It.IsAny<CancellationToken>()) == Task.FromResult(name));
 
     /// <summary>
     /// Builds a service with unconfigured number/EaTask dependencies for tests that never
@@ -410,7 +410,7 @@ public class TravelRequestServiceTests
 
         var result = await service.CreateDraftAsync(new CreateTravelRequestDto
         {
-            UserId = 1,
+            EmployeeId = "S5I-1001", EmployeeName = "EA User",
             Travellers = new List<TravelTravellerDto> { new() { TravellerName = "Sam" } },
             Purpose = "Client visit",
             ApprovalRequired = false
@@ -459,7 +459,7 @@ public class TravelRequestServiceTests
         var service = new TravelRequestService(db, audit.Object, user.Object, numbers.Object, eaTasks.Object, MakeActorResolver());
 
         var result = await service.CreateDraftAsync(
-            new CreateTravelRequestDto { UserId = 1, ApprovalRequired = true, ApproverId = "mgr-1" });
+            new CreateTravelRequestDto { EmployeeId = "S5I-1001", EmployeeName = "EA User", ApprovalRequired = true, ApproverId = "mgr-1" });
 
         Assert.Equal("NotSubmitted", result.ApprovalState);
         Assert.NotEqual("Pending", result.ApprovalState);
@@ -474,7 +474,7 @@ public class TravelRequestServiceTests
         var (numbers, eaTasks) = MakeCreateMocks(db, module.Id);
         var service = new TravelRequestService(db, audit.Object, user.Object, numbers.Object, eaTasks.Object, MakeActorResolver());
 
-        var result = await service.CreateDraftAsync(new CreateTravelRequestDto { UserId = 1 });
+        var result = await service.CreateDraftAsync(new CreateTravelRequestDto { EmployeeId = "S5I-1001", EmployeeName = "EA User" });
 
         Assert.Matches(@"^TRV-\d{4}-\d{6}$", result.ReferenceNo);
     }

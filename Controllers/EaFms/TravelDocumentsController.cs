@@ -28,9 +28,9 @@ public class TravelDocumentsController : ControllerBase
     [Consumes("multipart/form-data")]
     public async Task<IActionResult> Upload(
         long travelRequestId, IFormFile file, [FromForm] string? documentCategory,
-        [FromForm] int? userId, CancellationToken ct)
+        [FromForm] string? employeeId, [FromForm] string? employeeName, CancellationToken ct)
     {
-        var result = await _docs.UploadAsync(travelRequestId, file, documentCategory, userId, ct);
+        var result = await _docs.UploadAsync(travelRequestId, file, documentCategory, employeeId, employeeName, ct);
         return Ok(result);
     }
 

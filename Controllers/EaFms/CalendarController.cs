@@ -1,6 +1,5 @@
 using Jarvis5.Dtos.EaFms;
 using Jarvis5.Services.EaFms;
-using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Jarvis5.Controllers.EaFms;
@@ -10,7 +9,6 @@ namespace Jarvis5.Controllers.EaFms;
 /// entry in herself; it is never an aggregation of Meeting/Delegation/Approval/Travel/
 /// Followup, which track the EA's own operational work rather than the Director's schedule.
 /// </summary>
-[Authorize]
 [ApiController]
 [Route("api/ea/calendar")]
 public class CalendarController : ControllerBase

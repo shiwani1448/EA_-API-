@@ -13,13 +13,14 @@ namespace Jarvis5.Dtos.EaFms;
 public class CreateTravelRequestDto
 {
     /// <summary>
-    /// Stable identity of the logged-in EA frontend user creating this request — the
-    /// same User.Id already returned by GET /api/Users. EA APIs do not use JWT, so this
-    /// is operational attribution (resolved server-side to a display name for
-    /// TravelRequest.CreatedBy), never authentication. The frontend must never send a
-    /// display name directly.
+    /// Employee code of the logged-in EA frontend user creating this request (from the
+    /// HRMS login session). EA APIs do not use JWT, so this is operational attribution,
+    /// never authentication.
     /// </summary>
-    public int? UserId { get; set; }
+    public string? EmployeeId { get; set; }
+
+    /// <summary>Name of the logged-in EA frontend user; stored as TravelRequest.CreatedBy.</summary>
+    public string? EmployeeName { get; set; }
 
     // --- Travellers ---
     /// <summary>

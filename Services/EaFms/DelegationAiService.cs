@@ -56,6 +56,18 @@ public class DelegationAiService : IDelegationAiService
     public async Task<DelegationAiOwnerSuggestionResponseDto> SuggestOwnerAsync(long delegationId, CancellationToken ct = default)
     {
         var delegation = await _delegations.GetByIdAsync(delegationId, ct); // throws NotFoundException
+        var response = await SuggestOwnerCoreAsync(delegation, delegationId, ct);
+        await AiSuggestionWriters.LogDelegationOwnerSuggestionAsync(_db, delegationId, response, ct);
+        return response;
+    }
+
+    // Draft variant for the New Delegation form — there is no delegation row yet, so nothing
+    // is excluded from history (0 never matches a real id) and no suggestion log is written.
+    public Task<DelegationAiOwnerSuggestionResponseDto> SuggestOwnerForDraftAsync(DelegationAiDraftRequestDto dto, CancellationToken ct = default)
+        => SuggestOwnerCoreAsync(ToDraftDelegation(dto), 0, ct);
+
+    private async Task<DelegationAiOwnerSuggestionResponseDto> SuggestOwnerCoreAsync(DelegationResponseDto delegation, long delegationId, CancellationToken ct)
+    {
         const string warning = "Based on historical delegations of the same type only — not an org chart or assignment rule.";
 
         if (string.IsNullOrWhiteSpace(delegation.DelegationType))
@@ -68,7 +80,6 @@ public class DelegationAiService : IDelegationAiService
                 Reasoning = "This delegation has no delegationType set, so there is no historical group to compare it against.",
                 WarningMessage = warning,
             };
-            await AiSuggestionWriters.LogDelegationOwnerSuggestionAsync(_db, delegationId, noTypeResponse, ct);
             return noTypeResponse;
         }
 
@@ -87,7 +98,6 @@ public class DelegationAiService : IDelegationAiService
                 Reasoning = "No past delegations of this type were found yet — there is no history to base a suggestion on.",
                 WarningMessage = warning,
             };
-            await AiSuggestionWriters.LogDelegationOwnerSuggestionAsync(_db, delegationId, noHistoryResponse, ct);
             return noHistoryResponse;
         }
 
@@ -115,7 +125,6 @@ public class DelegationAiService : IDelegationAiService
             Reasoning = aiResult.Reasoning,
             WarningMessage = warning,
         };
-        await AiSuggestionWriters.LogDelegationOwnerSuggestionAsync(_db, delegationId, response, ct);
         return response;
     }
 
@@ -147,6 +156,19 @@ public class DelegationAiService : IDelegationAiService
         if (delegation.Status == DelegationStatus.Completed)
             throw new BusinessRuleException("Delegation is already Completed; there is nothing to predict a due date for.");
 
+        var response = await PredictDueDateCoreAsync(delegation, delegationId, ct);
+        await AiSuggestionWriters.LogDelegationDueDatePredictionAsync(_db, delegationId, response, ct);
+        return response;
+    }
+
+    // Draft variant for the New Delegation form — anchored on the planned start date (or now),
+    // nothing excluded from history, and no prediction log is written.
+    public Task<DelegationAiDueDatePredictionResponseDto> PredictDueDateForDraftAsync(DelegationAiDraftRequestDto dto, CancellationToken ct = default)
+        => PredictDueDateCoreAsync(ToDraftDelegation(dto), 0, ct);
+
+    private async Task<DelegationAiDueDatePredictionResponseDto> PredictDueDateCoreAsync(DelegationResponseDto delegation, long delegationId, CancellationToken ct)
+    {
+
         const string warning = "An estimate only, not a guarantee — based on a configured turnaround time or past similar delegations, never on the specific work involved.";
         var anchor = delegation.StartedAt ?? delegation.StartDate ?? delegation.CreatedAt;
 
@@ -165,7 +187,6 @@ public class DelegationAiService : IDelegationAiService
                         DelegationId = delegationId, SuggestedDueDate = suggested, Basis = "ConfiguredTat",
                         Explanation = explanation, WarningMessage = warning,
                     };
-                    await AiSuggestionWriters.LogDelegationDueDatePredictionAsync(_db, delegationId, configuredResponse, ct);
                     return configuredResponse;
                 }
             }
@@ -182,7 +203,6 @@ public class DelegationAiService : IDelegationAiService
                     DelegationId = delegationId, SuggestedDueDate = suggested, Basis = "HistoricalAverage",
                     Explanation = explanation, WarningMessage = warning,
                 };
-                await AiSuggestionWriters.LogDelegationDueDatePredictionAsync(_db, delegationId, historicalResponse, ct);
                 return historicalResponse;
             }
         }
@@ -195,7 +215,6 @@ public class DelegationAiService : IDelegationAiService
             Explanation = "No configured turnaround time and no completed delegations of this type exist yet to estimate from.",
             WarningMessage = warning,
         };
-        await AiSuggestionWriters.LogDelegationDueDatePredictionAsync(_db, delegationId, noBasisResponse, ct);
         return noBasisResponse;
     }
 
@@ -212,6 +231,25 @@ public class DelegationAiService : IDelegationAiService
         await AiSuggestionWriters.MarkDelegationDueDatePredictionAppliedAsync(_db, delegationId, dto, ct);
         await tx.CommitAsync(ct);
         return updated;
+    }
+
+    // Shapes the unsaved New Delegation form into the DTO the prompt builders already read.
+    private static DelegationResponseDto ToDraftDelegation(DelegationAiDraftRequestDto dto)
+    {
+        if (string.IsNullOrWhiteSpace(dto.DelegationType))
+            throw new BusinessRuleException("Choose a delegation type first — suggestions are based on past delegations of the same type.");
+
+        return new DelegationResponseDto
+        {
+            Title = dto.Title?.Trim() ?? string.Empty,
+            Description = dto.Description,
+            DelegationType = dto.DelegationType.Trim(),
+            Priority = dto.Priority,
+            SourceModuleName = dto.SourceModuleName,
+            StartDate = dto.StartDate,
+            CreatedAt = DateTime.Now,
+            Status = DelegationStatus.Pending,
+        };
     }
 
     // DelegationService.UpdateAsync is a full-replace endpoint (every editable field is

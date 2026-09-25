@@ -74,9 +74,9 @@ public class TravelMultiTravellerTests
         // EA APIs run without JWT; CreateDraftAsync resolves the actor via
         // IEaActorResolver rather than ICurrentUserService. These tests are about
         // traveller-name handling, not actor identity (that's TravelActorIdentityTests'
-        // job), so any userId value resolves to a fixed valid name here.
+        // job), so any employee identity resolves to a fixed valid name here.
         var actorResolver = Mock.Of<IEaActorResolver>(r =>
-            r.ResolveDisplayNameAsync(It.IsAny<int?>(), It.IsAny<string>(), It.IsAny<System.Threading.CancellationToken>()) == Task.FromResult(actor));
+            r.ResolveDisplayNameAsync(It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<string>(), It.IsAny<System.Threading.CancellationToken>()) == Task.FromResult(actor));
 
         return new TravelRequestService(db, audit, user, numbers.Object, eaTasks.Object, actorResolver);
     }
@@ -128,7 +128,7 @@ public class TravelMultiTravellerTests
         if (!await db.BusinessModules.AnyAsync()) await SeedModuleAsync(db);
         var created = await svc.CreateDraftAsync(new CreateTravelRequestDto
         {
-            UserId = 1, Travellers = travellers, NumberOfTravellers = numberOfTravellers, ApprovalRequired = false
+            EmployeeId = "S5I-1001", EmployeeName = "EA User", Travellers = travellers, NumberOfTravellers = numberOfTravellers, ApprovalRequired = false
         }, default);
         return await svc.GetByIdAsync(created.TravelRequestId, default);
     }
@@ -219,7 +219,7 @@ public class TravelMultiTravellerTests
     }
 
     [Fact]
-    public async Task Create_CreatedByStillResolvedFromUserId()
+    public async Task Create_CreatedByStillResolvedFromActor()
     {
         await using var db = MakeDb();
         await SeedModuleAsync(db);
@@ -227,7 +227,7 @@ public class TravelMultiTravellerTests
 
         var created = await svc.CreateDraftAsync(new CreateTravelRequestDto
         {
-            UserId = 7, Travellers = new() { Dto("Traveller X", "E1") }, ApprovalRequired = false
+            EmployeeId = "S5I-1007", EmployeeName = "Shivani Singh", Travellers = new() { Dto("Traveller X", "E1") }, ApprovalRequired = false
         }, default);
 
         Assert.Equal("Shivani Singh", (await db.TravelRequests.FindAsync(created.TravelRequestId))!.CreatedBy);

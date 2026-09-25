@@ -28,6 +28,14 @@ public interface IDelegationAiService
     /// pattern as ApplySuggestedOwnerAsync. 409 once Completed.</summary>
     Task<DelegationResponseDto> ApplyPredictedDueDateAsync(long delegationId, ApplyPredictedDueDateRequestDto dto, CancellationToken ct = default);
 
+    /// <summary>Preview-only owner suggestion for the unsaved New Delegation form — same
+    /// history-by-type logic as SuggestOwnerAsync, but nothing is excluded or logged.</summary>
+    Task<DelegationAiOwnerSuggestionResponseDto> SuggestOwnerForDraftAsync(DelegationAiDraftRequestDto dto, CancellationToken ct = default);
+
+    /// <summary>Preview-only due-date prediction for the unsaved New Delegation form, anchored
+    /// on the planned start date (or now). Nothing is logged.</summary>
+    Task<DelegationAiDueDatePredictionResponseDto> PredictDueDateForDraftAsync(DelegationAiDraftRequestDto dto, CancellationToken ct = default);
+
     /// <summary>Preview-only: assesses delay risk from the Delegation's own real execution
     /// data (status, due-date proximity, TAT usage, pause history). Never writes to the
     /// database.</summary>

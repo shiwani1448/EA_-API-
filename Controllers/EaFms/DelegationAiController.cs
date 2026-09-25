@@ -1,11 +1,9 @@
 using Jarvis5.Dtos.EaFms;
 using Jarvis5.Services.EaFms;
-using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Jarvis5.Controllers.EaFms;
 
-[Authorize]
 [ApiController]
 [Route("api/ea/delegations/{delegationId:long}/ai")]
 public class DelegationAiController : ControllerBase

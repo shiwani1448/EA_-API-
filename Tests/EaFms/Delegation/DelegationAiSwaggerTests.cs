@@ -43,6 +43,8 @@ public class DelegationAiSwaggerTests
             "/api/ea/delegations/{delegationId}/ai/predict-due-date/apply",
             "/api/ea/delegations/{delegationId}/ai/suggest-owner",
             "/api/ea/delegations/{delegationId}/ai/suggest-owner/apply",
+            "/api/ea/delegations/ai/predict-due-date",
+            "/api/ea/delegations/ai/suggest-owner",
         }, aiPaths);
 
         var ownerResponseRef = paths["/api/ea/delegations/{delegationId}/ai/suggest-owner"]!["post"]!["responses"]!["200"]!["content"]!["application/json"]!["schema"]!["$ref"]!.GetValue<string>();
