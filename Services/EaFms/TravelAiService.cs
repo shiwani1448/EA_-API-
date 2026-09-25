@@ -138,6 +138,8 @@ public class TravelAiService : ITravelAiService
             // or Compare, whichever was generated more recently — since Confirm can follow
             // either. A no-op if the EA typed the options manually without calling either first.
             await AiSuggestionWriters.MarkLatestTravelOptionsAppliedAsync(_db, travelRequestId, response, ct);
+            await _serviceProvider.MarkAiResponseUsedAsync(EaAiModules.Travel, ["Travel option suggestion", "Travel option comparison"], travelRequestId,
+                new { bookings = created.Select(b => new { b.BookingId, b.BookingType }) }, ct);
         }
         return response;
     }
@@ -251,14 +253,21 @@ public class TravelAiService : ITravelAiService
                     """;
 
             var claudeClient = _serviceProvider.GetRequiredService<IClaudeClient>();
-            var rawResponse = await claudeClient.GenerateJsonAsync(systemPrompt, attemptPrompt, ct);
+            // Every EA AI call is recorded in ea_ai_usage_logs (who, where, for what, prompt, response, tokens).
+            var aiUsage = _serviceProvider.GetService<IEaAiUsageLogger>();
+            var rawResponse = aiUsage is null
+                ? await claudeClient.GenerateJsonAsync(systemPrompt, attemptPrompt, ct)
+                : await aiUsage.CallAsync(EaAiModules.Travel, entityName, systemPrompt, attemptPrompt, attempt,
+                    () => claudeClient.GenerateJsonAsync(systemPrompt, attemptPrompt, ct), ct);
 
             try
             {
                 return AiJsonResponseParser.Parse<T>(rawResponse, _logger, entityName);
             }
-            catch (BusinessRuleException ex) when (attempt < _maxAiAttempts)
+            catch (BusinessRuleException ex)
             {
+                if (aiUsage is not null) await aiUsage.MarkLastInvalidJsonAsync(ex.Message);
+                if (attempt >= _maxAiAttempts) throw;
                 lastParseError = ex;
                 _logger.LogWarning(
                     "AI {Entity} returned invalid JSON on attempt {Attempt}/{MaxAttempts}; retrying.",

@@ -3,6 +3,7 @@ using System;
 using Jarvis5.Data.EaFms;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Studio5JarvisMasterApi.Migrations
 {
     [DbContext(typeof(EaFmsDbContext))]
-    partial class EaFmsDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260925063916_AddEaAiUsageUsedTracking")]
+    partial class AddEaAiUsageUsedTracking
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder

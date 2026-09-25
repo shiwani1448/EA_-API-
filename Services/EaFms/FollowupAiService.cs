@@ -98,6 +98,8 @@ public class FollowupAiService : IFollowupAiService
         var sentAt = Clock.UtcNowTz;
         await _reminderSender.SendAsync(new EaReminderEmailMessage(followup.ReminderRecipientEmail, dto.Subject.Trim(), dto.Body.Trim()), ct);
         await AiSuggestionWriters.MarkFollowupReminderSuggestionAppliedAsync(_db, followupId, followup.ReminderRecipientEmail, ct);
+        await _serviceProvider.MarkAiResponseUsedAsync(EaAiModules.Followup, ["Followup reminder draft"], followupId,
+            new { recipient = followup.ReminderRecipientEmail, subject = dto.Subject.Trim(), body = dto.Body.Trim() }, ct);
 
         return new FollowupAiReminderSentResponseDto
         {
@@ -178,6 +180,8 @@ public class FollowupAiService : IFollowupAiService
         }, ct);
         await AiSuggestionWriters.MarkFollowupEscalationSuggestionAppliedAsync(_db, followupId, created.Id, ct);
         await tx.CommitAsync(ct);
+        await _serviceProvider.MarkAiResponseUsedAsync(EaAiModules.Followup, ["Followup escalation suggestion"], followupId,
+            new { escalationId = created.Id, dto.EscalationLevelId, dto.EscalatedToId, dto.EscalatedToName }, ct);
         return created;
     }
 
@@ -291,14 +295,21 @@ public class FollowupAiService : IFollowupAiService
                     """;
 
             var claudeClient = _serviceProvider.GetRequiredService<IClaudeClient>();
-            var rawResponse = await claudeClient.GenerateJsonAsync(systemPrompt, attemptPrompt, ct);
+            // Every EA AI call is recorded in ea_ai_usage_logs (who, where, for what, prompt, response, tokens).
+            var aiUsage = _serviceProvider.GetService<IEaAiUsageLogger>();
+            var rawResponse = aiUsage is null
+                ? await claudeClient.GenerateJsonAsync(systemPrompt, attemptPrompt, ct)
+                : await aiUsage.CallAsync(EaAiModules.Followup, entityName, systemPrompt, attemptPrompt, attempt,
+                    () => claudeClient.GenerateJsonAsync(systemPrompt, attemptPrompt, ct), ct);
 
             try
             {
                 return AiJsonResponseParser.Parse<T>(rawResponse, _logger, entityName);
             }
-            catch (BusinessRuleException ex) when (attempt < _maxAiAttempts)
+            catch (BusinessRuleException ex)
             {
+                if (aiUsage is not null) await aiUsage.MarkLastInvalidJsonAsync(ex.Message);
+                if (attempt >= _maxAiAttempts) throw;
                 lastParseError = ex;
                 _logger.LogWarning(
                     "AI {Entity} returned invalid JSON on attempt {Attempt}/{MaxAttempts}; retrying.",

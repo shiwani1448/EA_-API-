@@ -228,7 +228,9 @@ builder.Services.AddCors(options =>
             policy
                 .WithOrigins(allowedOrigins)
                 .AllowAnyHeader()
-                .AllowAnyMethod();
+                .AllowAnyMethod()
+                // EA AI responses carry the id of their ea_ai_usage_logs row, so the screen can report "used".
+                .WithExposedHeaders("X-AI-Usage-Id");
         });
 });
 
@@ -342,6 +344,9 @@ builder.Services.AddScoped<Jarvis5.Services.EaFms.IBusinessModuleService, Jarvis
 builder.Services.AddScoped<Jarvis5.Services.EaFms.IEaTaskService, Jarvis5.Services.EaFms.EaTaskService>();
 builder.Services.AddScoped<Jarvis5.Services.EaFms.IEmReportService, Jarvis5.Services.EaFms.EmReportService>();
 builder.Services.AddScoped<Jarvis5.Services.EaFms.IEmEmployeeReportService, Jarvis5.Services.EaFms.EmEmployeeReportService>();
+// EA FMS AI usage log: every EA AI call (who, where, for what, response, tokens).
+builder.Services.AddScoped<Jarvis5.Services.EaFms.IEaAiUsageLogger, Jarvis5.Services.EaFms.EaAiUsageLogger>();
+builder.Services.AddScoped<Jarvis5.Services.EaFms.IEaAiUsageService, Jarvis5.Services.EaFms.EaAiUsageService>();
 builder.Services.AddScoped<Jarvis5.Services.EaFms.IDocumentRegisterService, Jarvis5.Services.EaFms.DocumentRegisterService>();
 builder.Services.AddScoped<Jarvis5.Repositories.EaFms.IIntakeRepository, Jarvis5.Repositories.EaFms.IntakeRepository>();
 builder.Services.AddScoped<Jarvis5.Services.EaFms.IIntakeService, Jarvis5.Services.EaFms.IntakeService>();

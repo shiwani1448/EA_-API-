@@ -48,6 +48,7 @@ public class EaFmsDbContext : DbContext
     public DbSet<FollowupEscalationSuggestion> FollowupEscalationSuggestions { get; set; } = null!;
     public DbSet<FollowupResolutionPrediction> FollowupResolutionPredictions { get; set; } = null!;
     public DbSet<FollowupAtRiskCheck> FollowupAtRiskChecks { get; set; } = null!;
+    public DbSet<EaAiUsageLog> AiUsageLogs { get; set; } = null!;
     public DbSet<Attachment> Attachments { get; set; } = null!;
     public DbSet<WorkPause> WorkPauses { get; set; } = null!;
     public DbSet<WorkAssignment> WorkAssignments { get; set; } = null!;
@@ -829,6 +830,38 @@ public class EaFmsDbContext : DbContext
             entity.Property(e => e.CreatedBy).IsRequired().HasMaxLength(100);
             entity.HasOne<Followup>().WithMany().HasForeignKey(e => e.FollowupId).OnDelete(DeleteBehavior.Restrict);
             entity.HasIndex(e => e.CreatedDate);
+        });
+
+        modelBuilder.Entity<EaAiUsageLog>(entity =>
+        {
+            entity.ToTable("ea_ai_usage_logs", "public");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).UseIdentityByDefaultColumn();
+            entity.Property(e => e.Module).IsRequired().HasMaxLength(50);
+            entity.Property(e => e.Feature).IsRequired().HasMaxLength(200);
+            entity.Property(e => e.Endpoint).HasMaxLength(500);
+            entity.Property(e => e.BusinessRecordId).HasMaxLength(200);
+            entity.Property(e => e.RequestedById).HasMaxLength(100);
+            entity.Property(e => e.RequestedByName).HasMaxLength(200);
+            entity.Property(e => e.RequestedAt).HasColumnType("timestamp with time zone");
+            entity.Property(e => e.CompletedAt).HasColumnType("timestamp with time zone");
+            entity.Property(e => e.Status).IsRequired().HasMaxLength(30);
+            entity.Property(e => e.ErrorMessage).HasColumnType("text");
+            entity.Property(e => e.Model).HasMaxLength(100);
+            entity.Property(e => e.MessageId).HasMaxLength(100);
+            entity.Property(e => e.StopReason).HasMaxLength(50);
+            entity.Property(e => e.SystemPrompt).HasColumnType("text");
+            entity.Property(e => e.UserPrompt).HasColumnType("text");
+            entity.Property(e => e.ResponseText).HasColumnType("text");
+            entity.Property(e => e.UsedAt).HasColumnType("timestamp with time zone");
+            entity.Property(e => e.UsedById).HasMaxLength(100);
+            entity.Property(e => e.UsedByName).HasMaxLength(200);
+            entity.Property(e => e.UsedValue).HasColumnType("text");
+            entity.Property(e => e.CreatedDate).HasColumnType("timestamp with time zone");
+            entity.HasIndex(e => e.RequestedAt);
+            entity.HasIndex(e => e.EaTaskId);
+            entity.HasIndex(e => new { e.Module, e.BusinessRecordId });
+            entity.HasIndex(e => e.RequestedById);
         });
 
         modelBuilder.Entity<FollowupAtRiskCheck>(entity =>

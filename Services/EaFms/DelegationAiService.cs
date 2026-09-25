@@ -146,6 +146,8 @@ public class DelegationAiService : IDelegationAiService
         var updated = await _delegations.UpdateAsync(delegationId, update, ct);
         await AiSuggestionWriters.MarkDelegationOwnerSuggestionAppliedAsync(_db, delegationId, dto, ct);
         await tx.CommitAsync(ct);
+        await _serviceProvider.MarkAiResponseUsedAsync(EaAiModules.Delegation, ["Delegation owner suggestion"], delegationId,
+            new { dto.DoerId, dto.DoerName }, ct);
         return updated;
     }
 
@@ -230,6 +232,8 @@ public class DelegationAiService : IDelegationAiService
         var updated = await _delegations.UpdateAsync(delegationId, update, ct);
         await AiSuggestionWriters.MarkDelegationDueDatePredictionAppliedAsync(_db, delegationId, dto, ct);
         await tx.CommitAsync(ct);
+        await _serviceProvider.MarkAiResponseUsedAsync(EaAiModules.Delegation, ["Delegation due date explanation"], delegationId,
+            new { dto.EndDate }, ct);
         return updated;
     }
 
@@ -332,14 +336,21 @@ public class DelegationAiService : IDelegationAiService
                     """;
 
             var claudeClient = _serviceProvider.GetRequiredService<IClaudeClient>();
-            var rawResponse = await claudeClient.GenerateJsonAsync(systemPrompt, attemptPrompt, ct);
+            // Every EA AI call is recorded in ea_ai_usage_logs (who, where, for what, prompt, response, tokens).
+            var aiUsage = _serviceProvider.GetService<IEaAiUsageLogger>();
+            var rawResponse = aiUsage is null
+                ? await claudeClient.GenerateJsonAsync(systemPrompt, attemptPrompt, ct)
+                : await aiUsage.CallAsync(EaAiModules.Delegation, entityName, systemPrompt, attemptPrompt, attempt,
+                    () => claudeClient.GenerateJsonAsync(systemPrompt, attemptPrompt, ct), ct);
 
             try
             {
                 return AiJsonResponseParser.Parse<T>(rawResponse, _logger, entityName);
             }
-            catch (BusinessRuleException ex) when (attempt < _maxAiAttempts)
+            catch (BusinessRuleException ex)
             {
+                if (aiUsage is not null) await aiUsage.MarkLastInvalidJsonAsync(ex.Message);
+                if (attempt >= _maxAiAttempts) throw;
                 lastParseError = ex;
                 _logger.LogWarning(
                     "AI {Entity} returned invalid JSON on attempt {Attempt}/{MaxAttempts}; retrying.",

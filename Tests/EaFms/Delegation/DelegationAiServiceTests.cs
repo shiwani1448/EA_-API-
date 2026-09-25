@@ -531,4 +531,88 @@ public class DelegationAiServiceTests
         Assert.Equal("Low", result.RiskLevel);
         claude.Verify(c => c.GenerateJsonAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Exactly(2));
     }
+
+    // ============================================================
+    // EA AI usage log: every call through the real service is stored, even the invalid-JSON attempt
+    // ============================================================
+
+    [Fact]
+    public async Task CheckDelayRisk_EveryAiCall_IsStoredInTheEaAiUsageLog_WithTaskAndTokens()
+    {
+        var h = await NewHarnessAsync();
+        var created = await h.Delegations.CreateAsync(MakeCreateDto());
+        var (claude, prompts) = Mocks();
+        var replies = new Queue<string>(new[] { "not json at all", """{"riskLevel":"low","reasoning":"Fine."}""" });
+        claude.Setup(c => c.GenerateJsonAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(() =>
+            {
+                var usage = ClaudeUsageCapture.Current!;   // what the real ClaudeClient fills while streaming
+                usage.InputTokens = 700; usage.OutputTokens = 40; usage.Model = "claude-test";
+                return replies.Dequeue();
+            });
+        var options = (DbContextOptions<EaFmsDbContext>)Microsoft.EntityFrameworkCore.Infrastructure.AccessorExtensions
+            .GetService<Microsoft.EntityFrameworkCore.Infrastructure.IDbContextOptions>(h.Db);
+        var ctx = new Microsoft.AspNetCore.Http.DefaultHttpContext();
+        ctx.Request.Method = "POST";
+        ctx.Request.Path = $"/api/ea/delegations/{created.DelegationId}/ai/delay-risk";
+        ctx.Request.RouteValues["delegationId"] = created.DelegationId.ToString();
+        ctx.Request.Headers["X-Employee-Name"] = "Siddhi Jadhav";
+        var aiUsage = new EaAiUsageLogger(options, Jarvis5.Tests.EaFms.Followups.FollowupTestSupport.User(null, null),
+            new Microsoft.AspNetCore.Http.HttpContextAccessor { HttpContext = ctx }, NullLogger<EaAiUsageLogger>.Instance);
+        var sp = new Mock<IServiceProvider>();
+        sp.Setup(s => s.GetService(typeof(IClaudeClient))).Returns(claude.Object);
+        sp.Setup(s => s.GetService(typeof(IEaAiUsageLogger))).Returns(aiUsage);
+        var service = new DelegationAiService(h.Db, sp.Object, prompts.Object, h.Delegations, new TatRuleRepository(h.Db), new DelegationAiRepository(h.Db),
+            NullLogger<DelegationAiService>.Instance, Options.Create(new ClaudeOptions { MaxRetries = 2 }));
+
+        var result = await service.CheckDelayRiskAsync(created.DelegationId);
+
+        Assert.Equal("Low", result.RiskLevel);
+        await using var check = new EaFmsDbContext(options);
+        var rows = await check.AiUsageLogs.AsNoTracking().OrderBy(r => r.Id).ToListAsync();
+        Assert.Equal(new[] { ("InvalidJson", 1), ("Succeeded", 2) }, rows.Select(r => (r.Status, r.AttemptNo)));
+        Assert.All(rows, r =>
+        {
+            Assert.Equal(("Delegation", created.DelegationId.ToString(), (long?)created.EaTaskId, "Siddhi Jadhav"),
+                (r.Module, r.BusinessRecordId, r.EaTaskId, r.RequestedByName));
+            Assert.Equal((long?)740, r.TotalTokens);
+            Assert.Contains("delay risk", r.Feature, StringComparison.OrdinalIgnoreCase);
+        });
+        Assert.Equal("not json at all", rows[0].ResponseText);
+    }
+
+    [Fact]
+    public async Task ApplyPredictedDueDate_MarksTheStoredAiResponse_AsUsed_WithTheDateTheEaChose()
+    {
+        var h = await NewHarnessAsync();
+        var created = await h.Delegations.CreateAsync(MakeCreateDto());
+        var (claude, prompts) = Mocks();
+        var options = (DbContextOptions<EaFmsDbContext>)Microsoft.EntityFrameworkCore.Infrastructure.AccessorExtensions
+            .GetService<Microsoft.EntityFrameworkCore.Infrastructure.IDbContextOptions>(h.Db);
+        await using (var seed = new EaFmsDbContext(options))
+        {
+            seed.AiUsageLogs.Add(new EaAiUsageLog { Module = "Delegation", Feature = "Delegation due date explanation",
+                BusinessRecordId = created.DelegationId.ToString(), Status = "Succeeded", AttemptNo = 1, ResponseText = "{}",
+                RequestedAt = DateTime.UtcNow.AddMinutes(-1), CompletedAt = DateTime.UtcNow.AddMinutes(-1), CreatedDate = DateTime.UtcNow });
+            await seed.SaveChangesAsync();
+        }
+        var ctx = new Microsoft.AspNetCore.Http.DefaultHttpContext();
+        ctx.Request.Headers["X-Employee-Name"] = "Siddhi Jadhav";
+        var aiUsage = new EaAiUsageLogger(options, Jarvis5.Tests.EaFms.Followups.FollowupTestSupport.User(null, null),
+            new Microsoft.AspNetCore.Http.HttpContextAccessor { HttpContext = ctx }, NullLogger<EaAiUsageLogger>.Instance);
+        var sp = new Mock<IServiceProvider>();
+        sp.Setup(s => s.GetService(typeof(IClaudeClient))).Returns(claude.Object);
+        sp.Setup(s => s.GetService(typeof(IEaAiUsageLogger))).Returns(aiUsage);
+        var service = new DelegationAiService(h.Db, sp.Object, prompts.Object, h.Delegations, new TatRuleRepository(h.Db), new DelegationAiRepository(h.Db),
+            NullLogger<DelegationAiService>.Instance, Options.Create(new ClaudeOptions { MaxRetries = 2 }));
+        var chosen = DateTime.UtcNow.Date.AddDays(9);
+
+        await service.ApplyPredictedDueDateAsync(created.DelegationId, new ApplyPredictedDueDateRequestDto { EndDate = chosen });
+
+        await using var check = new EaFmsDbContext(options);
+        var row = await check.AiUsageLogs.AsNoTracking().SingleAsync();
+        Assert.True(row.IsUsed);
+        Assert.Equal("Siddhi Jadhav", row.UsedByName);
+        Assert.Contains(chosen.ToString("yyyy-MM-dd"), row.UsedValue);
+    }
 }

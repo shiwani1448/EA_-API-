@@ -40,6 +40,9 @@ public class ClaudeClient : IClaudeClient
         };
 
         var text = new StringBuilder();
+        // Filled only when a caller opted in via ClaudeUsageCapture.Begin() (the EA FMS AI usage log).
+        var usage = ClaudeUsageCapture.Current;
+        if (usage is not null) usage.Model = _options.TextModel;
 
         try
         {
@@ -49,6 +52,19 @@ public class ClaudeClient : IClaudeClient
                     delta.Delta.TryPickText(out var textDelta))
                 {
                     text.Append(textDelta.Text);
+                }
+                else if (usage is not null && streamEvent.TryPickStart(out var start))
+                {
+                    usage.Model = start.Message.Model.ToString().Trim('"');
+                    usage.MessageId = start.Message.ID;
+                    usage.InputTokens = start.Message.Usage.InputTokens;
+                    usage.CacheCreationInputTokens = start.Message.Usage.CacheCreationInputTokens;
+                    usage.CacheReadInputTokens = start.Message.Usage.CacheReadInputTokens;
+                }
+                else if (usage is not null && streamEvent.TryPickDelta(out var messageDelta))
+                {
+                    usage.OutputTokens = messageDelta.Usage.OutputTokens;
+                    usage.StopReason = messageDelta.Delta.StopReason?.ToString().Trim('"');
                 }
             }
         }

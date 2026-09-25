@@ -3,6 +3,7 @@ using System;
 using Jarvis5.Data.EaFms;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Studio5JarvisMasterApi.Migrations
 {
     [DbContext(typeof(EaFmsDbContext))]
-    partial class EaFmsDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260925062350_AddEaAiUsageLogs")]
+    partial class AddEaAiUsageLogs
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -1283,9 +1286,6 @@ namespace Studio5JarvisMasterApi.Migrations
                     b.Property<long?>("InputTokens")
                         .HasColumnType("bigint");
 
-                    b.Property<bool>("IsUsed")
-                        .HasColumnType("boolean");
-
                     b.Property<string>("MessageId")
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)");
@@ -1330,20 +1330,6 @@ namespace Studio5JarvisMasterApi.Migrations
 
                     b.Property<long?>("TotalTokens")
                         .HasColumnType("bigint");
-
-                    b.Property<DateTime?>("UsedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("UsedById")
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)");
-
-                    b.Property<string>("UsedByName")
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)");
-
-                    b.Property<string>("UsedValue")
-                        .HasColumnType("text");
 
                     b.Property<string>("UserPrompt")
                         .HasColumnType("text");
