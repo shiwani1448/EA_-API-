@@ -133,8 +133,11 @@ public class MeetingAiService : IMeetingAiService
     public async Task<MeetingAiActionsConfirmResponseDto> ConfirmActionsAsync(
         long meetingId, ConfirmMeetingAiActionsRequestDto dto, string actor, CancellationToken ct = default)
     {
-        return await _serviceProvider.GetRequiredService<MeetingDelegationService>()
+        var result = await _serviceProvider.GetRequiredService<MeetingDelegationService>()
             .ConfirmAsync(meetingId, dto, actor, ct);
+        await _serviceProvider.MarkAiResponseUsedAsync(EaAiModules.Meeting, ["Meeting action extraction"], meetingId,
+            new { actions = result.CreatedActions.Select(a => new { a.Title, a.DoerName, a.DueDate, a.DelegationId }), result.CreatedDelegationCount }, ct);
+        return result;
     }
 
     // Same retry-on-malformed-JSON pattern as AnalysisService.GenerateAndParseAsync: reuses
@@ -160,14 +163,21 @@ public class MeetingAiService : IMeetingAiService
                     """;
 
             var claudeClient = _serviceProvider.GetRequiredService<IClaudeClient>();
-            var rawResponse = await claudeClient.GenerateJsonAsync(systemPrompt, attemptPrompt, ct);
+            // Every EA AI call is recorded in ea_ai_usage_logs (who, where, for what, prompt, response, tokens).
+            var aiUsage = _serviceProvider.GetService<IEaAiUsageLogger>();
+            var rawResponse = aiUsage is null
+                ? await claudeClient.GenerateJsonAsync(systemPrompt, attemptPrompt, ct)
+                : await aiUsage.CallAsync(EaAiModules.Meeting, entityName, systemPrompt, attemptPrompt, attempt,
+                    () => claudeClient.GenerateJsonAsync(systemPrompt, attemptPrompt, ct), ct);
 
             try
             {
                 return AiJsonResponseParser.Parse<T>(rawResponse, _logger, entityName);
             }
-            catch (BusinessRuleException ex) when (attempt < _maxAiAttempts)
+            catch (BusinessRuleException ex)
             {
+                if (aiUsage is not null) await aiUsage.MarkLastInvalidJsonAsync(ex.Message);
+                if (attempt >= _maxAiAttempts) throw;
                 lastParseError = ex;
                 _logger.LogWarning(
                     "AI {Entity} returned invalid JSON on attempt {Attempt}/{MaxAttempts}; retrying.",

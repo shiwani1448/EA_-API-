@@ -96,6 +96,8 @@ public class CalendarAiService : ICalendarAiService
             Notes = dto.Notes,
         }, ct);
         await AiSuggestionWriters.MarkCalendarQuickAddSuggestionAppliedAsync(_db, created.Id, ct);
+        await _serviceProvider.MarkAiResponseUsedAsync(EaAiModules.Calendar, ["Calendar quick add"], null,
+            new { calendarEventId = created.Id, created.Title, created.EventType, created.StartDateTime, created.EndDateTime }, ct);
         return created;
     }
 
@@ -196,14 +198,21 @@ public class CalendarAiService : ICalendarAiService
                     """;
 
             var claudeClient = _serviceProvider.GetRequiredService<IClaudeClient>();
-            var rawResponse = await claudeClient.GenerateJsonAsync(systemPrompt, attemptPrompt, ct);
+            // Every EA AI call is recorded in ea_ai_usage_logs (who, where, for what, prompt, response, tokens).
+            var aiUsage = _serviceProvider.GetService<IEaAiUsageLogger>();
+            var rawResponse = aiUsage is null
+                ? await claudeClient.GenerateJsonAsync(systemPrompt, attemptPrompt, ct)
+                : await aiUsage.CallAsync(EaAiModules.Calendar, entityName, systemPrompt, attemptPrompt, attempt,
+                    () => claudeClient.GenerateJsonAsync(systemPrompt, attemptPrompt, ct), ct);
 
             try
             {
                 return AiJsonResponseParser.Parse<T>(rawResponse, _logger, entityName);
             }
-            catch (BusinessRuleException ex) when (attempt < _maxAiAttempts)
+            catch (BusinessRuleException ex)
             {
+                if (aiUsage is not null) await aiUsage.MarkLastInvalidJsonAsync(ex.Message);
+                if (attempt >= _maxAiAttempts) throw;
                 lastParseError = ex;
                 _logger.LogWarning(
                     "AI {Entity} returned invalid JSON on attempt {Attempt}/{MaxAttempts}; retrying.",

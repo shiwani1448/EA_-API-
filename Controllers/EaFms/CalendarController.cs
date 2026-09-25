@@ -20,8 +20,12 @@ public class CalendarController : ControllerBase
         _calendar = calendar;
     }
 
-    /// <summary>Lists calendar events for [from, to). eventTypes is an optional whitelist
-    /// (ClientMeeting, InternalMeeting, Personal, Travel); omit for all.</summary>
+    /// <summary>Lists the EA's calendar for [from, to): her own entries plus her work from the modules, shown
+    /// automatically and read live — Meetings at their date/time, Delegations start→due, Approvals on their required
+    /// date, Travel departure→return, Follow-ups at their due time (read-only; Source + SourceRecordId open the record).
+    /// eventTypes (ClientMeeting, InternalMeeting, Personal, Travel, Task) and sources (Calendar, Meeting, Delegation,
+    /// Approval, Travel, Follow-up) are optional whitelists; includeLinked=false shows only her own entries.
+    /// employeeId/employeeName pick whose calendar (default: the logged-in EA).</summary>
     [HttpGet("events")]
     [ProducesResponseType(typeof(List<CalendarEventDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]

@@ -196,6 +196,8 @@ public class ApprovalAiService : IApprovalAiService
         await _approvals.SetApproverAsync(approvalRequestId, dto.ApproverId, dto.ApproverName, ct);
         await AiSuggestionWriters.MarkApprovalApproverRecommendationAppliedAsync(_db, approvalRequestId, dto, ct);
         await tx.CommitAsync(ct);
+        await _serviceProvider.MarkAiResponseUsedAsync(EaAiModules.Approval, ["Approval approver suggestion"], approvalRequestId,
+            new { dto.ApproverId, dto.ApproverName }, ct);
 
         return await LoadAsync(approvalRequestId, ct);
     }
@@ -243,14 +245,21 @@ public class ApprovalAiService : IApprovalAiService
                     """;
 
             var claudeClient = _serviceProvider.GetRequiredService<IClaudeClient>();
-            var rawResponse = await claudeClient.GenerateJsonAsync(systemPrompt, attemptPrompt, ct);
+            // Every EA AI call is recorded in ea_ai_usage_logs (who, where, for what, prompt, response, tokens).
+            var aiUsage = _serviceProvider.GetService<IEaAiUsageLogger>();
+            var rawResponse = aiUsage is null
+                ? await claudeClient.GenerateJsonAsync(systemPrompt, attemptPrompt, ct)
+                : await aiUsage.CallAsync(EaAiModules.Approval, entityName, systemPrompt, attemptPrompt, attempt,
+                    () => claudeClient.GenerateJsonAsync(systemPrompt, attemptPrompt, ct), ct);
 
             try
             {
                 return AiJsonResponseParser.Parse<T>(rawResponse, _logger, entityName);
             }
-            catch (BusinessRuleException ex) when (attempt < _maxAiAttempts)
+            catch (BusinessRuleException ex)
             {
+                if (aiUsage is not null) await aiUsage.MarkLastInvalidJsonAsync(ex.Message);
+                if (attempt >= _maxAiAttempts) throw;
                 lastParseError = ex;
                 _logger.LogWarning(
                     "AI {Entity} returned invalid JSON on attempt {Attempt}/{MaxAttempts}; retrying.",

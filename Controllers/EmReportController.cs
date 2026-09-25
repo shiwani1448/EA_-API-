@@ -52,4 +52,13 @@ public class EmReportController(IEmReportService service, IEmEmployeeReportServi
     [ProducesResponseType(typeof(Jarvis5.Common.PagedResult<EmWorkItemDto>), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetWorkItems([FromQuery] EmWorkItemQueryDto query, CancellationToken ct) =>
         Ok(await employeeReport.GetWorkItemsAsync(query, ct));
+
+    /// <summary>The EA's whole tracking, section by section (by default the logged-in EA): a cumulative summary, then
+    /// Delegations (assigned by / to her, by type, by doer, by phase), Meetings (organised / doer / attended, action items),
+    /// Follow-ups (every attempt with date and time, reminders, to whom, escalations), Approvals, Travel, Documents and Pauses.
+    /// One ISO week (Mon–Sat) by default; allWeeks=true for everything.</summary>
+    [HttpGet("sections")]
+    [ProducesResponseType(typeof(EmSectionsResponseDto), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetSections([FromQuery] EmSectionsQueryDto query, CancellationToken ct) =>
+        Ok(await employeeReport.GetSectionsAsync(query, ct));
 }
