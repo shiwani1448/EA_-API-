@@ -37,7 +37,7 @@ public class ApprovalsController : ControllerBase
             ApproverName = dto.ApproverName,
             ApprovedBy = NullIfBlank(dto.ApprovedBy),
             RejectedBy = NullIfBlank(dto.RejectedBy),
-            CreatedBy = dto.CreatedBy
+            CreatedBy = dto.CreatedBy ?? "system"
         };
 
         var created = await _service.CreateAsync(entity, cancellationToken);

@@ -182,7 +182,7 @@ public class ApprovalDocumentService : IApprovalDocumentService
             UploadedAt = a.UploadedAt,
             ApprovalRequestId = approvalRequestId,
             ApprovalCycleId = TryExtractCycleId(a.Metadata),
-            DownloadUrl = a.AccessUrl
+            DownloadUrl = a.AccessUrl ?? string.Empty
         }).ToList();
     }
 

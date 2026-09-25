@@ -107,10 +107,12 @@ internal sealed class EaTaskHistoryBuilder(EaFmsDbContext db)
     /// <summary>Paused/Resumed events from shared WorkPause rows (used by Meeting and by Delegation pause anchors).</summary>
     private static void AddPauseEvents(EaTask task, IReadOnlyList<WorkPause> pauses, List<EaTaskHistoryEventDto> events)
     {
-        foreach (var pause in pauses.Where(p => p.StartAt >= task.StartedAt.Value))
+        if (task.StartedAt is not { } startedAt) return;
+
+        foreach (var pause in pauses.Where(p => p.StartAt >= startedAt))
         {
             var priorPauses = pauses.Where(p => p.StartAt < pause.StartAt).ToList();
-            var usedAtPauseStart = ElapsedMinusPaused(task.StartedAt.Value, pause.StartAt, priorPauses);
+            var usedAtPauseStart = ElapsedMinusPaused(startedAt, pause.StartAt, priorPauses);
             events.Add(new EaTaskHistoryEventDto
             {
                 EventType = "Paused",
@@ -130,7 +132,7 @@ internal sealed class EaTaskHistoryBuilder(EaFmsDbContext db)
             if (pause.EndAt.HasValue)
             {
                 var pausesUpToAndIncluding = pauses.Where(p => p.StartAt <= pause.StartAt).ToList();
-                var usedAtResume = ElapsedMinusPaused(task.StartedAt.Value, pause.EndAt.Value, pausesUpToAndIncluding);
+                var usedAtResume = ElapsedMinusPaused(startedAt, pause.EndAt.Value, pausesUpToAndIncluding);
                 events.Add(new EaTaskHistoryEventDto
                 {
                     EventType = "Resumed",
