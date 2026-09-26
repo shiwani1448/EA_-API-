@@ -220,7 +220,12 @@ public sealed class EaAiUsageLogger(
         };
     }
 
-    private static string? Clean(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+    private static string? Clean(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return null;
+        // The EA screens send the name URI-encoded in the X-Employee-Name header.
+        try { return Uri.UnescapeDataString(value.Trim()); } catch (UriFormatException) { return value.Trim(); }
+    }
 }
 
 /// <summary>Called from the "apply / confirm / send" actions of the EA AI features.</summary>

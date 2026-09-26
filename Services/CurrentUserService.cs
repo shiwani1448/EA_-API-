@@ -23,9 +23,25 @@ public class CurrentUserService : ICurrentUserService
         }
     }
 
-    public string? EmployeeId => Claim("employeeID", "employee_id", "empId", "sub", System.Security.Claims.ClaimTypes.NameIdentifier);
+    public string? EmployeeId => Claim("employeeID", "employee_id", "empId", "sub", System.Security.Claims.ClaimTypes.NameIdentifier)
+        ?? EaHeader("X-Employee-Id");
 
-    public string? UserName => Claim("employeeName", "employee_name", "name", System.Security.Claims.ClaimTypes.Name, "unique_name");
+    public string? UserName => Claim("employeeName", "employee_name", "name", System.Security.Claims.ClaimTypes.Name, "unique_name")
+        ?? EaHeader("X-Employee-Name");
+
+    /// <summary>
+    /// EA FMS screens have no HRMS token; they send the logged-in EA's id/name as headers so her work is
+    /// attributed to her. Used only for /api/ea requests and only when the token gives no identity.
+    /// </summary>
+    private string? EaHeader(string name)
+    {
+        var context = _httpContextAccessor.HttpContext;
+        if (context is null || !context.Request.Path.StartsWithSegments("/api/ea")) return null;
+        var value = context.Request.Headers[name].FirstOrDefault()?.Trim();
+        if (string.IsNullOrWhiteSpace(value) || value == "0") return null;
+        // Names may arrive URI-encoded (non-ASCII safe).
+        try { return Uri.UnescapeDataString(value); } catch (UriFormatException) { return value; }
+    }
 
     private string? Claim(params string[] types)
     {
