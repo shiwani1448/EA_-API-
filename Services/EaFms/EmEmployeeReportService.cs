@@ -123,7 +123,8 @@ public sealed class EmEmployeeReportService(EaFmsDbContext db, ICurrentUserServi
         var performance = Allowed(query.Performance, [PerfPending, PerfInProgress, PerfOverdue, PerfOnTime, PerfDelayed, PerfNoTat], "Performance");
         var who = Resolve(query);
 
-        IEnumerable<WorkItem> items = (await LoadAsync(who, ct)).Items;
+        var allItems = (await LoadAsync(who, ct)).Items;
+        IEnumerable<WorkItem> items = allItems;
         if (!query.AllWeeks)
         {
             var (year, week) = ResolveWeek(query.Year, query.Week);
@@ -136,14 +137,17 @@ public sealed class EmEmployeeReportService(EaFmsDbContext db, ICurrentUserServi
         if (!string.IsNullOrWhiteSpace(query.Search))
         {
             var term = query.Search.Trim();
-            items = items.Where(i => Contains(i.Title, term) || Contains(i.ReferenceNo, term) || Contains(i.OwnerName, term) || Contains(i.Counterparty, term));
+            items = items.Where(i => Contains(i.Title, term) || Contains(i.ReferenceNo, term) || Contains(i.OwnerName, term) || Contains(i.Counterparty, term)
+                || Contains(i.DoerName, term) || Contains(i.AssigneeName, term));
         }
 
         var ordered = Newest(items).ToList();
+        var page = ordered.Skip((query.Page - 1) * query.PageSize).Take(query.PageSize).Select(i => Fill(new EmWorkItemDto(), i)).ToList();
+        await AttachDocumentsAsync(page, allItems, ct);
         return new PagedResult<EmWorkItemDto>
         {
             PageNumber = query.Page, PageSize = query.PageSize, TotalCount = ordered.Count,
-            Items = ordered.Skip((query.Page - 1) * query.PageSize).Take(query.PageSize).Select(i => Fill(new EmWorkItemDto(), i)).ToList(),
+            Items = page,
         };
     }
 
@@ -280,6 +284,7 @@ public sealed class EmEmployeeReportService(EaFmsDbContext db, ICurrentUserServi
             TotalRows = trv.Count,
             Items = Newest(trv).Take(max).Select(i => Fill(new EmWorkItemDto(), i)).ToList(),
         };
+        await AttachDocumentsAsync(response.Delegations.Items.Concat(response.Approvals.Items).Concat(response.Travel.Items).ToList(), loaded.Items, ct);
 
         // ---- Documents (by upload time)
         var docs = loaded.Documents.Where(d => query.AllWeeks || inPeriod(d.UploadedAt)).OrderByDescending(d => d.UploadedAt).ThenByDescending(d => d.Id).ToList();
@@ -368,6 +373,7 @@ public sealed class EmEmployeeReportService(EaFmsDbContext db, ICurrentUserServi
         public long RecordId;
         public long? EaTaskId;
         public string? ReferenceNo, Title, OwnerId, OwnerName, Category, Counterparty;
+        public string? Type, Subtype, AssignedByName, AssigneeName, DoerName, Priority, Description;
         public DateTime? PlannedDate, PlannedIndiaDate, DueDate, StartedAt, CompletedAt;
         public int? Year, Week, AllottedTatMinutes, TatUsedMinutes;
         public bool IsPaused;
@@ -464,10 +470,27 @@ public sealed class EmEmployeeReportService(EaFmsDbContext db, ICurrentUserServi
 
         var items = loaded.Items;
 
+        // Detail fields shared by every item added for one record since index `from` (all its phases).
+        void Describe(int from, EaTask? task, string? category, string? assignedBy, string? assignee, string? doer, string? priority, string? description)
+        {
+            for (var k = from; k < items.Count; k++)
+            {
+                var it = items[k];
+                it.Type = Clean(task?.Type) ?? it.Category ?? Clean(category);
+                it.Subtype = Clean(task?.Subtype);
+                it.AssignedByName = Clean(assignedBy);
+                it.AssigneeName = Clean(assignee) ?? it.AssignedByName;
+                it.DoerName = Clean(doer);
+                it.Priority = Clean(priority);
+                it.Description = Clean(description ?? task?.Description);
+            }
+        }
+
         // ---- Delegation: one item per phase; relation = assigned by me / to me / self
         var phasesByDelegation = delegationPhases.GroupBy(p => p.DelegationId).ToDictionary(g => g.Key, g => g.ToList());
         foreach (var d in delegations)
         {
+            var from = items.Count;
             var byMe = !who.IsTeam && who.Is(d.AssignedById, d.AssignedByNameSnapshot);
             var toMe = !who.IsTeam && who.Is(d.DoerId, d.DoerNameSnapshot);
             var relation = who.IsTeam ? "" : byMe && toMe ? RelSelf : byMe ? RelDelegatedByMe : RelDelegatedToMe;
@@ -485,6 +508,7 @@ public sealed class EmEmployeeReportService(EaFmsDbContext db, ICurrentUserServi
                     status: completed ? StCompleted : StNotStarted, isPaused: false, allotted: task?.AllottedTatMinutes,
                     used: completed ? task?.TatUsedMinutes ?? Elapsed(d.StartedAt, d.CompletedAt, pauses) : null,
                     relation, d.DelegationType, counterparty, pauses, now, today));
+                DescribeDelegation();
                 continue;
             }
             foreach (var p in phases.OrderBy(p => p.ReviewCycleNumber).ThenBy(p => p.Id))
@@ -496,12 +520,17 @@ public sealed class EmEmployeeReportService(EaFmsDbContext db, ICurrentUserServi
                     due: isActual ? d.DueDate : null, started: p.StartedAt, completedAt: p.EndedAt,
                     status, paused, p.AllottedTatMinutes, used, relation, d.DelegationType, counterparty, pauses, now, today));
             }
+            DescribeDelegation();
+
+            void DescribeDelegation() => Describe(from, task, d.DelegationType, d.AssignedByNameSnapshot ?? d.AssignedById,
+                d.AssigneeNameSnapshot ?? d.AssigneeId, d.DoerNameSnapshot ?? d.DoerId, d.Priority, d.Description);
         }
 
         // ---- Approval: one item per phase; relation = raised by me / I approve
         var phasesByApproval = approvalPhases.GroupBy(p => p.ApprovalRequestId).ToDictionary(g => g.Key, g => g.ToList());
         foreach (var a in approvals)
         {
+            var from = items.Count;
             var relation = who.IsTeam ? "" : who.Is(a.RequestedBy, a.CreatedBy) ? RelRaised : RelApprover;
             var counterparty = relation == RelApprover ? a.RequestedBy ?? a.CreatedBy : a.ApproverName ?? a.ApproverId;
             taskById.TryGetValue(a.EaTaskId, out var task);
@@ -517,6 +546,7 @@ public sealed class EmEmployeeReportService(EaFmsDbContext db, ICurrentUserServi
                     completedAt: approved ? a.ApprovedAt : null, status: approved ? StCompleted : rejected ? StCancelled : StNotStarted,
                     isPaused: false, allotted: task?.AllottedTatMinutes, used: approved ? task?.TatUsedMinutes ?? Elapsed(a.SubmittedAt, a.ApprovedAt, pauses) : null,
                     relation, a.RequestType, counterparty, pauses, now, today));
+                DescribeApproval();
                 continue;
             }
             foreach (var p in phases.OrderBy(p => p.ReviewCycleNumber).ThenBy(p => p.Id))
@@ -529,6 +559,9 @@ public sealed class EmEmployeeReportService(EaFmsDbContext db, ICurrentUserServi
                     due: isActual ? a.RequiredApprovalDate : null, started: p.StartedAt, completedAt: p.EndedAt,
                     status, paused, p.AllottedTatMinutes, used, relation, a.RequestType, counterparty, pauses, now, today));
             }
+            DescribeApproval();
+
+            void DescribeApproval() => Describe(from, task, a.RequestType, ownerName, null, a.ApproverName ?? a.ApproverId, a.Priority, a.Description);
         }
 
         // ---- Meeting: one item per meeting; relation = organizer / doer / attendee
@@ -544,6 +577,7 @@ public sealed class EmEmployeeReportService(EaFmsDbContext db, ICurrentUserServi
             items.Add(NewItem(ModMeeting, TypeMeeting, 0, m.Id, task?.Id, m.MeetingNumber, m.Title, m.OrganizerId, m.OrganizerName ?? m.CreatedBy,
                 planned: meetingDate ?? m.CreatedDate, due: meetingDate, started: task?.StartedAt, completedAt: task?.CompletedAt ?? m.CompletedAt,
                 status, paused, task?.AllottedTatMinutes, used, relation, m.MeetingType, doers, pauses, now, today));
+            Describe(items.Count - 1, task, m.MeetingType, m.OrganizerName ?? m.CreatedBy, null, doers, m.Priority, m.Description ?? m.Purpose);
         }
 
         // ---- Follow-up: its own Actual execution task; relation = owner / doer / followed up
@@ -558,6 +592,7 @@ public sealed class EmEmployeeReportService(EaFmsDbContext db, ICurrentUserServi
                 planned: f.DueAt, due: f.DueAt, started: task?.StartedAt, completedAt: task?.CompletedAt ?? f.CompletedAt,
                 status, paused, task?.AllottedTatMinutes, used, relation, f.Type,
                 f.WaitingOnName ?? f.WaitingOnExternal ?? f.ReminderRecipientName, pauses, now, today));
+            Describe(items.Count - 1, task, f.Type, f.CreatedByEmployeeName ?? f.CreatedBy, null, f.DoerName ?? f.DoerId, null, null);
         }
 
         // ---- Travel: one item per request; relation = raised by me / I approve
@@ -571,6 +606,7 @@ public sealed class EmEmployeeReportService(EaFmsDbContext db, ICurrentUserServi
                 planned: t.RequiredDate ?? t.CreatedDate, due: t.RequiredDate, started: task?.StartedAt ?? t.StartedAt,
                 completedAt: task?.CompletedAt ?? t.CompletedAt, status, paused, task?.AllottedTatMinutes, used,
                 relation, t.TravelType, relation == RelApprover ? t.CreatedBy : t.ApproverNameSnapshot ?? t.ApproverId, pauses, now, today));
+            Describe(items.Count - 1, task, t.TravelType, t.CreatedBy, null, t.CreatedBy, t.Priority, t.Purpose);
         }
 
         return loaded;
@@ -800,7 +836,115 @@ public sealed class EmEmployeeReportService(EaFmsDbContext db, ICurrentUserServi
         dto.Performance = i.Performance; dto.AllottedTatMinutes = i.AllottedTatMinutes; dto.TatUsedMinutes = i.TatUsedMinutes;
         dto.TatDifferenceMinutes = i.AllottedTatMinutes.HasValue && i.TatUsedMinutes.HasValue ? i.AllottedTatMinutes - i.TatUsedMinutes : null;
         dto.PauseCount = i.PauseCount; dto.PausedMinutes = i.PausedMinutes;
+        dto.Type = i.Type ?? i.Category; dto.Subtype = i.Subtype; dto.AssignedByName = i.AssignedByName;
+        dto.AssigneeName = i.AssigneeName; dto.DoerName = i.DoerName ?? i.OwnerName; dto.Priority = i.Priority; dto.Description = i.Description;
+        var now = Clock.UtcNowTz;
+        dto.Pauses = i.PauseList.OrderBy(p => p.StartAt).Select(p => new EmItemPauseDto
+        {
+            StartAt = p.StartAt, EndAt = p.EndAt, Minutes = (int)((p.EndAt ?? now) - p.StartAt).TotalMinutes, Reason = p.Reason
+        }).ToList();
         return dto;
+    }
+
+    /// <summary>
+    /// Record-level attachments (module, entity) → the Documents of the one phase item each file belongs to.
+    /// Delegation / approval files are stored per record, but each is uploaded at the moment a phase ends
+    /// (completion PDF ends Actual/Rework, review/rework decision file ends a Review cycle), so a file is
+    /// matched against ALL of the record's phases (<paramref name="allItems"/>, not just this page) and
+    /// only shown on its own row. One query for the whole list.
+    /// </summary>
+    private async Task AttachDocumentsAsync(IReadOnlyCollection<EmWorkItemDto> dtos, IReadOnlyCollection<WorkItem> allItems, CancellationToken ct)
+    {
+        static (string Module, string Entity)? Target(string module) => module switch
+        {
+            ModDelegation => ("Delegation", "Delegation"),
+            ModApproval => ("Approval", "ApprovalRequest"),
+            ModMeeting => ("Meeting", "Meeting"),
+            ModTravel => ("Travel", "TravelRequest"),
+            _ => null,
+        };
+        var keyed = dtos.Select(d => (Dto: d, Target: Target(d.Module), Id: d.RecordId.ToString(CultureInfo.InvariantCulture)))
+            .Where(x => x.Target is not null).ToList();
+        if (keyed.Count == 0) return;
+        var modules = keyed.Select(x => x.Target!.Value.Module).Distinct().ToList();
+        var ids = keyed.Select(x => x.Id).Distinct().ToList();
+        var rows = await db.Attachments.AsNoTracking()
+            .Where(a => a.IsActive && !a.IsDeleted && a.RelatedModule != null && modules.Contains(a.RelatedModule)
+                && a.RelatedEntityId != null && ids.Contains(a.RelatedEntityId))
+            .OrderBy(a => a.UploadedAt).ThenBy(a => a.Id)
+            .ToListAsync(ct);
+        var byRecord = rows.GroupBy(a => (a.RelatedModule, a.RelatedEntity, a.RelatedEntityId)).ToDictionary(g => g.Key, g => g.ToList());
+        var phasesByRecord = allItems.GroupBy(i => (i.Module, i.RecordId)).ToDictionary(g => g.Key, g => g.ToList());
+
+        // itemKey → its files
+        var owned = new Dictionary<string, List<Attachment>>();
+        foreach (var record in keyed.Select(x => (x.Dto.Module, x.Dto.RecordId, x.Target, x.Id)).Distinct())
+        {
+            if (!byRecord.TryGetValue((record.Target!.Value.Module, record.Target.Value.Entity, record.Id), out var docs)) continue;
+            var phases = phasesByRecord.GetValueOrDefault((record.Module, record.RecordId)) ?? [];
+            foreach (var doc in docs)
+            {
+                // No phase window fits (e.g. a supporting file added before work started) → the record's first (Actual) row.
+                var owner = (phases.Count <= 1 ? null : OwningPhase(doc, phases))
+                    ?? phases.OrderBy(p => p.ReviewCycleNumber).ThenBy(p => p.TaskType == TypeActual ? 0 : 1).FirstOrDefault();
+                if (owner is null) continue;
+                if (!owned.TryGetValue(owner.ItemKey, out var list)) owned[owner.ItemKey] = list = [];
+                list.Add(doc);
+            }
+        }
+        foreach (var (dto, _, _) in keyed)
+        {
+            if (!owned.TryGetValue(dto.ItemKey, out var docs)) continue;
+            dto.Documents = docs.Select(a => new EmItemDocumentDto
+            {
+                AttachmentId = a.Id, FileName = a.OriginalFileName, ContentType = a.ContentType, Size = a.Size,
+                UploadedBy = a.UploadedBy, UploadedAt = a.UploadedAt
+            }).ToList();
+        }
+    }
+
+    /// <summary>
+    /// The phase a file was uploaded to close: a started phase whose end is at/after the upload (or still open),
+    /// nearest end first. The file's metadata narrows the candidates — a review/rework decision file belongs to a
+    /// Review phase (of its cycle when recorded), a completion file to an Actual/Rework phase. Null when nothing fits.
+    /// </summary>
+    private static WorkItem? OwningPhase(Attachment doc, List<WorkItem> phases)
+    {
+        var (purpose, cycle) = ReadAttachmentMeta(doc.Metadata);
+        var isDecision = purpose is not null && (purpose.Contains("Review", StringComparison.OrdinalIgnoreCase)
+            || purpose.Contains("RejectAttachment", StringComparison.OrdinalIgnoreCase)
+            || (purpose.Contains("Rework", StringComparison.OrdinalIgnoreCase) && purpose.Contains("Attachment", StringComparison.OrdinalIgnoreCase)));
+        var isCompletion = purpose is not null && !isDecision && purpose.Contains("Completion", StringComparison.OrdinalIgnoreCase);
+        IEnumerable<WorkItem> candidates = phases;
+        if (isDecision) candidates = candidates.Where(p => p.TaskType == TypeReview && (cycle is null || p.ReviewCycleNumber == cycle));
+        else if (isCompletion) candidates = candidates.Where(p => p.TaskType != TypeReview);
+
+        var tolerance = TimeSpan.FromMinutes(1);
+        var up = doc.UploadedAt;
+        return candidates
+            .Where(p => p.StartedAt is null || p.StartedAt <= up + tolerance)
+            .Where(p => p.CompletedAt is null || p.CompletedAt >= up - tolerance)
+            .OrderBy(p => p.CompletedAt is null ? 1 : 0)
+            .ThenBy(p => p.CompletedAt is null ? TimeSpan.MaxValue : (p.CompletedAt.Value - up).Duration())
+            .FirstOrDefault();
+    }
+
+    private static (string? Purpose, int? Cycle) ReadAttachmentMeta(string? metadata)
+    {
+        if (string.IsNullOrWhiteSpace(metadata)) return (null, null);
+        try
+        {
+            using var json = System.Text.Json.JsonDocument.Parse(metadata);
+            var root = json.RootElement;
+            if (root.ValueKind != System.Text.Json.JsonValueKind.Object) return (null, null);
+            var purpose = root.TryGetProperty("purpose", out var p) && p.ValueKind == System.Text.Json.JsonValueKind.String ? p.GetString() : null;
+            int? cycle = root.TryGetProperty("reviewCycleNumber", out var c) && c.ValueKind == System.Text.Json.JsonValueKind.Number && c.TryGetInt32(out var n) ? n : null;
+            return (purpose, cycle);
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            return (null, null);
+        }
     }
 
     private static string? Allowed(string? value, string[] allowed, string field)

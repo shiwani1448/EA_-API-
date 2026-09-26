@@ -250,6 +250,39 @@ public class EmWorkItemDto
     /// <summary>Pauses inside this item's working window.</summary>
     public int PauseCount { get; set; }
     public int PausedMinutes { get; set; }
+    /// <summary>EaTask classification (falls back to Category) and its subtype.</summary>
+    public string? Type { get; set; }
+    public string? Subtype { get; set; }
+    /// <summary>Who raised / assigned the work (delegation assigner, approval requester, meeting organiser, follow-up / travel creator).</summary>
+    public string? AssignedByName { get; set; }
+    /// <summary>Delegation assignee when set, otherwise the person who raised the work.</summary>
+    public string? AssigneeName { get; set; }
+    /// <summary>Who executes the work (delegation doer, approver, meeting doers, follow-up doer, travel creator).</summary>
+    public string? DoerName { get; set; }
+    public string? Priority { get; set; }
+    public string? Description { get; set; }
+    /// <summary>Pauses inside this item's working window.</summary>
+    public List<EmItemPauseDto> Pauses { get; set; } = new();
+    /// <summary>Files uploaded against the item's record (only filled for work-item and section item lists).</summary>
+    public List<EmItemDocumentDto> Documents { get; set; } = new();
+}
+
+public class EmItemPauseDto
+{
+    public DateTime StartAt { get; set; }
+    public DateTime? EndAt { get; set; }
+    public int Minutes { get; set; }
+    public string? Reason { get; set; }
+}
+
+public class EmItemDocumentDto
+{
+    public long AttachmentId { get; set; }
+    public string FileName { get; set; } = string.Empty;
+    public string? ContentType { get; set; }
+    public long Size { get; set; }
+    public string UploadedBy { get; set; } = string.Empty;
+    public DateTime UploadedAt { get; set; }
 }
 
 // ---------------------------------------------------------------- Sections (the EA's whole tracking)
